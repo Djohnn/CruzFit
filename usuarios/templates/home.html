@@ -11,50 +11,63 @@
         </header>
 
         <nav class="home-actions-grid" aria-label="Ações principais do estoque">
-            <a class="home-action-card" href="{% url 'add_produto' %}">
-                <span class="home-action-icon" aria-hidden="true">+</span>
-                <span>
-                    <h2>Cadastrar produto</h2>
-                    <p>Adicione produtos, imagens, preços e quantidade inicial ao estoque.</p>
-                    <span class="home-action-link">Abrir cadastro <span aria-hidden="true">→</span></span>
-                </span>
-            </a>
+            <section class="home-action-group home-action-group-featured" aria-labelledby="home-stock-heading">
+                <p class="home-action-group-label">Operação principal</p>
+                <a class="home-action-card home-action-card-featured" href="{% url 'estoque' %}">
+                    <span class="home-action-icon" aria-hidden="true">▦</span>
+                    <div class="home-action-content">
+                        <h2 id="home-stock-heading">Visualizar estoque</h2>
+                        <p>Veja os produtos cadastrados e acesse os detalhes de cada item.</p>
+                        <span class="home-action-link">Ver estoque <span aria-hidden="true">→</span></span>
+                    </div>
+                </a>
+            </section>
 
-            <a class="home-action-card" href="{% url 'estoque' %}">
-                <span class="home-action-icon" aria-hidden="true">▦</span>
-                <span>
-                    <h2>Visualizar estoque</h2>
-                    <p>Veja os produtos cadastrados e acesse os detalhes de cada item.</p>
-                    <span class="home-action-link">Ver estoque <span aria-hidden="true">→</span></span>
-                </span>
-            </a>
+            <section class="home-action-group" aria-labelledby="home-products-heading">
+                <p class="home-action-group-label">Produtos</p>
+                <a class="home-action-card" href="{% url 'add_produto' %}">
+                    <span class="home-action-icon" aria-hidden="true">＋</span>
+                    <div class="home-action-content">
+                        <h2 id="home-products-heading">Cadastrar produto</h2>
+                        <p>Adicione produtos, imagens, preços e quantidade inicial ao estoque.</p>
+                        <span class="home-action-link">Abrir cadastro <span aria-hidden="true">→</span></span>
+                    </div>
+                </a>
+            </section>
 
-            <a class="home-action-card" href="{% url 'consulta_produto' %}">
-                <span class="home-action-icon" aria-hidden="true">⌕</span>
-                <span>
-                    <h2>Consultar produto</h2>
-                    <p>Pesquise por nome, categoria ou faixa de preço usando os filtros existentes.</p>
-                    <span class="home-action-link">Consultar agora <span aria-hidden="true">→</span></span>
-                </span>
-            </a>
+            <section class="home-action-group" aria-labelledby="home-consult-heading">
+                <p class="home-action-group-label">Consultas</p>
+                <a class="home-action-card" href="{% url 'consulta_produto' %}">
+                    <span class="home-action-icon" aria-hidden="true">⌕</span>
+                    <div class="home-action-content">
+                        <h2 id="home-consult-heading">Consultar produto</h2>
+                        <p>Pesquise por nome, categoria ou faixa de preço usando os filtros existentes.</p>
+                        <span class="home-action-link">Consultar agora <span aria-hidden="true">→</span></span>
+                    </div>
+                </a>
+            </section>
 
-            <a class="home-action-card" href="{% url 'registrar_baixa' %}">
-                <span class="home-action-icon" aria-hidden="true">−</span>
-                <span>
-                    <h2>Registrar baixa</h2>
-                    <p>Registre um ou vários produtos vendidos e reduza as quantidades do estoque.</p>
-                    <span class="home-action-link">Registrar agora <span aria-hidden="true">→</span></span>
-                </span>
-            </a>
-
-            <a class="home-action-card" href="{% url 'registrar_entrada' %}">
-                <span class="home-action-icon" aria-hidden="true">+</span>
-                <span>
-                    <h2>Registrar entrada</h2>
-                    <p>Registre produtos recebidos e aumente as quantidades disponíveis no estoque.</p>
-                    <span class="home-action-link">Registrar agora <span aria-hidden="true">→</span></span>
-                </span>
-            </a>
+            <section class="home-action-group home-action-group-wide" aria-labelledby="home-movement-heading">
+                <p class="home-action-group-label">Movimentações</p>
+                <div class="home-action-group-actions">
+                    <a class="home-action-card" href="{% url 'registrar_baixa' %}">
+                        <span class="home-action-icon" aria-hidden="true">−</span>
+                        <div class="home-action-content">
+                            <h2 id="home-movement-heading">Registrar baixa</h2>
+                            <p>Registre produtos vendidos e revise o impacto no estoque.</p>
+                            <span class="home-action-link">Registrar agora <span aria-hidden="true">→</span></span>
+                        </div>
+                    </a>
+                    <a class="home-action-card" href="{% url 'registrar_entrada' %}">
+                        <span class="home-action-icon" aria-hidden="true">↥</span>
+                        <div class="home-action-content">
+                            <h2>Registrar entrada</h2>
+                            <p>Registre produtos recebidos e revise o impacto no estoque.</p>
+                            <span class="home-action-link">Registrar agora <span aria-hidden="true">→</span></span>
+                        </div>
+                    </a>
+                </div>
+            </section>
         </nav>
 
         <p class="home-flow-note"><strong>Fluxo:</strong> login → início → cadastro, estoque, entradas, baixas ou consulta.</p>

@@ -34,14 +34,15 @@
 
             <form id="outflow-form" action="{% url 'registrar_baixa' %}" method="POST" class="operational-form">
                 {% csrf_token %}
+                <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
                 <div id="outflow-items" class="outflow-line-items">
                     <div class="outflow-line-item" data-outflow-row>
                         <div class="outflow-item-field outflow-product-search" data-product-search>
                             <label for="outflow-product-query-1">Produto</label>
                             <div class="outflow-search-control">
-                                <input id="outflow-product-query-1" class="form-control outflow-product-query" type="search" placeholder="Digite para buscar produto..." autocomplete="off" required>
+                                <input id="outflow-product-query-1" class="form-control outflow-product-query" type="search" placeholder="Digite para buscar produto..." autocomplete="off" required role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="outflow-product-results-1" aria-activedescendant="">
                                 <span class="outflow-search-icon" aria-hidden="true">⌕</span>
-                                <div id="outflow-product-results-1" class="outflow-search-results" role="listbox" hidden></div>
+                                <div id="outflow-product-results-1" class="outflow-search-results" role="listbox" aria-label="Resultados de produtos" hidden></div>
                             </div>
                             <input type="hidden" name="produto" data-product-value>
                             <p class="outflow-selected-product" data-selected-product aria-live="polite"></p>
@@ -54,12 +55,33 @@
                     </div>
                 </div>
 
+                <div class="inflow-fields">
+                    <div class="form-group">
+                        <label for="outflow-reason">Motivo da baixa</label>
+                        <select id="outflow-reason" class="form-control" name="motivo" required>
+                            {% for value, label in motivo_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="outflow-note">Observação <span class="field-optional">(opcional)</span></label>
+                        <textarea id="outflow-note" class="form-control" name="observacao" rows="3" placeholder="Ex.: venda no balcão"></textarea>
+                    </div>
+                </div>
+
                 <div class="outflow-summary" aria-live="polite">
                     <strong id="outflow-item-count">1 produto</strong>
-                    <span><strong id="outflow-quantity-count">1 unidade</strong> será baixada</span>
+                    <span><strong id="outflow-quantity-count">1 unidade</strong><span id="outflow-quantity-message"> será baixada</span></span>
+                </div>
+                <div id="outflow-review" class="operation-review" aria-live="polite" hidden>
+                    <h3>Conferir baixa</h3>
+                    <p class="section-help">Confira os produtos e o impacto antes de confirmar.</p>
+                    <ul id="outflow-review-list" class="operation-review-list"></ul>
                 </div>
                 <div class="outflow-actions">
-                    <button class="btn btn-success" type="submit">Registrar baixa</button>
+                    <button id="review-outflow-button" class="btn btn-primary" type="button">Revisar baixa</button>
+                    <button id="confirm-outflow-button" class="btn btn-success" type="submit" hidden>Confirmar baixa</button>
                 </div>
             </form>
         </section>
@@ -117,16 +139,23 @@
             const addButton = document.getElementById('add-outflow-item');
             const itemCount = document.getElementById('outflow-item-count');
             const quantityCount = document.getElementById('outflow-quantity-count');
+            const quantityMessage = document.getElementById('outflow-quantity-message');
             const form = document.getElementById('outflow-form');
+            const reviewButton = document.getElementById('review-outflow-button');
+            const confirmButton = document.getElementById('confirm-outflow-button');
+            const review = document.getElementById('outflow-review');
+            const reviewList = document.getElementById('outflow-review-list');
             const productCatalog = [
                 {% for produto in produtos %}
-                    {id: '{{ produto.id }}', name: '{{ produto.nome|escapejs }}', stock: '{{ produto.quantidade|floatformat:2|escapejs }}'}{% if not forloop.last %},{% endif %}
+                    {id: '{{ produto.id }}', name: '{{ produto.nome|escapejs }}', barcode: '{{ produto.codigo_barras|default:''|escapejs }}', stock: Number('{{ produto.quantidade|floatformat:2|escapejs }}'.replace(',', '.'))}{% if not forloop.last %},{% endif %}
                 {% endfor %}
             ];
 
-            if (!items || !addButton || !itemCount || !quantityCount || !form) {
+            if (!items || !addButton || !itemCount || !quantityCount || !quantityMessage || !form || !reviewButton || !confirmButton || !review || !reviewList) {
                 return;
             }
+
+            let reviewed = false;
 
             function updateSummary() {
                 const rows = Array.from(items.querySelectorAll('[data-outflow-row]'));
@@ -135,25 +164,68 @@
                 }, 0);
                 itemCount.textContent = rows.length + (rows.length === 1 ? ' produto' : ' produtos');
                 quantityCount.textContent = total.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + (total === 1 ? ' unidade' : ' unidades');
-                quantityCount.nextSibling.textContent = total === 1 ? ' será baixada' : ' serão baixadas';
+                quantityMessage.textContent = total === 1 ? ' será baixada' : ' serão baixadas';
+            }
+
+            function resetReview() {
+                reviewed = false;
+                review.hidden = true;
+                confirmButton.hidden = true;
+                reviewButton.hidden = false;
+            }
+
+            function setResultsOpen(widget, isOpen) {
+                const query = widget.querySelector('.outflow-product-query');
+                const results = widget.querySelector('.outflow-search-results');
+                results.hidden = !isOpen;
+                query.setAttribute('aria-expanded', String(isOpen));
+                if (!isOpen) {
+                    query.setAttribute('aria-activedescendant', '');
+                }
+            }
+
+            function activateOption(widget, index) {
+                const query = widget.querySelector('.outflow-product-query');
+                const options = Array.from(widget.querySelectorAll('.outflow-search-option'));
+                if (!options.length) {
+                    return;
+                }
+                const nextIndex = (index + options.length) % options.length;
+                options.forEach(function (option, optionIndex) {
+                    option.setAttribute('aria-selected', String(optionIndex === nextIndex));
+                });
+                query.setAttribute('aria-activedescendant', options[nextIndex].id);
+                widget.dataset.activeIndex = String(nextIndex);
+            }
+
+            function selectProduct(widget, product) {
+                const query = widget.querySelector('.outflow-product-query');
+                query.value = product.name;
+                widget.querySelector('[data-product-value]').value = product.id;
+                widget.querySelector('[data-selected-product]').textContent = 'Selecionado: ' + product.name + ' (estoque: ' + product.stock.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + ')';
+                query.setCustomValidity('');
+                widget.dataset.activeIndex = '-1';
+                setResultsOpen(widget, false);
+                resetReview();
             }
 
             function renderProductResults(widget) {
                 const query = widget.querySelector('.outflow-product-query');
                 const results = widget.querySelector('.outflow-search-results');
-                const term = query.value.trim().toLocaleLowerCase('pt-BR');
+                const normalizedTerm = query.value.toLocaleLowerCase('pt-BR').replace(/[\s-]+/g, '');
                 results.innerHTML = '';
+                widget.dataset.activeIndex = '-1';
 
-                if (!term) {
-                    results.hidden = true;
+                if (!normalizedTerm) {
+                    setResultsOpen(widget, false);
                     return;
                 }
 
-                const matches = productCatalog
-                    .filter(function (product) {
-                        return product.name.toLocaleLowerCase('pt-BR').includes(term);
-                    })
-                    .slice(0, 8);
+                const matches = productCatalog.filter(function (product) {
+                    const normalizedName = product.name.toLocaleLowerCase('pt-BR').replace(/[\s-]+/g, '');
+                    const normalizedBarcode = product.barcode.replace(/[\s-]+/g, '');
+                    return normalizedName.includes(normalizedTerm) || normalizedBarcode.includes(normalizedTerm);
+                }).slice(0, 8);
 
                 if (!matches.length) {
                     const empty = document.createElement('div');
@@ -161,31 +233,56 @@
                     empty.textContent = 'Nenhum produto encontrado.';
                     results.appendChild(empty);
                 } else {
-                    matches.forEach(function (product) {
+                    matches.forEach(function (product, index) {
                         const option = document.createElement('button');
+                        option.id = results.id + '-option-' + index;
                         option.type = 'button';
                         option.className = 'outflow-search-option';
                         option.setAttribute('role', 'option');
+                        option.setAttribute('aria-selected', 'false');
 
                         const name = document.createElement('span');
-                        name.textContent = product.name;
+                        name.textContent = product.name + (product.barcode ? ' (código: ' + product.barcode + ')' : '');
                         const stock = document.createElement('span');
                         stock.className = 'outflow-search-stock';
-                        stock.textContent = 'estoque: ' + product.stock;
+                        stock.textContent = 'estoque: ' + product.stock.toLocaleString('pt-BR', {maximumFractionDigits: 2});
                         option.append(name, stock);
-
-                        option.addEventListener('click', function () {
-                            widget.querySelector('.outflow-product-query').value = product.name;
-                            widget.querySelector('[data-product-value]').value = product.id;
-                            widget.querySelector('[data-selected-product]').textContent = 'Selecionado: ' + product.name;
-                            query.setCustomValidity('');
-                            results.hidden = true;
-                        });
+                        option.addEventListener('click', function () { selectProduct(widget, product); });
                         results.appendChild(option);
                     });
                 }
+                setResultsOpen(widget, true);
+            }
 
-                results.hidden = false;
+            function buildReview() {
+                const rows = Array.from(items.querySelectorAll('[data-outflow-row]'));
+                const invalidQuery = rows.map(function (row) {
+                    const query = row.querySelector('.outflow-product-query');
+                    return query.value && !row.querySelector('[data-product-value]').value ? query : null;
+                }).find(Boolean);
+
+                if (invalidQuery) {
+                    invalidQuery.setCustomValidity('Selecione um produto nos resultados da busca.');
+                    invalidQuery.reportValidity();
+                    return false;
+                }
+
+                reviewList.innerHTML = '';
+                rows.forEach(function (row) {
+                    const product = productCatalog.find(function (item) {
+                        return item.id === row.querySelector('[data-product-value]').value;
+                    });
+                    const quantity = parseFloat(row.querySelector('input[name="quantidade"]').value) || 0;
+                    const item = document.createElement('li');
+                    item.textContent = product.name + ': ' + quantity.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + ' unidade(s), estoque ' + product.stock.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + ' → ' + (product.stock - quantity).toLocaleString('pt-BR', {maximumFractionDigits: 2});
+                    reviewList.appendChild(item);
+                });
+                review.hidden = false;
+                confirmButton.hidden = false;
+                reviewButton.hidden = true;
+                reviewed = true;
+                confirmButton.focus();
+                return true;
             }
 
             function bindProductSearch(row) {
@@ -195,15 +292,33 @@
                     widget.querySelector('[data-product-value]').value = '';
                     widget.querySelector('[data-selected-product]').textContent = '';
                     query.setCustomValidity('');
+                    resetReview();
                     renderProductResults(widget);
                 });
-                query.addEventListener('focus', function () {
-                    renderProductResults(widget);
+                query.addEventListener('focus', function () { renderProductResults(widget); });
+                query.addEventListener('keydown', function (event) {
+                    const options = widget.querySelectorAll('.outflow-search-option');
+                    const activeIndex = Number.parseInt(widget.dataset.activeIndex || '-1', 10);
+                    if (event.key === 'ArrowDown' && options.length) {
+                        event.preventDefault();
+                        activateOption(widget, activeIndex + 1);
+                    } else if (event.key === 'ArrowUp' && options.length) {
+                        event.preventDefault();
+                        activateOption(widget, activeIndex - 1);
+                    } else if (event.key === 'Enter' && activeIndex >= 0 && options[activeIndex]) {
+                        event.preventDefault();
+                        options[activeIndex].click();
+                    } else if (event.key === 'Escape') {
+                        setResultsOpen(widget, false);
+                    }
                 });
             }
 
             function bindRow(row) {
-                row.querySelector('input[name="quantidade"]').addEventListener('input', updateSummary);
+                row.querySelector('input[name="quantidade"]').addEventListener('input', function () {
+                    resetReview();
+                    updateSummary();
+                });
                 row.querySelector('.outflow-remove-button').addEventListener('click', function () {
                     const rows = items.querySelectorAll('[data-outflow-row]');
                     if (rows.length === 1) {
@@ -214,6 +329,7 @@
                     } else {
                         row.remove();
                     }
+                    resetReview();
                     updateSummary();
                 });
                 bindProductSearch(row);
@@ -222,41 +338,39 @@
             addButton.addEventListener('click', function () {
                 const row = items.querySelector('[data-outflow-row]').cloneNode(true);
                 const index = items.querySelectorAll('[data-outflow-row]').length + 1;
+                const query = row.querySelector('.outflow-product-query');
+                const results = row.querySelector('.outflow-search-results');
                 row.querySelector('label[for^="outflow-product-query"]').htmlFor = 'outflow-product-query-' + index;
-                row.querySelector('.outflow-product-query').id = 'outflow-product-query-' + index;
-                row.querySelector('.outflow-search-results').id = 'outflow-product-results-' + index;
+                query.id = 'outflow-product-query-' + index;
+                results.id = 'outflow-product-results-' + index;
+                query.setAttribute('aria-controls', results.id);
                 row.querySelector('label[for^="outflow-quantity"]').htmlFor = 'outflow-quantity-' + index;
                 row.querySelector('input[name="quantidade"]').id = 'outflow-quantity-' + index;
-                row.querySelector('.outflow-product-query').value = '';
+                query.value = '';
+                query.setAttribute('aria-expanded', 'false');
+                query.setAttribute('aria-activedescendant', '');
                 row.querySelector('[data-product-value]').value = '';
                 row.querySelector('[data-selected-product]').textContent = '';
-                row.querySelector('.outflow-search-results').innerHTML = '';
-                row.querySelector('.outflow-search-results').hidden = true;
+                results.innerHTML = '';
+                results.hidden = true;
                 row.querySelector('input[name="quantidade"]').value = 1;
                 items.appendChild(row);
                 bindRow(row);
+                resetReview();
                 updateSummary();
             });
 
+            reviewButton.addEventListener('click', buildReview);
             form.addEventListener('submit', function (event) {
-                const invalidQuery = Array.from(items.querySelectorAll('[data-outflow-row]'))
-                    .map(function (row) {
-                        const query = row.querySelector('.outflow-product-query');
-                        return query.value && !row.querySelector('[data-product-value]').value ? query : null;
-                    })
-                    .find(Boolean);
-
-                if (invalidQuery) {
+                if (!reviewed || !buildReview()) {
                     event.preventDefault();
-                    invalidQuery.setCustomValidity('Selecione um produto nos resultados da busca.');
-                    invalidQuery.reportValidity();
                 }
             });
 
             document.addEventListener('click', function (event) {
                 items.querySelectorAll('[data-product-search]').forEach(function (widget) {
                     if (!widget.contains(event.target)) {
-                        widget.querySelector('.outflow-search-results').hidden = true;
+                        setResultsOpen(widget, false);
                     }
                 });
             });

@@ -21,9 +21,9 @@
             <form action="{% url 'login' %}" method="POST">
                 {% csrf_token %}
                 <div class="form-group">
-                    <label for="login-name">Nome</label>
-                    <input id="login-name" type="text" placeholder="Digite seu nome" name="nome" class="form-control" value="{{ nome|default:'' }}" autocomplete="username" required aria-describedby="login-name-help">
-                    <small id="login-name-help" class="form-text login-intro">Use o nome cadastrado no Cruz Fit.</small>
+                    <label for="login-name">Identificador</label>
+                    <input id="login-name" type="text" placeholder="Digite seu identificador" name="identificador" class="form-control" value="{{ nome|default:'' }}" autocomplete="username" required aria-describedby="login-name-help">
+                    <small id="login-name-help" class="form-text login-intro">Use seu nome de usuário único cadastrado no Cruz Fit.</small>
                 </div>
 
                 <div class="form-group">

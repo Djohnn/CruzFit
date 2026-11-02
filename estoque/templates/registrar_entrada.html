@@ -34,6 +34,7 @@
 
             <form id="inflow-form" action="{% url 'registrar_entrada' %}" method="POST" class="operational-form">
                 {% csrf_token %}
+                <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
                 <div id="inflow-items" class="inflow-line-items">
                     <div class="inflow-line-item" data-inflow-row>
                         <div class="inflow-item-field">
@@ -71,10 +72,16 @@
 
                 <div class="inflow-summary" aria-live="polite">
                     <strong id="inflow-item-count">1 produto</strong>
-                    <span><strong id="inflow-quantity-count">1 unidade</strong> será adicionada ao estoque</span>
+                    <span><strong id="inflow-quantity-count">1 unidade</strong><span id="inflow-quantity-message"> será adicionada ao estoque</span></span>
+                </div>
+                <div id="inflow-review" class="operation-review" aria-live="polite" hidden>
+                    <h3>Conferir entrada</h3>
+                    <p class="section-help">Confira os produtos, o motivo e o impacto antes de confirmar.</p>
+                    <ul id="inflow-review-list" class="operation-review-list"></ul>
                 </div>
                 <div class="inflow-actions">
-                    <button class="btn btn-success" type="submit">Registrar entrada</button>
+                    <button id="review-inflow-button" class="btn btn-primary" type="button">Revisar entrada</button>
+                    <button id="confirm-inflow-button" class="btn btn-success" type="submit" hidden>Confirmar entrada</button>
                 </div>
             </form>
         </section>
@@ -134,10 +141,18 @@
             const addButton = document.getElementById('add-inflow-item');
             const itemCount = document.getElementById('inflow-item-count');
             const quantityCount = document.getElementById('inflow-quantity-count');
+            const quantityMessage = document.getElementById('inflow-quantity-message');
+            const form = document.getElementById('inflow-form');
+            const reviewButton = document.getElementById('review-inflow-button');
+            const confirmButton = document.getElementById('confirm-inflow-button');
+            const review = document.getElementById('inflow-review');
+            const reviewList = document.getElementById('inflow-review-list');
 
-            if (!items || !addButton || !itemCount || !quantityCount) {
+            if (!items || !addButton || !itemCount || !quantityCount || !quantityMessage || !form || !reviewButton || !confirmButton || !review || !reviewList) {
                 return;
             }
+
+            let reviewed = false;
 
             function updateSummary() {
                 const rows = Array.from(items.querySelectorAll('[data-inflow-row]'));
@@ -146,11 +161,60 @@
                 }, 0);
                 itemCount.textContent = rows.length + (rows.length === 1 ? ' produto' : ' produtos');
                 quantityCount.textContent = total.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + (total === 1 ? ' unidade' : ' unidades');
-                quantityCount.nextSibling.textContent = total === 1 ? ' será adicionada ao estoque' : ' serão adicionadas ao estoque';
+                quantityMessage.textContent = total === 1 ? ' será adicionada ao estoque' : ' serão adicionadas ao estoque';
+            }
+
+            function resetReview() {
+                reviewed = false;
+                review.hidden = true;
+                confirmButton.hidden = true;
+                reviewButton.hidden = false;
+            }
+
+            function buildReview() {
+                const rows = Array.from(items.querySelectorAll('[data-inflow-row]'));
+                const selectedRows = rows.map(function (row) {
+                    return {
+                        product: row.querySelector('select[name="produto"]'),
+                        quantity: parseFloat(row.querySelector('input[name="quantidade"]').value) || 0,
+                    };
+                });
+
+                if (!selectedRows.every(function (item) { return item.product.value && item.quantity > 0; })) {
+                    form.reportValidity();
+                    return false;
+                }
+                if (!document.getElementById('inflow-reason').value) {
+                    form.reportValidity();
+                    return false;
+                }
+
+                reviewList.innerHTML = '';
+                selectedRows.forEach(function (item) {
+                    const selectedOption = item.product.options[item.product.selectedIndex];
+                    const stockMatch = selectedOption.textContent.match(/estoque:\s*([\d.,]+)/i);
+                    const stock = stockMatch ? Number(stockMatch[1].replace('.', '').replace(',', '.')) : 0;
+                    const li = document.createElement('li');
+                    li.textContent = selectedOption.textContent.split(' (estoque:')[0] + ': ' + item.quantity.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + ' unidade(s), estoque ' + stock.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + ' → ' + (stock + item.quantity).toLocaleString('pt-BR', {maximumFractionDigits: 2});
+                    reviewList.appendChild(li);
+                });
+                const reason = document.createElement('li');
+                reason.textContent = 'Motivo: ' + document.getElementById('inflow-reason').selectedOptions[0].textContent;
+                reviewList.appendChild(reason);
+                review.hidden = false;
+                confirmButton.hidden = false;
+                reviewButton.hidden = true;
+                reviewed = true;
+                confirmButton.focus();
+                return true;
             }
 
             function bindRow(row) {
-                row.querySelector('input[name="quantidade"]').addEventListener('input', updateSummary);
+                row.querySelector('input[name="quantidade"]').addEventListener('input', function () {
+                    resetReview();
+                    updateSummary();
+                });
+                row.querySelector('select[name="produto"]').addEventListener('change', resetReview);
                 row.querySelector('.inflow-remove-button').addEventListener('click', function () {
                     const rows = items.querySelectorAll('[data-inflow-row]');
                     if (rows.length === 1) {
@@ -159,6 +223,7 @@
                     } else {
                         row.remove();
                     }
+                    resetReview();
                     updateSummary();
                 });
             }
@@ -174,7 +239,17 @@
                 row.querySelector('input[name="quantidade"]').value = 1;
                 items.appendChild(row);
                 bindRow(row);
+                resetReview();
                 updateSummary();
+            });
+
+            document.getElementById('inflow-reason').addEventListener('change', resetReview);
+            document.getElementById('inflow-note').addEventListener('input', resetReview);
+            reviewButton.addEventListener('click', buildReview);
+            form.addEventListener('submit', function (event) {
+                if (!reviewed || !buildReview()) {
+                    event.preventDefault();
+                }
             });
 
             bindRow(items.querySelector('[data-inflow-row]'));

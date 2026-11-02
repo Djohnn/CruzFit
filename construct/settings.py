@@ -10,8 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
+
 from django.contrib.messages import constants
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -27,10 +28,12 @@ SECRET_KEY = os.environ.get(
     'cruz-fit-local-development-only-change-me',
 )
 
-# SECURITY WARNING: don't run with debug turned on in production!
+# Cruz Fit is intentionally a local development application. It must not be
+# exposed directly to the internet.
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
+LOCAL_DEVELOPMENT_ONLY = True
 
 
 # Application definition

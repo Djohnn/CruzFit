@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Imprimir etiquetas | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+    {% if etiquetas and modelo %}
+        <style>
+            @page { size: {{ modelo.largura_mm|floatformat:"-2" }}mm {{ modelo.altura_mm|floatformat:"-2" }}mm; margin: 0; }
+            .thermal-label-sheet {
+                gap: {{ modelo.espacamento_mm|floatformat:"-2" }}mm;
+                padding: {{ modelo.margem_vertical_mm|floatformat:"-2" }}mm {{ modelo.margem_horizontal_mm|floatformat:"-2" }}mm;
+            }
+            .thermal-label {
+                width: {{ modelo.largura_mm|floatformat:"-2" }}mm;
+                height: {{ modelo.altura_mm|floatformat:"-2" }}mm;
+                padding: {{ modelo.margem_vertical_mm|floatformat:"-2" }}mm {{ modelo.margem_horizontal_mm|floatformat:"-2" }}mm;
+            }
+        </style>
+    {% endif %}
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container inventory-page label-print-page">
+        <header class="page-heading print-controls">
+            <h1>Imprimir etiquetas</h1>
+            <p>Escolha o modelo e a quantidade para gerar uma prévia térmica de {{ produto.nome }}.</p>
+            <a href="{% url 'produto' produto.slug %}" class="btn btn-outline-light">Voltar ao produto</a>
+        </header>
+
+        <section class="surface-section print-controls" aria-labelledby="print-options-heading">
+            <h2 id="print-options-heading">Configuração da impressão</h2>
+            <form action="{% url 'imprimir_etiquetas' produto.slug %}" method="get" class="operational-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="label-model">Modelo de etiqueta</label>
+                        <select id="label-model" class="form-control" name="modelo" {% if not modelos %}disabled{% endif %}>
+                            <option value="">Selecione um modelo</option>
+                            {% for item in modelos %}
+                                <option value="{{ item.pk }}" {% if modelo and item.pk == modelo.pk %}selected{% endif %}>{{ item.nome }} — {{ item.largura_mm|floatformat:2 }} × {{ item.altura_mm|floatformat:2 }} mm</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="label-quantity">Quantidade</label>
+                        <input id="label-quantity" class="form-control" type="number" name="quantidade" min="1" max="500" step="1" value="{{ quantidade|default:1 }}" required>
+                        <small class="form-text section-help">Gere entre 1 e 500 etiquetas.</small>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-success" type="submit" {% if not modelos or not produto.codigo_barras %}disabled{% endif %}>Gerar prévia</button>
+                </div>
+            </form>
+            {% if not modelos %}
+                <div class="alert alert-warning mt-3" role="alert">Cadastre um modelo de etiqueta antes de imprimir.</div>
+            {% elif not produto.codigo_barras %}
+                <div class="alert alert-warning mt-3" role="alert">Este produto ainda não possui código de barras.</div>
+            {% elif not etiquetas %}
+                <div class="alert alert-info mt-3" role="status">Escolha um modelo e gere a prévia para visualizar as etiquetas.</div>
+            {% endif %}
+        </section>
+
+        {% if etiquetas and modelo %}
+            <section class="thermal-preview" aria-labelledby="thermal-preview-heading">
+                <div class="thermal-preview-heading print-controls">
+                    <div>
+                        <h2 id="thermal-preview-heading">Prévia de impressão</h2>
+                        <p class="section-help">{{ etiquetas|length }} etiqueta{{ etiquetas|length|pluralize }} no modelo {{ modelo.nome }}.</p>
+                    </div>
+                    <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir</button>
+                </div>
+                <div class="thermal-label-sheet">
+                    {% for etiqueta in etiquetas %}
+                        <article class="thermal-label" aria-label="Etiqueta {{ etiqueta }} de {{ etiquetas|length }}">
+                            <strong class="thermal-label-product-name">{{ produto.nome }}</strong>
+                            {{ barcode_svg }}
+                            <span class="thermal-label-code">{{ produto.codigo_barras }}</span>
+                        </article>
+                    {% endfor %}
+                </div>
+            </section>
+        {% endif %}
+    </main>
+{% endblock %}

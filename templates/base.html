@@ -20,9 +20,28 @@
   <body class="fundo">
 
     <nav class="navbar navbar-dark bg-nav" aria-label="Navegação principal">
-      <a class="navbar-brand" href="{% url 'home' %}" aria-label="Cruz Fit - início">
-        <img src="{% static 'usuarios/img/cruz-fit-logo.jpeg' %}" alt="Cruz Fit">
-      </a>
+      <div class="navbar-inner">
+        <a class="navbar-brand" href="{% url 'home' %}" aria-label="Cruz Fit - início">
+          <img src="{% static 'usuarios/img/cruz-fit-logo.jpeg' %}" alt="Cruz Fit">
+        </a>
+        {% if request.user.is_authenticated %}
+          <div class="inventory-nav-links">
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}" href="{% url 'home' %}" {% if request.resolver_match.url_name == 'home' %}aria-current="page"{% endif %}>Início</a>
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'estoque' or request.resolver_match.url_name == 'produto' or request.resolver_match.url_name == 'add_produto' %}active{% endif %}" href="{% url 'estoque' %}" {% if request.resolver_match.url_name == 'estoque' or request.resolver_match.url_name == 'produto' or request.resolver_match.url_name == 'add_produto' %}aria-current="page"{% endif %}>Estoque</a>
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'modelos_etiqueta' %}active{% endif %}" href="{% url 'modelos_etiqueta' %}" {% if request.resolver_match.url_name == 'modelos_etiqueta' %}aria-current="page"{% endif %}>Etiquetas</a>
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'consulta_produto' %}active{% endif %}" href="{% url 'consulta_produto' %}" {% if request.resolver_match.url_name == 'consulta_produto' %}aria-current="page"{% endif %}>Consulta</a>
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'registrar_entrada' %}active{% endif %}" href="{% url 'registrar_entrada' %}" {% if request.resolver_match.url_name == 'registrar_entrada' %}aria-current="page"{% endif %}>Entradas</a>
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'registrar_baixa' %}active{% endif %}" href="{% url 'registrar_baixa' %}" {% if request.resolver_match.url_name == 'registrar_baixa' %}aria-current="page"{% endif %}>Baixas</a>
+          </div>
+          <div class="navbar-account">
+            <span>{{ request.user.first_name|default:request.user.username }}</span>
+            <form action="{% url 'sair' %}" method="post" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-link p-0">Sair</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
     </nav>
 
 

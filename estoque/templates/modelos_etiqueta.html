@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Modelos de etiqueta | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container inventory-page">
+        <header class="page-heading">
+            <h1>Modelos de etiqueta</h1>
+            <p>Configure as dimensões das etiquetas térmicas usadas pelo Cruz Fit.</p>
+            <a href="{% url 'estoque' %}" class="btn btn-outline-light">Voltar ao estoque</a>
+        </header>
+
+        {% if messages %}
+            <div class="feedback-stack" aria-live="polite">
+                {% for message in messages %}
+                    <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <section class="surface-section" aria-labelledby="label-template-form-heading">
+            <h2 id="label-template-form-heading">Cadastrar modelo</h2>
+            <p class="section-help">Informe as medidas em milímetros. Largura e altura precisam ser maiores que zero.</p>
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">
+                    {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+                </div>
+            {% endif %}
+
+            <form action="{% url 'modelos_etiqueta' %}" method="post" class="operational-form">
+                {% csrf_token %}
+                <div class="form-grid label-template-form-grid">
+                    <div class="form-group">
+                        <label for="id_nome">Nome</label>
+                        <input id="id_nome" class="form-control" type="text" name="nome" value="{{ form.nome.value|default_if_none:'' }}" maxlength="100" required>
+                        {% for error in form.nome.errors %}<p class="field-error" id="id_nome_error">{{ error }}</p>{% endfor %}
+                    </div>
+                    <div class="form-group">
+                        <label for="id_largura_mm">Largura (mm)</label>
+                        <input id="id_largura_mm" class="form-control" type="number" name="largura_mm" value="{{ form.largura_mm.value|default_if_none:'' }}" min="0.01" step="0.01" required>
+                        {% for error in form.largura_mm.errors %}<p class="field-error" id="id_largura_mm_error">{{ error }}</p>{% endfor %}
+                    </div>
+                    <div class="form-group">
+                        <label for="id_altura_mm">Altura (mm)</label>
+                        <input id="id_altura_mm" class="form-control" type="number" name="altura_mm" value="{{ form.altura_mm.value|default_if_none:'' }}" min="0.01" step="0.01" required>
+                        {% for error in form.altura_mm.errors %}<p class="field-error" id="id_altura_mm_error">{{ error }}</p>{% endfor %}
+                    </div>
+                    <div class="form-group">
+                        <label for="id_espacamento_mm">Espaçamento (mm)</label>
+                        <input id="id_espacamento_mm" class="form-control" type="number" name="espacamento_mm" value="{{ form.espacamento_mm.value|default_if_none:'' }}" min="0" step="0.01">
+                        {% for error in form.espacamento_mm.errors %}<p class="field-error" id="id_espacamento_mm_error">{{ error }}</p>{% endfor %}
+                    </div>
+                    <div class="form-group">
+                        <label for="id_margem_horizontal_mm">Margem horizontal (mm)</label>
+                        <input id="id_margem_horizontal_mm" class="form-control" type="number" name="margem_horizontal_mm" value="{{ form.margem_horizontal_mm.value|default_if_none:'' }}" min="0" step="0.01">
+                        {% for error in form.margem_horizontal_mm.errors %}<p class="field-error" id="id_margem_horizontal_mm_error">{{ error }}</p>{% endfor %}
+                    </div>
+                    <div class="form-group">
+                        <label for="id_margem_vertical_mm">Margem vertical (mm)</label>
+                        <input id="id_margem_vertical_mm" class="form-control" type="number" name="margem_vertical_mm" value="{{ form.margem_vertical_mm.value|default_if_none:'' }}" min="0" step="0.01">
+                        {% for error in form.margem_vertical_mm.errors %}<p class="field-error" id="id_margem_vertical_mm_error">{{ error }}</p>{% endfor %}
+                    </div>
+                    <div class="form-group label-template-active-field">
+                        <div class="custom-control custom-checkbox">
+                            <input id="id_ativo" class="custom-control-input" type="checkbox" name="ativo" {% if form.ativo.value %}checked{% endif %}>
+                            <label class="custom-control-label" for="id_ativo">Modelo ativo</label>
+                        </div>
+                        {% for error in form.ativo.errors %}<p class="field-error" id="id_ativo_error">{{ error }}</p>{% endfor %}
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn btn-success" type="submit">Salvar modelo</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="surface-section" aria-labelledby="label-template-list-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="label-template-list-heading">Modelos cadastrados</h2>
+                    <p class="section-help">
+                        {{ modelos|length }}
+                        {% if modelos|length == 1 %}modelo disponível{% else %}modelos disponíveis{% endif %}.
+                    </p>
+                </div>
+            </div>
+
+            {% if modelos %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped label-template-table">
+                        <caption class="sr-only">Modelos de etiqueta cadastrados</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Nome</th>
+                                <th scope="col">Dimensões</th>
+                                <th scope="col">Margens</th>
+                                <th scope="col">Espaçamento</th>
+                                <th scope="col">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for modelo in modelos %}
+                                <tr>
+                                    <th scope="row">{{ modelo.nome }}</th>
+                                    <td>{{ modelo.largura_mm|floatformat:2 }} × {{ modelo.altura_mm|floatformat:2 }} mm</td>
+                                    <td>{{ modelo.margem_horizontal_mm|floatformat:2 }} × {{ modelo.margem_vertical_mm|floatformat:2 }} mm</td>
+                                    <td>{{ modelo.espacamento_mm|floatformat:2 }} mm</td>
+                                    <td>
+                                        {% if modelo.ativo %}
+                                            <span class="label-template-status label-template-status-active">Ativo</span>
+                                        {% else %}
+                                            <span class="label-template-status">Inativo</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state" role="status">
+                    <strong>Nenhum modelo cadastrado.</strong>
+                    <span>Cadastre um modelo para configurar a impressão térmica.</span>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+{% endblock %}

@@ -46,6 +46,20 @@
                             <div class="card-body">
                                 <h3 class="card-title">{{ produto.nome }}</h3>
                                 <span class="badge badge-info">{{ produto.categoria|default:'Sem categoria' }}</span>
+                                {% if produto.codigo_barras %}
+                                    <div class="product-barcode">Código de barras: {{ produto.codigo_barras }}</div>
+                                {% endif %}
+                                <div class="product-stock-summary">
+                                    <span>Estoque: {{ produto.quantidade|floatformat:2 }}</span>
+                                    {% if produto.quantidade <= 0 %}
+                                        <span class="stock-status stock-status-danger">Sem estoque</span>
+                                    {% elif produto.quantidade <= 5 %}
+                                        <span class="stock-status stock-status-warning">Estoque baixo</span>
+                                    {% else %}
+                                        <span class="stock-status stock-status-success">Disponível</span>
+                                    {% endif %}
+                                </div>
+                                <div class="product-price"><span>Preço de venda</span><strong>R$ {{ produto.preco_venda|floatformat:2 }}</strong></div>
                                 <a href="{% url 'produto' produto.slug %}" class="btn btn-primary card-action">Ver detalhes</a>
                             </div>
                         </article>

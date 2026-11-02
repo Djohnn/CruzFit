@@ -34,7 +34,16 @@
                     </div>
                     <div class="form-group">
                         <label for="product-name">Nome <span aria-hidden="true">*</span></label>
-                        <input id="product-name" class="form-control" type="text" name="nome" value="{{ form_data.nome|default:'' }}" required autocomplete="off">
+                        <input id="product-name" class="form-control" type="text" name="nome" value="{{ form_data.nome|default:'' }}" required autocomplete="on">
+                    </div>
+                    <div class="form-group form-grid-wide barcode-field">
+                        <label for="product-barcode">Código de barras (EAN-13)</label>
+                        <div class="barcode-input-control">
+                            <input id="product-barcode" class="form-control" type="text" name="codigo_barras" value="{{ form_data.codigo_barras|default:'' }}" inputmode="numeric" autocomplete="off" maxlength="17" aria-describedby="product-barcode-help barcode-feedback">
+                            <button id="generate-barcode" class="btn btn-primary barcode-generate-button" type="button" data-generate-url="{% url 'gerar_codigo_barras' %}" aria-controls="product-barcode">Gerar código</button>
+                        </div>
+                        <small id="product-barcode-help" class="form-text section-help barcode-help">Informe 13 dígitos, com espaços ou hífens se preferir.</small>
+                        <p id="barcode-feedback" class="barcode-feedback" role="status" aria-live="polite" hidden></p>
                     </div>
                     <div class="form-group category-field">
                         <label for="product-category">Categoria</label>
@@ -69,15 +78,15 @@
                     </div>
                     <div class="form-group">
                         <label for="product-model">Modelo</label>
-                        <input id="product-model" class="form-control" type="text" name="modelo" value="{{ form_data.modelo|default:'' }}" maxlength="80" autocomplete="off">
+                        <input id="product-model" class="form-control" type="text" name="modelo" value="{{ form_data.modelo|default:'' }}" maxlength="80" autocomplete="on">
                     </div>
                     <div class="form-group">
                         <label for="product-color">Cor</label>
-                        <input id="product-color" class="form-control" type="text" name="cor" value="{{ form_data.cor|default:'' }}" maxlength="40" autocomplete="off">
+                        <input id="product-color" class="form-control" type="text" name="cor" value="{{ form_data.cor|default:'' }}" maxlength="40" autocomplete="on">
                     </div>
                     <div class="form-group">
                         <label for="product-fabric">Tecido</label>
-                        <input id="product-fabric" class="form-control" type="text" name="tecido" value="{{ form_data.tecido|default:'' }}" maxlength="80" autocomplete="off">
+                        <input id="product-fabric" class="form-control" type="text" name="tecido" value="{{ form_data.tecido|default:'' }}" maxlength="80" autocomplete="on">
                     </div>
                     <div class="form-grid-divider" role="presentation">Estoque e valores</div>
                     <div class="form-group">
@@ -132,6 +141,61 @@
                 const categorySelect = document.getElementById('product-category');
                 const categoryModal = document.getElementById('category-modal');
                 const feedback = document.getElementById('category-feedback');
+                const barcodeInput = document.getElementById('product-barcode');
+                const barcodeButton = document.getElementById('generate-barcode');
+                const barcodeFeedback = document.getElementById('barcode-feedback');
+
+                if (barcodeInput && barcodeButton && barcodeFeedback) {
+                    const showBarcodeFeedback = function (message, className) {
+                        barcodeFeedback.className = className;
+                        barcodeFeedback.textContent = message;
+                        barcodeFeedback.hidden = false;
+                    };
+
+                    barcodeButton.addEventListener('click', async function () {
+                        barcodeButton.disabled = true;
+                        barcodeButton.setAttribute('aria-busy', 'true');
+                        showBarcodeFeedback('Gerando código...', 'barcode-feedback');
+
+                        try {
+                            const response = await fetch(barcodeButton.dataset.generateUrl, {
+                                method: 'GET',
+                                headers: {'Accept': 'application/json'},
+                            });
+                            let data = {};
+                            try {
+                                data = await response.json();
+                            } catch (error) {
+                                data = {};
+                            }
+
+                            if (!response.ok) {
+                                throw new Error(data.error || 'Não foi possível gerar o código.');
+                            }
+                            if (
+                                typeof data.codigo_barras !== 'string'
+                                || !/^\d{13}$/.test(data.codigo_barras)
+                            ) {
+                                throw new Error('O servidor retornou um código inválido.');
+                            }
+
+                            barcodeInput.value = data.codigo_barras;
+                            showBarcodeFeedback(
+                                'Código gerado. Confirme os dados antes de cadastrar.',
+                                'barcode-feedback barcode-feedback-success',
+                            );
+                            barcodeInput.focus();
+                        } catch (error) {
+                            showBarcodeFeedback(
+                                error.message || 'Não foi possível gerar o código.',
+                                'alert alert-danger barcode-feedback',
+                            );
+                        } finally {
+                            barcodeButton.disabled = false;
+                            barcodeButton.removeAttribute('aria-busy');
+                        }
+                    });
+                }
 
                 if (!categoryForm || !categorySelect || !categoryModal || !feedback) {
                     return;

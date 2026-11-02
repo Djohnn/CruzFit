@@ -1,5 +1,5 @@
-from atexit import register
 from django import template
+
 from estoque.models import Imagem
 
 register = template.Library()

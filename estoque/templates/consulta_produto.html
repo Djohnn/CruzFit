@@ -79,6 +79,9 @@
                             <div class="card-body">
                                 <h3 class="card-title">{{ produto.nome }}</h3>
                                 <span class="badge badge-info">{{ produto.categoria|default:'Sem categoria' }}</span>
+                                {% if produto.codigo_barras %}
+                                    <div class="product-barcode">Código de barras: {{ produto.codigo_barras }}</div>
+                                {% endif %}
                                 <a href="{% url 'produto' produto.slug %}" class="btn btn-primary card-action">Ver detalhes</a>
                             </div>
                         </article>

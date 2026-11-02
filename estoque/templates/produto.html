@@ -29,27 +29,58 @@
                 <div class="detail-fields">
                     <div class="detail-field">
                         <label for="detail-product-name">Nome</label>
-                        <input id="detail-product-name" class="form-control" type="text" value="{{ produto.nome }}" readonly>
+                        <output id="detail-product-name" class="detail-value readonly" data-readonly="true">{{ produto.nome }}</output>
                     </div>
                     <div class="detail-field">
                         <label for="detail-product-category">Categoria</label>
-                        <input id="detail-product-category" class="form-control" type="text" value="{{ produto.categoria|default:'Sem categoria' }}" readonly>
+                        <output id="detail-product-category" class="detail-value readonly" data-readonly="true">{{ produto.categoria|default:'Sem categoria' }}</output>
+                    </div>
+                    {% if produto.codigo_barras %}
+                        <div class="detail-field">
+                            <label for="detail-product-barcode">Código de barras</label>
+                            <output id="detail-product-barcode" class="detail-value readonly" data-readonly="true">{{ produto.codigo_barras }}</output>
+                        </div>
+                    {% endif %}
+                    <div class="detail-field">
+                        <label for="detail-product-gender">Gênero</label>
+                        <output id="detail-product-gender" class="detail-value readonly" data-readonly="true">{{ produto.get_genero_display|default:'Não informado' }}</output>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-size">Tamanho</label>
+                        <output id="detail-product-size" class="detail-value readonly" data-readonly="true">{{ produto.get_tamanho_display|default:'Não informado' }}</output>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-model">Modelo</label>
+                        <output id="detail-product-model" class="detail-value readonly" data-readonly="true">{{ produto.modelo|default:'Não informado' }}</output>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-color">Cor</label>
+                        <output id="detail-product-color" class="detail-value readonly" data-readonly="true">{{ produto.cor|default:'Não informado' }}</output>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-fabric">Tecido</label>
+                        <output id="detail-product-fabric" class="detail-value readonly" data-readonly="true">{{ produto.tecido|default:'Não informado' }}</output>
                     </div>
                     <div class="detail-field">
                         <label for="detail-product-quantity">Estoque</label>
-                        <input id="detail-product-quantity" class="form-control" type="text" value="{{ produto.quantidade|floatformat:2 }}" readonly>
+                        <output id="detail-product-quantity" class="detail-value readonly" data-readonly="true">{{ produto.quantidade|floatformat:2 }}</output>
                     </div>
                     <div class="detail-field">
                         <label for="detail-product-cost">Preço de compra</label>
-                        <input id="detail-product-cost" class="form-control" type="text" value="R$ {{ produto.preco_compra|floatformat:2 }}" readonly>
+                        <output id="detail-product-cost" class="detail-value readonly" data-readonly="true">R$ {{ produto.preco_compra|floatformat:2 }}</output>
                     </div>
                     <div class="detail-field">
                         <label for="detail-product-price">Preço de venda</label>
-                        <input id="detail-product-price" class="form-control" type="text" value="R$ {{ produto.preco_venda|floatformat:2 }}" readonly>
+                        <output id="detail-product-price" class="detail-value readonly" data-readonly="true">R$ {{ produto.preco_venda|floatformat:2 }}</output>
                     </div>
                 </div>
             </div>
-            <p class="section-help">Esta tela é somente leitura. As alterações continuam sendo feitas pelo cadastro de produtos.</p>
+            <div class="form-actions product-detail-actions">
+                {% if produto.codigo_barras %}
+                    <a href="{% url 'imprimir_etiquetas' produto.slug %}" class="btn btn-primary">Imprimir etiquetas</a>
+                {% endif %}
+                <p class="section-help">Esta tela é somente leitura. As alterações continuam sendo feitas pelo cadastro de produtos.</p>
+            </div>
         </section>
     </main>
 {% endblock %}

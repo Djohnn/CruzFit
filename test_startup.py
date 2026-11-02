@@ -5,13 +5,12 @@ from pathlib import Path
 
 from django.apps import apps
 from django.contrib.messages import get_messages
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.template.loader import get_template
 from django.test import TestCase, override_settings
 
 from estoque.models import Categoria, Produto
 from usuarios.models import Users
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -55,7 +54,7 @@ class BrandAndLoginContractTests(unittest.TestCase):
         self.assertIn("Entrar no Cruz Fit", source)
         self.assertIn('for="login-name"', source)
         self.assertIn('id="login-name"', source)
-        self.assertIn('name="nome"', source)
+        self.assertIn('name="identificador"', source)
         self.assertIn('autocomplete="username"', source)
         self.assertIn('autocomplete="current-password"', source)
         self.assertNotIn('type="email"', source)
@@ -157,6 +156,8 @@ class RemediationRegressionTests(TestCase):
             first_name="Gerente",
             password="Teste@123",
             cargo="G",
+            is_staff=True,
+            is_superuser=True,
         )
         self.category = Categoria.objects.create(titulo="Ferramentas")
         self.client.handler.raise_request_exception = False
@@ -171,7 +172,7 @@ class RemediationRegressionTests(TestCase):
     def test_invalid_login_redirects_with_inline_error_and_preserves_name(self):
         response = self.client.post(
             "/auth/login/",
-            {"nome": "Tentativa", "senha": "errada"},
+            {"identificador": "Tentativa", "senha": "errada"},
         )
 
         self.assertEqual(response.status_code, 302)
@@ -185,7 +186,7 @@ class RemediationRegressionTests(TestCase):
     def test_valid_login_redirects_to_home_page(self):
         response = self.client.post(
             "/auth/login/",
-            {"nome": "Gerente", "senha": "Teste@123"},
+            {"identificador": self.manager.username, "senha": "Teste@123"},
         )
 
         self.assertEqual(response.status_code, 302)
@@ -202,6 +203,22 @@ class RemediationRegressionTests(TestCase):
         self.assertEqual(account.cargo, "G")
         self.assertEqual(account.email, "")
         self.assertTrue(account.check_password("Senha@123"))
+
+    def test_first_account_command_rejects_duplicate_manager_name(self):
+        call_command(
+            "criar_conta_cruz_fit",
+            nome="Conta Duplicada",
+            senha="Senha@123",
+        )
+
+        with self.assertRaises(CommandError):
+            call_command(
+                "criar_conta_cruz_fit",
+                nome="Conta Duplicada",
+                senha="OutraSenha@123",
+            )
+
+        self.assertEqual(Users.objects.filter(first_name="Conta Duplicada").count(), 1)
 
     def test_authenticated_home_renders_the_approved_action_cards(self):
         response = self.client.get("/")
@@ -248,6 +265,7 @@ class RemediationRegressionTests(TestCase):
             {
                 "produto": [str(first_product.pk), str(second_product.pk)],
                 "quantidade": ["2", "1"],
+                "chave_idempotencia": "startup-outflow-success",
             },
         )
 
@@ -283,6 +301,7 @@ class RemediationRegressionTests(TestCase):
             {
                 "produto": [str(first_product.pk), str(second_product.pk)],
                 "quantidade": ["2", "2"],
+                "chave_idempotencia": "startup-outflow-insufficient",
             },
         )
 
@@ -335,6 +354,7 @@ class RemediationRegressionTests(TestCase):
                 "quantidade": ["2", "1"],
                 "motivo": "COMPRA",
                 "observacao": "Reposição da coleção",
+                "chave_idempotencia": "startup-entry-success",
             },
         )
 
@@ -366,6 +386,7 @@ class RemediationRegressionTests(TestCase):
                 "produto": [str(product.pk)],
                 "quantidade": ["0"],
                 "motivo": "COMPRA",
+                "chave_idempotencia": "startup-entry-invalid",
             },
         )
 

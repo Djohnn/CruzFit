@@ -1,35 +1,103 @@
-from django.shortcuts import render, redirect
-from django.db import transaction
-from django.http import HttpResponseNotAllowed, HttpResponseNotFound, JsonResponse
-from django.template.defaultfilters import slugify
-from PIL import Image, ImageDraw, UnidentifiedImageError
+import uuid
 from datetime import date
+from decimal import Decimal, InvalidOperation
+from functools import wraps
 from io import BytesIO
-from django.core.files.uploadedfile import InMemoryUploadedFile
-import sys
-from django.urls import reverse
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from rolepermissions.decorators  import has_permission_decorator
-from math import isfinite
+from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.http import HttpResponseForbidden, HttpResponseNotFound, JsonResponse
+from django.shortcuts import redirect, render
+from django.template.defaultfilters import slugify
+from django.urls import reverse
+from django.views.decorators.http import require_GET, require_http_methods
+from PIL import Image, ImageDraw, UnidentifiedImageError
+from rolepermissions.decorators import has_permission_decorator
 
+from .barcodes import generate_ean13, render_ean13_svg
+from .forms import ModeloEtiquetaForm, ProdutoForm
 from .models import (
     BaixaEstoque,
     Categoria,
     EntradaEstoque,
     Imagem,
-    ItemBaixaEstoque,
-    ItemEntradaEstoque,
+    ModeloEtiqueta,
     Produto,
 )
+from .services import (
+    StockOperationError,
+)
+from .services import (
+    registrar_baixa as registrar_baixa_service,
+)
+from .services import (
+    registrar_entrada as registrar_entrada_service,
+)
+
+MAX_PRODUCT_IMAGE_COUNT = 5
+MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_PRODUCT_IMAGE_DIMENSION = 4000
+ALLOWED_PRODUCT_IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP'}
+
+
+def gerente_required(view_func):
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect(f'{reverse("login")}?next={request.path}')
+        if not (request.user.is_superuser or request.user.cargo == 'G'):
+            return HttpResponseForbidden('Apenas o gerente pode administrar etiquetas.')
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
+def _validate_product_images(images):
+    if len(images) > MAX_PRODUCT_IMAGE_COUNT:
+        raise ValueError(f'Envie no máximo {MAX_PRODUCT_IMAGE_COUNT} imagens por produto.')
+
+    for imagem in images:
+        if imagem.size > MAX_PRODUCT_IMAGE_BYTES:
+            raise ValueError('Cada imagem deve ter no máximo 5 MB.')
+        try:
+            with Image.open(imagem) as opened:
+                if opened.format not in ALLOWED_PRODUCT_IMAGE_FORMATS:
+                    raise ValueError('Envie imagens JPEG, PNG ou WEBP.')
+                width, height = opened.size
+                if (
+                    width < 1
+                    or height < 1
+                    or width > MAX_PRODUCT_IMAGE_DIMENSION
+                    or height > MAX_PRODUCT_IMAGE_DIMENSION
+                ):
+                    raise ValueError('As imagens devem ter no máximo 4000x4000 pixels.')
+                opened.verify()
+        except ValueError:
+            raise
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+            raise ValueError('Envie apenas imagens válidas.') from error
+        finally:
+            imagem.seek(0)
+
+
+def _existing_barcode_codes():
+    return Produto.objects.values_list('codigo_barras', flat=True).exclude(
+        codigo_barras__isnull=True
+    ).exclude(codigo_barras='')
 
 
 
+@login_required(login_url='login')
 @has_permission_decorator('cadastrar_produtos')
+@require_http_methods(['GET', 'POST'])
 def add_produto(request):
     if request.method == "GET":
         categorias = Categoria.objects.all()
         form_data = request.session.pop('produto_form_data', {})
+        if not form_data.get('codigo_barras'):
+            form_data['codigo_barras'] = generate_ean13(_existing_barcode_codes())
         return render(
             request,
             'add_produto.html',
@@ -76,6 +144,7 @@ def add_produto(request):
             'quantidade': request.POST.get('quantidade') or '',
             'preco_compra': request.POST.get('preco_compra') or '',
             'preco_venda': request.POST.get('preco_venda') or '',
+            'codigo_barras': (request.POST.get('codigo_barras') or '').strip(),
         }
         nome = form_data['nome']
         categoria = form_data['categoria']
@@ -94,12 +163,19 @@ def add_produto(request):
             return redirect(reverse('add_produto'))
 
         try:
-            quantidade = float(quantidade)
-            preco_compra = float(preco_compra)
-            preco_venda = float(preco_venda)
-            if quantidade < 0 or preco_compra < 0 or preco_venda < 0:
+            quantidade = Decimal(str(quantidade))
+            preco_compra = Decimal(str(preco_compra))
+            preco_venda = Decimal(str(preco_venda))
+            if (
+                not quantidade.is_finite()
+                or not preco_compra.is_finite()
+                or not preco_venda.is_finite()
+                or quantidade < 0
+                or preco_compra < 0
+                or preco_venda < 0
+            ):
                 raise ValueError
-        except (TypeError, ValueError):
+        except (InvalidOperation, TypeError, ValueError):
             request.session['produto_form_data'] = form_data
             messages.error(request, 'Use valores numéricos não negativos no produto.')
             return redirect(reverse('add_produto'))
@@ -121,16 +197,31 @@ def add_produto(request):
             messages.error(request, 'Já existe um produto com esse nome.')
             return redirect(reverse('add_produto'))
 
+        produto_form = ProdutoForm(data=form_data)
+        if not produto_form.is_valid():
+            request.session['produto_form_data'] = form_data
+            codigo_errors = produto_form.errors.get('codigo_barras')
+            if codigo_errors:
+                messages.error(request, f'Código de barras: {codigo_errors[0]}')
+            else:
+                field_name, field_errors = next(iter(produto_form.errors.items()))
+                field = produto_form.fields.get(field_name)
+                field_label = field.label if field else 'Produto'
+                messages.error(request, f'{field_label}: {field_errors[0]}')
+            return redirect(reverse('add_produto'))
+
+        codigo_barras = produto_form.cleaned_data.get('codigo_barras')
+
         imagens = request.FILES.getlist('imagens')
-        for imagem in imagens:
-            try:
-                Image.open(imagem).verify()
-            except (UnidentifiedImageError, OSError):
-                request.session['produto_form_data'] = form_data
-                messages.error(request, 'Envie apenas imagens válidas.')
-                return redirect(reverse('add_produto'))
-            finally:
-                imagem.seek(0)
+        try:
+            _validate_product_images(imagens)
+        except ValueError as error:
+            request.session['produto_form_data'] = form_data
+            messages.error(request, str(error))
+            return redirect(reverse('add_produto'))
+
+        if not codigo_barras:
+            codigo_barras = generate_ean13(_existing_barcode_codes())
 
         produto = Produto(nome=nome,
                           categoria_id=categoria or None,
@@ -141,14 +232,20 @@ def add_produto(request):
                           genero=genero,
                           quantidade=quantidade,
                           preco_compra=preco_compra,
-                          preco_venda=preco_venda)
-        produto.save()
+                           preco_venda=preco_venda,
+                           codigo_barras=codigo_barras)
+        try:
+            produto.save()
+        except ValidationError as error:
+            request.session['produto_form_data'] = form_data
+            messages.error(request, str(error))
+            return redirect(reverse('add_produto'))
         
         for f in imagens:
             name = f'{date.today()}-{produto.id}.jpg'
 
-            img = Image.open(f)
-            img = img.convert('RGB')
+            with Image.open(f) as opened:
+                img = opened.convert('RGB')
             img = img.resize((300, 300))
             draw = ImageDraw.Draw(img)
             draw.text((20, 280), f"CRUZ FIT {date.today()}", (255, 255, 255))
@@ -156,7 +253,7 @@ def add_produto(request):
             img.save(output, format="JPEG", quality=100)
             output.seek(0)
             img_final = InMemoryUploadedFile(
-                output, 'ImageField', name, 'image/jpeg', sys.getsizeof(output), None
+                output, 'ImageField', name, 'image/jpeg', output.getbuffer().nbytes, None
             )
 
             img_dj = Imagem(imagem=img_final, produto=produto)
@@ -166,6 +263,81 @@ def add_produto(request):
 
 
 @login_required(login_url='login')
+@has_permission_decorator('cadastrar_produtos')
+@require_GET
+def gerar_codigo_barras(request):
+    code = generate_ean13(_existing_barcode_codes())
+    return JsonResponse({'codigo_barras': code})
+
+
+@login_required(login_url='login')
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def modelos_etiqueta(request):
+    form = ModeloEtiquetaForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Modelo de etiqueta salvo com sucesso.')
+        return redirect('modelos_etiqueta')
+
+    return render(
+        request,
+        'modelos_etiqueta.html',
+        {
+            'form': form,
+            'modelos': ModeloEtiqueta.objects.all(),
+        },
+    )
+
+
+@login_required(login_url='login')
+@require_GET
+def imprimir_etiquetas(request, slug):
+    try:
+        produto = Produto.objects.select_related('categoria').get(slug=slug)
+    except Produto.DoesNotExist:
+        return HttpResponseNotFound('Produto não encontrado.')
+
+    modelos = ModeloEtiqueta.objects.filter(ativo=True)
+    modelo_param = (request.GET.get('modelo') or '').strip()
+    if modelo_param:
+        try:
+            modelo = modelos.filter(pk=int(modelo_param)).first()
+        except (TypeError, ValueError):
+            modelo = None
+    else:
+        modelo = modelos.first()
+
+    quantidade_param = request.GET.get('quantidade')
+    quantidade = None
+    if quantidade_param not in (None, ''):
+        try:
+            quantidade = max(1, min(500, int(quantidade_param)))
+        except (TypeError, ValueError):
+            quantidade = None
+
+    etiquetas = []
+    if produto.codigo_barras and modelo and quantidade:
+        etiquetas = list(range(1, quantidade + 1))
+
+    return render(
+        request,
+        'imprimir_etiquetas.html',
+        {
+            'produto': produto,
+            'modelos': modelos,
+            'modelo': modelo,
+            'quantidade': quantidade,
+            'etiquetas': etiquetas,
+            'barcode_svg': render_ean13_svg(produto.codigo_barras)
+            if produto.codigo_barras
+            else '',
+        },
+    )
+
+
+@login_required(login_url='login')
+@require_GET
 def estoque(request):
     produtos = Produto.objects.select_related('categoria').all()
     return render(
@@ -176,57 +348,26 @@ def estoque(request):
 
 
 @login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
 def registrar_baixa(request):
     if request.method == 'POST':
-        produto_ids = request.POST.getlist('produto')
-        quantidades = request.POST.getlist('quantidade')
-
         try:
-            if not produto_ids or len(produto_ids) != len(quantidades):
-                raise ValueError('Adicione pelo menos um produto à baixa.')
-
-            linhas = []
-            ids_selecionados = set()
-            for produto_id, quantidade_bruta in zip(produto_ids, quantidades):
-                produto_id = int(produto_id)
-                quantidade = float(quantidade_bruta)
-                if quantidade <= 0 or not isfinite(quantidade):
-                    raise ValueError('Informe quantidades maiores que zero.')
-                if produto_id in ids_selecionados:
-                    raise ValueError('Selecione cada produto apenas uma vez.')
-                ids_selecionados.add(produto_id)
-                linhas.append((produto_id, quantidade))
-
-            with transaction.atomic():
-                produtos = {
-                    produto.pk: produto
-                    for produto in Produto.objects.select_for_update().filter(
-                        pk__in=ids_selecionados,
-                    )
-                }
-                if len(produtos) != len(ids_selecionados):
-                    raise ValueError('Um dos produtos selecionados não existe.')
-
-                for produto_id, quantidade in linhas:
-                    produto = produtos[produto_id]
-                    if quantidade > produto.quantidade:
-                        raise ValueError(f'Estoque insuficiente para {produto.nome}.')
-
-                baixa = BaixaEstoque.objects.create()
-                for produto_id, quantidade in linhas:
-                    produto = produtos[produto_id]
-                    produto.quantidade -= quantidade
-                    produto.save(update_fields=('quantidade',))
-                    ItemBaixaEstoque.objects.create(
-                        baixa=baixa,
-                        produto=produto,
-                        quantidade=quantidade,
-                    )
-        except (TypeError, ValueError, OverflowError) as error:
+            result = registrar_baixa_service(
+                actor=request.user,
+                product_ids=request.POST.getlist('produto'),
+                quantities=request.POST.getlist('quantidade'),
+                reason=(request.POST.get('motivo') or 'VENDA').strip(),
+                observation=request.POST.get('observacao') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except StockOperationError as error:
             messages.error(request, str(error))
             return redirect('registrar_baixa')
 
-        messages.success(request, 'Baixa registrada com sucesso.')
+        if result.created:
+            messages.success(request, 'Baixa registrada com sucesso.')
+        else:
+            messages.info(request, 'Essa baixa já foi registrada.')
         return redirect('registrar_baixa')
 
     return render(
@@ -234,6 +375,8 @@ def registrar_baixa(request):
         'registrar_baixa.html',
         {
             'produtos': Produto.objects.order_by('nome'),
+            'motivo_choices': BaixaEstoque.MOTIVO_CHOICES,
+            'chave_idempotencia': uuid.uuid4().hex,
             'historico': BaixaEstoque.objects.prefetch_related(
                 'itens__produto',
             )[:30],
@@ -242,59 +385,26 @@ def registrar_baixa(request):
 
 
 @login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
 def registrar_entrada(request):
     if request.method == 'POST':
-        produto_ids = request.POST.getlist('produto')
-        quantidades = request.POST.getlist('quantidade')
-        motivo = request.POST.get('motivo') or ''
-        observacao = (request.POST.get('observacao') or '').strip()
-
         try:
-            if not produto_ids or len(produto_ids) != len(quantidades):
-                raise ValueError('Adicione pelo menos um produto à entrada.')
-            if motivo not in dict(EntradaEstoque.MOTIVO_CHOICES):
-                raise ValueError('Selecione um motivo válido para a entrada.')
-
-            linhas = []
-            ids_selecionados = set()
-            for produto_id, quantidade_bruta in zip(produto_ids, quantidades):
-                produto_id = int(produto_id)
-                quantidade = float(quantidade_bruta)
-                if quantidade <= 0 or not isfinite(quantidade):
-                    raise ValueError('Informe quantidades maiores que zero.')
-                if produto_id in ids_selecionados:
-                    raise ValueError('Selecione cada produto apenas uma vez.')
-                ids_selecionados.add(produto_id)
-                linhas.append((produto_id, quantidade))
-
-            with transaction.atomic():
-                produtos = {
-                    produto.pk: produto
-                    for produto in Produto.objects.select_for_update().filter(
-                        pk__in=ids_selecionados,
-                    )
-                }
-                if len(produtos) != len(ids_selecionados):
-                    raise ValueError('Um dos produtos selecionados não existe.')
-
-                entrada = EntradaEstoque.objects.create(
-                    motivo=motivo,
-                    observacao=observacao,
-                )
-                for produto_id, quantidade in linhas:
-                    produto = produtos[produto_id]
-                    produto.quantidade += quantidade
-                    produto.save(update_fields=('quantidade',))
-                    ItemEntradaEstoque.objects.create(
-                        entrada=entrada,
-                        produto=produto,
-                        quantidade=quantidade,
-                    )
-        except (TypeError, ValueError, OverflowError) as error:
+            result = registrar_entrada_service(
+                actor=request.user,
+                product_ids=request.POST.getlist('produto'),
+                quantities=request.POST.getlist('quantidade'),
+                reason=request.POST.get('motivo') or '',
+                observation=request.POST.get('observacao') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except StockOperationError as error:
             messages.error(request, str(error))
             return redirect('registrar_entrada')
 
-        messages.success(request, 'Entrada registrada com sucesso.')
+        if result.created:
+            messages.success(request, 'Entrada registrada com sucesso.')
+        else:
+            messages.info(request, 'Essa entrada já foi registrada.')
         return redirect('registrar_entrada')
 
     return render(
@@ -303,6 +413,7 @@ def registrar_entrada(request):
         {
             'produtos': Produto.objects.order_by('nome'),
             'motivo_choices': EntradaEstoque.MOTIVO_CHOICES,
+            'chave_idempotencia': uuid.uuid4().hex,
             'historico': EntradaEstoque.objects.prefetch_related(
                 'itens__produto',
             )[:30],
@@ -311,6 +422,7 @@ def registrar_entrada(request):
 
 
 @login_required(login_url='login')
+@require_GET
 def consulta_produto(request):
     filtros = {
         'nome': request.GET.get('nome', ''),
@@ -359,13 +471,12 @@ def consulta_produto(request):
     )
 
 
+@login_required(login_url='login')
+@require_GET
 def produto(request, slug):
-    if request.method == "GET":
-        try:
-            produto = Produto.objects.select_related('categoria').get(slug=slug)
-        except Produto.DoesNotExist:
-            return HttpResponseNotFound('Produto não encontrado.')
+    try:
+        produto = Produto.objects.select_related('categoria').get(slug=slug)
+    except Produto.DoesNotExist:
+        return HttpResponseNotFound('Produto não encontrado.')
 
-        return render(request, 'produto.html', {'produto': produto})
-
-    return HttpResponseNotAllowed(['GET'])
+    return render(request, 'produto.html', {'produto': produto})
