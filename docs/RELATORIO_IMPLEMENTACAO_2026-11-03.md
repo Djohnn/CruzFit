@@ -566,3 +566,135 @@ Avisos somente de conversão LF/CRLF em arquivos já modificados.
 ```
 
 Migrações reais, commit, push e publicação continuam pendentes e não foram executados.
+
+## Etapa 7 — uso offline com assets locais
+
+### Status do checkpoint
+
+- [ ] Etapa 7 — PASS técnico, pendente de auditoria independente e aceite de Sol.
+- Revisão examinada: `607124eabc5dca519dd681446dcc16cc9fa8fec4`.
+- Branch: `codex/impeccable-remediation`.
+- Diff não commitado, sem commit, push, merge ou migração real.
+- Banco `db.sqlite3`, mídia `media/` e backups reais não foram usados como fixture nem alterados.
+
+### Entrega e uso
+
+O shell global passou a carregar Bootstrap, jQuery Slim e Bootstrap Bundle a partir de `static/` local. Em uma instalação nova, basta executar as migrações antes do servidor conforme o runbook existente; o `collectstatic` sintético confirmou que os arquivos são encontrados e publicados.
+
+O fluxo operacional continua sendo acessado pelo localhost após login: catálogo/estoque, etiquetas, fornecedores, entradas, baixas, vendas, reversões, histórico, relatórios e comprovante. Nenhum CDN é necessário em runtime. As URLs de origem, versões, licenças MIT e hashes estão documentadas em `docs/DEPENDENCIAS_OFFLINE.md`; elas servem apenas como referência de manutenção e não são carregadas pelo navegador.
+
+### Assets versionados localmente
+
+| Arquivo | Versão/licença | SHA-256 |
+|---|---|---|
+| `templates/static/vendor/bootstrap/css/bootstrap.min.css` | Bootstrap 4.6.2 / MIT | `F886516F3D41E9E7BD994C7F7A39A89CAFAE9483F90396CB0DDEAFE8D1EA5E72` |
+| `templates/static/vendor/jquery/jquery.slim.min.js` | jQuery 3.5.1 / MIT | `E3E5F35D586C0E6A9A9D7187687BE087580C40A5F8D0E52F0C4053BBC25C98DB` |
+| `templates/static/vendor/bootstrap/js/bootstrap.bundle.min.js` | Bootstrap 4.6.2 / MIT | `19126B874A32753D42C12DFA6C17892BFD93820A5A5100BA1B34DA4D07599B49` |
+
+### Testes derivados em Given/When/Then
+
+- Given rede externa bloqueada; When renderizar o shell; Then todos os links de CSS/JS usam `{% static %}` local.
+- Given uma instalação local; When procurar os três assets obrigatórios; Then cada arquivo existe, tem conteúdo não vazio e não contém importação executável remota.
+- Given um banco sintético com compra, baixa, venda, devolução, cancelamento, correção e devolução a fornecedor; When navegar no localhost; Then todas as telas autenticadas respondem e exibem os dados preservados.
+
+### Evidência integrada sintética
+
+Ambiente descartável: `C:\desenvolvimento\Contruct\qa-etapa7-20261103\qa.sqlite3`, `media\`, `staticfiles\` e `tmp\`. O banco foi migrado até `estoque.0017` e populado com usuário `qa.etapa7`, fornecedor e três produtos. O seed registrou compra, devolução ao fornecedor, baixa avulsa, correção, venda com dois itens, devolução parcial, segunda venda e cancelamento integral.
+
+Saldos após o seed e as reversões:
+
+```text
+Produto 1 — Camiseta Offline QA: 11.00
+Produto 2 — Legging Offline QA: 6.00
+Produto 3 — Top Offline QA: 6.00
+```
+
+O servidor QA escutou somente em `127.0.0.1:15007`. Com bloqueio seletivo de HTTPS e dos domínios CDN, o navegador autenticou e percorreu `/`, `/estoque/`, `/estoque/etiquetas/modelos/`, `/estoque/fornecedores/`, `/estoque/entrada/`, `/estoque/baixa/`, `/estoque/vendas/`, `/estoque/movimentacoes/`, os relatórios de saldo/ranking/movimentação, o comprovante e as três telas de reversão.
+
+Capturas descartáveis:
+
+- Desktop: `C:\desenvolvimento\Contruct\qa-etapa7-20261103\home-desktop.png`, `estoque-desktop.png`, `relatorio-ranking-desktop.png`, `comprovante-desktop.png`.
+- Mobile: `C:\desenvolvimento\Contruct\qa-etapa7-20261103\home-mobile.png`, `estoque-mobile.png`, `relatorio-movimentacoes-mobile.png`, `comprovante-mobile.png`.
+
+### Verificação de rede — output bruto
+
+```text
+agent-browser --session cruzfit-offline network requests --clear
+agent-browser --session cruzfit-offline open http://127.0.0.1:15007/
+agent-browser --session cruzfit-offline open http://127.0.0.1:15007/estoque/
+agent-browser --session cruzfit-offline open http://127.0.0.1:15007/estoque/relatorios/?relatorio=ranking
+agent-browser --session cruzfit-offline open http://127.0.0.1:15007/estoque/vendas/1/comprovante/
+
+ALL REQUESTS: somente GET/POST para http://127.0.0.1:15007 e
+/static/vendor/bootstrap/css/bootstrap.min.css,
+/static/vendor/jquery/jquery.slim.min.js,
+/static/vendor/bootstrap/js/bootstrap.bundle.min.js e estáticos locais.
+
+EXTERNAL URL FILTER
+No requests captured
+
+CDN FILTER
+No requests captured
+EXIT_CODE=0
+```
+
+O modo offline global do navegador também foi tentado, mas bloqueou o próprio localhost após o POST de login; por isso a evidência final usa bloqueio seletivo dos esquemas/domínios externos, mantendo localhost disponível, conforme o critério do PRD.
+
+### Verificação — output bruto, duração e código
+
+```text
+Command: venv\Scripts\python.exe manage.py test estoque.test_offline estoque.test_vendas estoque.test_reversoes estoque.test_relatorios -v 2
+Found 40 test(s).
+Ran 40 tests in 1.204s
+OK
+Duration: 4.078s | EXIT_CODE=0
+
+Command: venv\Scripts\python.exe manage.py test -v 2
+Found 256 test(s).
+Ran 256 tests in 77.397s
+OK
+Destroying test database for alias 'default' (...)
+Duration: 77.397s | EXIT_CODE=0
+
+Command: venv\Scripts\python.exe manage.py check
+System check identified no issues (0 silenced).
+Duration: 1.958s | EXIT_CODE=0
+
+Command: venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+No changes detected
+Duration: 2.340s | EXIT_CODE=0
+
+Command: venv\Scripts\ruff.exe check .
+All checks passed!
+Duration: 0.573s | EXIT_CODE=0
+
+Command: venv\Scripts\mypy.exe .
+Success: no issues found in 50 source files
+Duration: 1.956s | EXIT_CODE=0
+
+Command: git diff --check
+(sem saída)
+Duration: 0.356s | EXIT_CODE=0
+```
+
+### Arquivos alterados nesta etapa
+
+- `templates/base.html:10,58-59` — substituição das três dependências CDN por referências ao static local.
+- `templates/static/vendor/bootstrap/css/bootstrap.min.css` — asset local Bootstrap 4.6.2.
+- `templates/static/vendor/jquery/jquery.slim.min.js` — asset local jQuery Slim 3.5.1.
+- `templates/static/vendor/bootstrap/js/bootstrap.bundle.min.js` — asset local Bootstrap Bundle 4.6.2.
+- `estoque/test_offline.py:1-53` — regressões de shell local, inventário de assets e ausência de imports remotos executáveis.
+- `docs/DEPENDENCIAS_OFFLINE.md:1-25` — versões, licenças, origens e hashes para manutenção offline.
+
+### Critérios e pendências
+
+- PASS técnico — assets locais encontrados e coletados.
+- PASS técnico — login e fluxos autenticados operam com localhost enquanto chamadas HTTPS/CDN são bloqueadas.
+- PASS técnico — catálogo, etiquetas, fornecedores, entrada, baixa, vendas, reversões, relatórios e comprovante foram verificados com dados sintéticos.
+- PASS técnico — suíte Django e gates estáticos concluídos com código 0.
+- PENDENTE — auditoria independente e aceite formal de Sol.
+- PENDENTE operacional — backup externo, migrações `0013`–`0017` e ativação no banco real continuam sob responsabilidade de Sol na janela final.
+
+## Estado real após a Etapa 7
+
+Não houve alteração, migração, backup ou restauração do banco real. A mídia real e a pasta `backups/` permaneceram fora do ensaio. A verificação de rede, banco, mídia, capturas e `collectstatic` usou somente o ambiente descartável `qa-etapa7-20261103`. O checkout permanece sem commit/push/merge.
