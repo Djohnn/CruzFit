@@ -7,116 +7,173 @@
 
 {% endblock  %}
 {% block 'body' %}
-    <div class="container">
+    <main class="container inventory-page">
+        <header class="page-heading">
+            <h1>Cadastrar produto</h1>
+            <p>Cadastre produtos, imagens, preços e quantidade inicial no Cruz Fit.</p>
+        </header>
+
         {% if messages %}
-            <br>
-            {% for message in messages%}
-                <div class="alert {{message.tags}}">{{message}}</div>
+            <div class="feedback-stack" aria-live="polite">
+            {% for message in messages %}
+                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
             {% endfor%}
-        {% endif %}
-        <form action="{% url "add_produto" %}" method="POST" enctype="multipart/form-data">{% csrf_token %}
-            <br>
-            <label>Imagens:</label>
-            <input class="form-control" type="file" name="imagens" multiple>
-
-            <br>
-            <br>
-            
-            <label>Nome:</label>
-            <input  class="form-control" type="text" name="nome">
-
-            <br>
-            <br>
-
-            <label>Selecione a categoria do produto</label>
-            <select  class="form-control" name="categoria">
-                {% for categoria in categorias %}
-                    <option value="{{categoria.id}}">{{categoria.titulo}}</option>
-                {% endfor %}
-            </select>
-
-            <br>
-            <br>
-
-            <label>Estoque inicial:</label>
-            <input class="form-control" type="number" name="quantidade">
-
-            <br>
-            <br>
-
-            <label>Preço de compra:</label>
-            <input class="form-control" type="number" name="preco_compra">
-
-            <br>
-            <br>
-
-            <label>Preço de venda:</label>
-            <input class="form-control" type="number" name="preco_venda">
-
-            <br>
-            <br>
-
-            <input class="btn btn-success" type="submit" value="Enviar">
-        </form>
-
-        <hr class="bg-hr">
-        
-        <form action="{% url 'add_produto' %}" method="GET">
-            <div class="row">
-                <div class="col-md">
-                    <input class="form-control" type="text" name="nome" placeholder="Nome...">
-                </div>
-    
-                <div class="col-md">
-                    <select class="form-control" name="categoria">
-                        <option value="">Todas as categorias</option>
-                        {% for categoria in categorias %}
-                            <option value="{{categoria.id}}">{{categoria.titulo}}</option>
-                        {% endfor %}
-                        
-                    </select>
-                </div>
-    
-                <div class="col-md">
-                    <input class="form-control" type="number" name="preco_min" placeholder="Preço mínimo">
-                </div>
-    
-                <div class="col-md">
-                    <input class="form-control" type="number" name="preco_max" placeholder="Preço máximo">
-                </div>
-    
-                <div class="col-md">
-                    <input type="submit" value="Filtrar" class="btn btn-success">
-                    
-                </div>
-                
             </div>
-            
-        </form>
-        <br> 
-        
-        <div class="Listar_produtos">
-            <div class="row">
-                {% for produto in produtos  %}
-                    <div class="col-md">
-                        <div class="bg-card">
-                        {% if produto|get_first_image %}
-                            <img width="100%" class="card-img-top" src="{{produto|get_first_image}}">
-                        {% endif %} 
-                            <div class="card-body">
-                                <h5 class="card-title">{{produto.nome}}</h5>
-                                <span class="badge badge-info">{{produto.categoria}}</span> 
-                                <br><br>                      
-                                <a href="{% url 'produto' produto.slug %}" class="btn btn-primary">Acessar</a>
-                            
-                            </div>
-                            <br>
+        {% endif %}
+
+        <section class="surface-section" aria-labelledby="product-create-heading">
+            <h2 id="product-create-heading">Cadastrar produto</h2>
+            <p class="section-help">Preencha os dados principais. Campos marcados são obrigatórios.</p>
+            <form action="{% url 'add_produto' %}" method="POST" enctype="multipart/form-data" class="operational-form">
+                {% csrf_token %}
+                <div class="form-grid">
+                    <div class="form-group form-grid-wide">
+                        <label for="product-image">Imagens</label>
+                        <input id="product-image" class="form-control" type="file" name="imagens" multiple accept="image/*">
+                        <small class="form-text section-help">Envie imagens JPG, PNG ou WEBP.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-name">Nome <span aria-hidden="true">*</span></label>
+                        <input id="product-name" class="form-control" type="text" name="nome" value="{{ form_data.nome|default:'' }}" required autocomplete="off">
+                    </div>
+                    <div class="form-group category-field">
+                        <label for="product-category">Categoria</label>
+                        <div class="category-select-control">
+                            <select id="product-category" class="form-control" name="categoria">
+                                <option value="">Sem categoria</option>
+                                {% for categoria in categorias %}
+                                    <option value="{{ categoria.id }}" {% if form_data.categoria == categoria.id|stringformat:'s' %}selected{% endif %}>{{ categoria.titulo }}</option>
+                                {% endfor %}
+                            </select>
+                            <button id="open-category" class="btn btn-primary category-add-button" type="button" data-toggle="modal" data-target="#category-modal" aria-label="Cadastrar categoria">+</button>
                         </div>
                     </div>
-                {% endfor %}
+                    <div class="form-group">
+                        <label for="product-gender">Gênero</label>
+                        <select id="product-gender" class="form-control" name="genero">
+                            <option value="">Selecione</option>
+                            {% for value, label in genero_choices %}
+                                <option value="{{ value }}" {% if form_data.genero == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-grid-divider" role="presentation">Características</div>
+                    <div class="form-group">
+                        <label for="product-size">Tamanho</label>
+                        <select id="product-size" class="form-control" name="tamanho">
+                            <option value="">Selecione</option>
+                            {% for value, label in tamanho_choices %}
+                                <option value="{{ value }}" {% if form_data.tamanho == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-model">Modelo</label>
+                        <input id="product-model" class="form-control" type="text" name="modelo" value="{{ form_data.modelo|default:'' }}" maxlength="80" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="product-color">Cor</label>
+                        <input id="product-color" class="form-control" type="text" name="cor" value="{{ form_data.cor|default:'' }}" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="product-fabric">Tecido</label>
+                        <input id="product-fabric" class="form-control" type="text" name="tecido" value="{{ form_data.tecido|default:'' }}" maxlength="80" autocomplete="off">
+                    </div>
+                    <div class="form-grid-divider" role="presentation">Estoque e valores</div>
+                    <div class="form-group">
+                        <label for="product-quantity">Estoque inicial <span aria-hidden="true">*</span></label>
+                        <input id="product-quantity" class="form-control" type="number" name="quantidade" value="{{ form_data.quantidade|default:'' }}" min="0" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-cost">Preço de compra <span aria-hidden="true">*</span></label>
+                        <input id="product-cost" class="form-control" type="number" name="preco_compra" value="{{ form_data.preco_compra|default:'' }}" min="0" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="product-price">Preço de venda <span aria-hidden="true">*</span></label>
+                        <input id="product-price" class="form-control" type="number" name="preco_venda" value="{{ form_data.preco_venda|default:'' }}" min="0" step="0.01" required>
+                    </div>
+                </div>
+                <button class="btn btn-success" type="submit">Cadastrar produto</button>
+            </form>
+        </section>
+
+        <div class="modal fade" id="category-modal" tabindex="-1" role="dialog" aria-labelledby="category-modal-heading" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <p class="eyebrow">Nova categoria</p>
+                            <h2 id="category-modal-heading" class="modal-title">Cadastrar categoria</h2>
+                        </div>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Fechar">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <form id="category-form" action="{% url 'add_produto' %}" method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="acao" value="cadastrar_categoria">
+                        <div class="modal-body">
+                            <div id="category-feedback" class="alert d-none" role="alert" aria-live="polite"></div>
+                            <label for="category-name">Nome da categoria</label>
+                            <input id="category-name" class="form-control" type="text" name="titulo_categoria" maxlength="40" required autocomplete="off" placeholder="Ex.: Higiene e bem-estar">
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-light" data-dismiss="modal">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Salvar categoria</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
-        
-    </div>
+        <script>
+            window.addEventListener('load', function () {
+                const categoryForm = document.getElementById('category-form');
+                const categorySelect = document.getElementById('product-category');
+                const categoryModal = document.getElementById('category-modal');
+                const feedback = document.getElementById('category-feedback');
+
+                if (!categoryForm || !categorySelect || !categoryModal || !feedback) {
+                    return;
+                }
+
+                categoryForm.addEventListener('submit', async function (event) {
+                    event.preventDefault();
+                    const submitButton = categoryForm.querySelector('button[type="submit"]');
+                    submitButton.disabled = true;
+                    feedback.className = 'alert d-none';
+                    feedback.textContent = '';
+
+                    try {
+                        const response = await fetch(categoryForm.action, {
+                            method: 'POST',
+                            body: new FormData(categoryForm),
+                            headers: {'X-Requested-With': 'XMLHttpRequest'},
+                        });
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Não foi possível cadastrar a categoria.');
+                        }
+
+                        const option = new Option(data.titulo, data.id, true, true);
+                        categorySelect.add(option);
+                        categoryForm.reset();
+                        $(categoryModal).modal('hide');
+                    } catch (error) {
+                        feedback.className = 'alert alert-danger';
+                        feedback.textContent = error.message;
+                    } finally {
+                        submitButton.disabled = false;
+                    }
+                });
+
+                $(categoryModal).on('hidden.bs.modal', function () {
+                    feedback.className = 'alert d-none';
+                    feedback.textContent = '';
+                });
+            });
+        </script>
+
+    </main>
 {% endblock %}

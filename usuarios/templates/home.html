@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block 'title' %}Início | Cruz Fit{% endblock %}
+
+{% block 'body' %}
+    <main class="container home-page">
+        <header class="page-heading">
+            <p class="eyebrow">Painel de estoque</p>
+            <h1>Olá, {{ request.user.first_name|default:request.user.username }}.</h1>
+            <p>Escolha uma ação para continuar no Cruz Fit.</p>
+        </header>
+
+        <nav class="home-actions-grid" aria-label="Ações principais do estoque">
+            <a class="home-action-card" href="{% url 'add_produto' %}">
+                <span class="home-action-icon" aria-hidden="true">+</span>
+                <span>
+                    <h2>Cadastrar produto</h2>
+                    <p>Adicione produtos, imagens, preços e quantidade inicial ao estoque.</p>
+                    <span class="home-action-link">Abrir cadastro <span aria-hidden="true">→</span></span>
+                </span>
+            </a>
+
+            <a class="home-action-card" href="{% url 'estoque' %}">
+                <span class="home-action-icon" aria-hidden="true">▦</span>
+                <span>
+                    <h2>Visualizar estoque</h2>
+                    <p>Veja os produtos cadastrados e acesse os detalhes de cada item.</p>
+                    <span class="home-action-link">Ver estoque <span aria-hidden="true">→</span></span>
+                </span>
+            </a>
+
+            <a class="home-action-card" href="{% url 'consulta_produto' %}">
+                <span class="home-action-icon" aria-hidden="true">⌕</span>
+                <span>
+                    <h2>Consultar produto</h2>
+                    <p>Pesquise por nome, categoria ou faixa de preço usando os filtros existentes.</p>
+                    <span class="home-action-link">Consultar agora <span aria-hidden="true">→</span></span>
+                </span>
+            </a>
+
+            <a class="home-action-card" href="{% url 'registrar_baixa' %}">
+                <span class="home-action-icon" aria-hidden="true">−</span>
+                <span>
+                    <h2>Registrar baixa</h2>
+                    <p>Registre um ou vários produtos vendidos e reduza as quantidades do estoque.</p>
+                    <span class="home-action-link">Registrar agora <span aria-hidden="true">→</span></span>
+                </span>
+            </a>
+
+            <a class="home-action-card" href="{% url 'registrar_entrada' %}">
+                <span class="home-action-icon" aria-hidden="true">+</span>
+                <span>
+                    <h2>Registrar entrada</h2>
+                    <p>Registre produtos recebidos e aumente as quantidades disponíveis no estoque.</p>
+                    <span class="home-action-link">Registrar agora <span aria-hidden="true">→</span></span>
+                </span>
+            </a>
+        </nav>
+
+        <p class="home-flow-note"><strong>Fluxo:</strong> login → início → cadastro, estoque, entradas, baixas ou consulta.</p>
+    </main>
+{% endblock %}

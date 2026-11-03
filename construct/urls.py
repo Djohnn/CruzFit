@@ -3,9 +3,11 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf.urls.static import static
 from django.conf import settings
+from usuarios import views as usuario_views
 
 
 urlpatterns = [
+    path('', usuario_views.home, name='home'),
     path('admin/', admin.site.urls),
     path('auth/', include('usuarios.urls')),
     path('estoque/', include('estoque.urls'))

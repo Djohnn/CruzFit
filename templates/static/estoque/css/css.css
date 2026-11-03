@@ -1,8 +1,410 @@
-.bg-hr{
-    background-color: gray;
+.bg-card {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--brand-border);
+    border-radius: 14px;
+    background-color: var(--brand-surface);
+    color: var(--brand-cream);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
 }
 
-.bg-card{
-    background-color: #0f0f0f;
-    width: 18rem;
+.bg-card .card-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    padding: 1.25rem;
+}
+
+.bg-card .card-title {
+    color: var(--brand-cream);
+}
+
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.card-img-top,
+.card-image-placeholder {
+    display: block;
+    width: 100%;
+    height: 190px;
+    object-fit: cover;
+}
+
+.card-image-placeholder {
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, var(--brand-surface-raised), var(--brand-black-soft));
+    color: var(--brand-muted);
+}
+
+.card-action {
+    align-self: flex-start;
+    margin-top: auto;
+}
+
+.category-select-control {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.category-select-control .form-control {
+    min-width: 0;
+}
+
+.category-add-button {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 1.45rem;
+    line-height: 1;
+}
+
+.form-grid-divider {
+    grid-column: 1 / -1;
+    margin: 0.65rem 0 -0.1rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid rgba(232, 173, 53, 0.18);
+    color: var(--brand-gold);
+    font-weight: 800;
+}
+
+.outflow-section-heading {
+    align-items: flex-start;
+}
+
+.outflow-line-items {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.outflow-line-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px auto;
+    gap: 0.75rem;
+    align-items: end;
+    padding: 1rem;
+    border: 1px solid rgba(232, 173, 53, 0.18);
+    border-radius: 10px;
+    background: rgba(18, 16, 12, 0.8);
+}
+
+.outflow-item-field {
+    min-width: 0;
+}
+
+.outflow-search-control {
+    position: relative;
+}
+
+.outflow-product-query {
+    padding-right: 2.5rem;
+}
+
+.outflow-search-icon {
+    position: absolute;
+    top: 50%;
+    right: 0.85rem;
+    color: var(--brand-gold);
+    font-size: 1.15rem;
+    line-height: 1;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.outflow-search-results {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    left: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    padding: 0.35rem;
+    border: 1px solid var(--brand-gold);
+    border-radius: 10px;
+    background: var(--brand-black-soft);
+    box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+}
+
+.outflow-search-option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0.75rem;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--brand-cream);
+    text-align: left;
+}
+
+.outflow-search-option:hover,
+.outflow-search-option:focus-visible {
+    background: rgba(232, 173, 54, 0.16);
+    color: var(--brand-cream);
+}
+
+.outflow-search-stock {
+    flex: 0 0 auto;
+    color: var(--brand-muted);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.outflow-search-empty {
+    padding: 0.7rem 0.75rem;
+    color: var(--brand-muted);
+}
+
+.outflow-selected-product {
+    min-height: 1.2rem;
+    margin: 0.35rem 0 0;
+    color: var(--brand-success);
+    font-size: 0.85rem;
+}
+
+.outflow-remove-button {
+    white-space: nowrap;
+}
+
+.outflow-summary {
+    display: flex;
+    gap: 1.5rem;
+    margin: 1.25rem 0;
+    padding: 1rem;
+    border-left: 2px solid var(--brand-gold);
+    background: rgba(232, 173, 53, 0.08);
+    color: var(--brand-muted);
+}
+
+.outflow-summary strong {
+    color: var(--brand-cream);
+}
+
+.outflow-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.outflow-history th {
+    color: var(--brand-gold-light);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.outflow-history td,
+.outflow-history th {
+    border-color: rgba(232, 174, 54, 0.18);
+}
+
+.outflow-status {
+    color: var(--brand-success);
+    font-weight: 800;
+}
+
+.inflow-section-heading {
+    align-items: flex-start;
+}
+
+.inflow-line-items {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.inflow-line-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px auto;
+    gap: 0.75rem;
+    align-items: end;
+    padding: 1rem;
+    border: 1px solid rgba(232, 173, 53, 0.18);
+    border-radius: 10px;
+    background: rgba(18, 16, 12, 0.8);
+}
+
+.inflow-item-field {
+    min-width: 0;
+}
+
+.inflow-remove-button {
+    white-space: nowrap;
+}
+
+.inflow-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.inflow-fields .form-group {
+    margin-bottom: 0;
+}
+
+.inflow-summary {
+    display: flex;
+    gap: 1.5rem;
+    margin: 1.25rem 0;
+    padding: 1rem;
+    border-left: 2px solid var(--brand-gold);
+    background: rgba(232, 173, 54, 0.08);
+    color: var(--brand-muted);
+}
+
+.inflow-summary strong {
+    color: var(--brand-cream);
+}
+
+.inflow-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.inflow-history th {
+    color: var(--brand-gold-light);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.inflow-history td,
+.inflow-history th {
+    border-color: rgba(232, 174, 54, 0.18);
+}
+
+.inflow-status {
+    color: var(--brand-success);
+    font-weight: 800;
+}
+
+.modal-content {
+    border: 1px solid var(--brand-border);
+    border-radius: 16px;
+    background-color: var(--brand-surface);
+    color: var(--brand-cream);
+}
+
+.modal-header,
+.modal-footer {
+    border-color: var(--brand-border);
+}
+
+.modal-header .close {
+    color: var(--brand-gold-light);
+    text-shadow: none;
+    opacity: 1;
+}
+
+.modal-header .eyebrow {
+    margin-bottom: 0.25rem;
+}
+
+.modal-body label {
+    display: block;
+    margin-bottom: 0.35rem;
+}
+
+.Listar_produtos .row > [class*="col-"] {
+    margin-bottom: 1.5rem;
+}
+
+.product-detail input,
+.product-detail select,
+.product-detail textarea {
+    max-width: 100%;
+    border: 1px solid var(--brand-gold-deep);
+    border-radius: 6px;
+    background-color: var(--brand-black-soft);
+    color: var(--brand-cream);
+    padding: 0.45rem 0.65rem;
+}
+
+.product-detail input:focus,
+.product-detail select:focus,
+.product-detail textarea:focus {
+    border-color: var(--brand-gold-light);
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(232, 174, 54, 0.18);
+}
+
+.product-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr);
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.product-image-panel img,
+.product-image-panel .card-image-placeholder {
+    width: 100%;
+    min-height: 240px;
+    border-radius: 12px;
+    object-fit: cover;
+}
+
+.detail-fields {
+    display: grid;
+    gap: 1rem;
+}
+
+.detail-field label {
+    display: block;
+    margin-bottom: 0.35rem;
+}
+
+.detail-field .form-control[readonly] {
+    cursor: default;
+    opacity: 1;
+    background-color: var(--brand-black-soft);
+    color: var(--brand-cream);
+}
+
+@media (max-width: 767.98px) {
+    .product-detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .product-image-panel img,
+    .product-image-panel .card-image-placeholder {
+        min-height: 180px;
+    }
+
+    .category-select-control {
+        gap: 0.4rem;
+    }
+
+    .outflow-line-item {
+        grid-template-columns: 1fr;
+    }
+
+    .outflow-summary {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .inflow-line-item {
+        grid-template-columns: 1fr;
+    }
+
+    .inflow-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .inflow-summary {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
 }

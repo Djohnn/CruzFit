@@ -1,21 +1,42 @@
 {% extends "base.html" %}
 
+{% block 'title' %}Entrar | Cruz Fit{% endblock %}
 
 
 {% block 'body' %}
 
-    <div class='container'>
-        <form action="{% url "login" %}" method="POST"> {% csrf_token %}
-            <br>
-            <label>E-mail</label>
-            <input type="email" placeholder="Digite seu E-mail..." name="email" class="form-control">
-            <br>
-            <label>Senha</label>
-            <input type="password" placeholder="Digite seu Senha..." name="senha" class="form-control">
-            <br>
-            <input type="submit" class="btn btn-success">
-        </form>
-    </div>
+    <main class="container login-shell">
+        <section class="login-card" aria-labelledby="login-heading">
+            <h1 id="login-heading">Entrar no Cruz Fit</h1>
+            <p class="login-intro">Acesse o painel de estoque com sua conta.</p>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert {{ message.tags }}" role="alert" aria-live="assertive">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <form action="{% url 'login' %}" method="POST">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="login-email">E-mail</label>
+                    <input id="login-email" type="email" placeholder="seu@email.com" name="email" class="form-control" value="{{ email|default:'' }}" autocomplete="email" required aria-describedby="login-email-help">
+                    <small id="login-email-help" class="form-text login-intro">Use o e-mail cadastrado no Cruz Fit.</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="login-password">Senha</label>
+                    <input id="login-password" type="password" placeholder="Digite sua senha" name="senha" class="form-control" autocomplete="current-password" required>
+                </div>
+
+                <button type="submit" class="btn btn-success login-submit">Entrar</button>
+            </form>
+
+            <p class="login-help">Precisa recuperar o acesso? Fale com o administrador.</p>
+        </section>
+    </main>
 
 
 {% endblock %}

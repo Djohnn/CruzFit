@@ -1,0 +1,27 @@
+CRUZ FIT - EXECUCAO EM OUTRO COMPUTADOR
+
+REQUISITOS
+- Windows 10 ou Windows 11.
+- Python 3.10 ou superior instalado.
+- Internet apenas na primeira instalacao para baixar as dependencias.
+- Navegador atualizado (Chrome, Edge ou Firefox).
+
+PRIMEIRA INSTALACAO
+1. Copie a pasta inteira do projeto para o computador.
+2. Execute INSTALAR_CRUZ_FIT.bat.
+3. Aguarde a instalacao terminar.
+
+USO DIARIO
+1. Execute INICIAR_CRUZ_FIT.bat.
+2. O navegador abrira automaticamente em:
+   http://127.0.0.1:15001/auth/login/
+3. Para parar o sistema, execute PARAR_CRUZ_FIT.bat.
+
+DADOS
+- O banco local fica em db.sqlite3.
+- As imagens ficam na pasta media.
+- Faca backup copiando db.sqlite3 e a pasta media com o sistema parado.
+- Nao copie a pasta .runtime para outro computador; o instalador cria um ambiente novo.
+
+OBSERVACAO
+O sistema funciona localmente neste computador. Ele nao fica publicado na internet.

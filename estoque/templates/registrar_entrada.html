@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Registrar entrada | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container inflow-page">
+        <header class="page-heading">
+            <p class="eyebrow">Movimentação de estoque</p>
+            <h1>Registrar entrada</h1>
+            <p>Adicione produtos recebidos ao estoque. Esta operação não registra fornecedor, usuário ou pagamento.</p>
+        </header>
+
+        {% if messages %}
+            <div class="feedback-stack" aria-live="polite">
+            {% for message in messages %}
+                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+
+        <section class="surface-section" aria-labelledby="inflow-heading">
+            <div class="section-heading-row inflow-section-heading">
+                <div>
+                    <h2 id="inflow-heading">Produtos recebidos</h2>
+                    <p class="section-help">Informe o produto e a quantidade que entrou no estoque.</p>
+                </div>
+                <button id="add-inflow-item" class="btn btn-outline-light" type="button">+ Adicionar produto</button>
+            </div>
+
+            <form id="inflow-form" action="{% url 'registrar_entrada' %}" method="POST" class="operational-form">
+                {% csrf_token %}
+                <div id="inflow-items" class="inflow-line-items">
+                    <div class="inflow-line-item" data-inflow-row>
+                        <div class="inflow-item-field">
+                            <label for="inflow-product-1">Produto</label>
+                            <select id="inflow-product-1" class="form-control" name="produto" required>
+                                <option value="">Selecione um produto</option>
+                                {% for produto in produtos %}
+                                    <option value="{{ produto.id }}">{{ produto.nome }} (estoque: {{ produto.quantidade|floatformat:2 }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="inflow-item-field inflow-quantity-field">
+                            <label for="inflow-quantity-1">Quantidade</label>
+                            <input id="inflow-quantity-1" class="form-control" type="number" name="quantidade" min="0.01" step="0.01" value="1" required>
+                        </div>
+                        <button class="btn btn-outline-danger inflow-remove-button" type="button">Remover</button>
+                    </div>
+                </div>
+
+                <div class="inflow-fields">
+                    <div class="form-group">
+                        <label for="inflow-reason">Motivo da entrada</label>
+                        <select id="inflow-reason" class="form-control" name="motivo" required>
+                            <option value="">Selecione o motivo</option>
+                            {% for value, label in motivo_choices %}
+                                <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="inflow-note">Observação <span class="field-optional">(opcional)</span></label>
+                        <textarea id="inflow-note" class="form-control" name="observacao" rows="3" placeholder="Ex.: reposição de coleção"></textarea>
+                    </div>
+                </div>
+
+                <div class="inflow-summary" aria-live="polite">
+                    <strong id="inflow-item-count">1 produto</strong>
+                    <span><strong id="inflow-quantity-count">1 unidade</strong> será adicionada ao estoque</span>
+                </div>
+                <div class="inflow-actions">
+                    <button class="btn btn-success" type="submit">Registrar entrada</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="surface-section" aria-labelledby="inflow-history-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="inflow-history-heading">Histórico de entradas</h2>
+                    <p class="section-help">Consulte tudo que já foi adicionado ao estoque.</p>
+                </div>
+            </div>
+            {% if historico %}
+                <div class="table-responsive">
+                    <table class="table table-dark inflow-history">
+                        <thead>
+                            <tr>
+                                <th scope="col">Data e hora</th>
+                                <th scope="col">Produtos</th>
+                                <th scope="col">Quantidade</th>
+                                <th scope="col">Motivo</th>
+                                <th scope="col">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entrada in historico %}
+                                <tr>
+                                    <td>{{ entrada.criada_em|date:"d/m/Y · H:i" }}</td>
+                                    <td>
+                                        {% for item in entrada.itens.all %}
+                                            {{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {% for item in entrada.itens.all %}
+                                            {{ item.quantidade|floatformat:2 }}{% if not forloop.last %} + {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td>{{ entrada.get_motivo_display }}</td>
+                                    <td><span class="inflow-status">Registrada</span></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state" role="status">
+                    <strong>Nenhuma entrada registrada.</strong>
+                    <span>As próximas entradas aparecerão aqui com seus produtos e quantidades.</span>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+
+    <script>
+        window.addEventListener('load', function () {
+            const items = document.getElementById('inflow-items');
+            const addButton = document.getElementById('add-inflow-item');
+            const itemCount = document.getElementById('inflow-item-count');
+            const quantityCount = document.getElementById('inflow-quantity-count');
+
+            if (!items || !addButton || !itemCount || !quantityCount) {
+                return;
+            }
+
+            function updateSummary() {
+                const rows = Array.from(items.querySelectorAll('[data-inflow-row]'));
+                const total = rows.reduce(function (sum, row) {
+                    return sum + (parseFloat(row.querySelector('input[name="quantidade"]').value) || 0);
+                }, 0);
+                itemCount.textContent = rows.length + (rows.length === 1 ? ' produto' : ' produtos');
+                quantityCount.textContent = total.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + (total === 1 ? ' unidade' : ' unidades');
+                quantityCount.nextSibling.textContent = total === 1 ? ' será adicionada ao estoque' : ' serão adicionadas ao estoque';
+            }
+
+            function bindRow(row) {
+                row.querySelector('input[name="quantidade"]').addEventListener('input', updateSummary);
+                row.querySelector('.inflow-remove-button').addEventListener('click', function () {
+                    const rows = items.querySelectorAll('[data-inflow-row]');
+                    if (rows.length === 1) {
+                        row.querySelector('select[name="produto"]').value = '';
+                        row.querySelector('input[name="quantidade"]').value = 1;
+                    } else {
+                        row.remove();
+                    }
+                    updateSummary();
+                });
+            }
+
+            addButton.addEventListener('click', function () {
+                const row = items.querySelector('[data-inflow-row]').cloneNode(true);
+                const index = items.querySelectorAll('[data-inflow-row]').length + 1;
+                row.querySelector('label[for^="inflow-product"]').htmlFor = 'inflow-product-' + index;
+                row.querySelector('select[name="produto"]').id = 'inflow-product-' + index;
+                row.querySelector('label[for^="inflow-quantity"]').htmlFor = 'inflow-quantity-' + index;
+                row.querySelector('input[name="quantidade"]').id = 'inflow-quantity-' + index;
+                row.querySelector('select[name="produto"]').value = '';
+                row.querySelector('input[name="quantidade"]').value = 1;
+                items.appendChild(row);
+                bindRow(row);
+                updateSummary();
+            });
+
+            bindRow(items.querySelector('[data-inflow-row]'));
+            updateSummary();
+        });
+    </script>
+{% endblock %}

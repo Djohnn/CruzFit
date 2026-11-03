@@ -1,0 +1,6 @@
+asgiref==3.13.0
+Django==5.0.6
+django-role-permissions==3.2.0
+Pillow==13.0.0
+sqlparse==0.6.1
+tzdata==2026.6

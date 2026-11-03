@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load static %}
+{% load filters %}
+
+{% block 'title' %}Estoque | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container inventory-page">
+        <header class="page-heading">
+            <p class="eyebrow">Consulta de estoque</p>
+            <h1>Visualizar estoque</h1>
+            <p>Consulte os produtos cadastrados no Cruz Fit sem misturar a operação de cadastro.</p>
+            <a href="{% url 'add_produto' %}" class="btn btn-primary">Cadastrar produto</a>
+            <a href="{% url 'registrar_baixa' %}" class="btn btn-outline-light">Registrar baixa</a>
+            <a href="{% url 'registrar_entrada' %}" class="btn btn-outline-light">Registrar entrada</a>
+        </header>
+
+        {% if messages %}
+            <div class="feedback-stack" aria-live="polite">
+            {% for message in messages %}
+                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+
+        <section class="surface-section" aria-labelledby="product-list-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="product-list-heading">Produtos cadastrados</h2>
+                    <p class="section-help">{{ produtos|length }} produto{{ produtos|length|pluralize }} encontrado{{ produtos|length|pluralize }}.</p>
+                </div>
+            </div>
+            {% if produtos %}
+                <div class="product-grid">
+                    {% for produto in produtos %}
+                        <article class="bg-card">
+                            {% if produto|get_first_image %}
+                                <img width="100%" class="card-img-top" src="{{ produto|get_first_image }}" alt="Imagem de {{ produto.nome }}">
+                            {% else %}
+                                <div class="card-image-placeholder" role="img" aria-label="Produto sem imagem">Sem imagem</div>
+                            {% endif %}
+                            <div class="card-body">
+                                <h3 class="card-title">{{ produto.nome }}</h3>
+                                <span class="badge badge-info">{{ produto.categoria|default:'Sem categoria' }}</span>
+                                <a href="{% url 'produto' produto.slug %}" class="btn btn-primary card-action">Ver detalhes</a>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state" role="status">
+                    <strong>Nenhum produto encontrado.</strong>
+                    <span>Cadastre o primeiro produto ou limpe os filtros para tentar novamente.</span>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+{% endblock %}

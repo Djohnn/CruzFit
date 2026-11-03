@@ -1,3 +1,55 @@
-<h1>Produto</h1>
+{% extends "base.html" %}
+{% load static %}
+{% load filters %}
 
-{{form}}
+{% block 'title' %}Produto | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container product-detail">
+        <header class="page-heading">
+            <h1>{{ produto.nome }}</h1>
+            <p>Detalhes do produto no estoque Cruz Fit.</p>
+        </header>
+
+        <section class="surface-section" aria-labelledby="product-detail-heading">
+            <h2 id="product-detail-heading">Informações do produto</h2>
+            <div class="product-detail-grid">
+                <div class="product-image-panel">
+                    {% if produto|get_first_image %}
+                        <img src="{{ produto|get_first_image }}" alt="Imagem de {{ produto.nome }}">
+                    {% else %}
+                        <div class="card-image-placeholder" role="img" aria-label="Produto sem imagem">Sem imagem</div>
+                    {% endif %}
+                </div>
+
+                <div class="detail-fields">
+                    <div class="detail-field">
+                        <label for="detail-product-name">Nome</label>
+                        <input id="detail-product-name" class="form-control" type="text" value="{{ produto.nome }}" readonly>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-category">Categoria</label>
+                        <input id="detail-product-category" class="form-control" type="text" value="{{ produto.categoria|default:'Sem categoria' }}" readonly>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-quantity">Estoque</label>
+                        <input id="detail-product-quantity" class="form-control" type="text" value="{{ produto.quantidade|floatformat:2 }}" readonly>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-cost">Preço de compra</label>
+                        <input id="detail-product-cost" class="form-control" type="text" value="R$ {{ produto.preco_compra|floatformat:2 }}" readonly>
+                    </div>
+                    <div class="detail-field">
+                        <label for="detail-product-price">Preço de venda</label>
+                        <input id="detail-product-price" class="form-control" type="text" value="R$ {{ produto.preco_venda|floatformat:2 }}" readonly>
+                    </div>
+                </div>
+            </div>
+            <p class="section-help">Esta tela é somente leitura. As alterações continuam sendo feitas pelo cadastro de produtos.</p>
+        </section>
+    </main>
+{% endblock %}

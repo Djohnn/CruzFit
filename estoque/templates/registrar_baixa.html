@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Registrar baixa | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container outflow-page">
+        <header class="page-heading">
+            <p class="eyebrow">Movimentação de estoque</p>
+            <h1>Registrar baixa</h1>
+            <p>Registre os produtos vendidos e baixe as quantidades do estoque. Esta operação não é um caixa e não registra pagamentos.</p>
+        </header>
+
+        {% if messages %}
+            <div class="feedback-stack" aria-live="polite">
+            {% for message in messages %}
+                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+
+        <section class="surface-section" aria-labelledby="outflow-heading">
+            <div class="section-heading-row outflow-section-heading">
+                <div>
+                    <h2 id="outflow-heading">Produtos vendidos</h2>
+                    <p class="section-help">Uma baixa pode conter um ou vários produtos.</p>
+                </div>
+                <button id="add-outflow-item" class="btn btn-outline-light" type="button">+ Adicionar produto</button>
+            </div>
+
+            <form id="outflow-form" action="{% url 'registrar_baixa' %}" method="POST" class="operational-form">
+                {% csrf_token %}
+                <div id="outflow-items" class="outflow-line-items">
+                    <div class="outflow-line-item" data-outflow-row>
+                        <div class="outflow-item-field outflow-product-search" data-product-search>
+                            <label for="outflow-product-query-1">Produto</label>
+                            <div class="outflow-search-control">
+                                <input id="outflow-product-query-1" class="form-control outflow-product-query" type="search" placeholder="Digite para buscar produto..." autocomplete="off" required>
+                                <span class="outflow-search-icon" aria-hidden="true">⌕</span>
+                                <div id="outflow-product-results-1" class="outflow-search-results" role="listbox" hidden></div>
+                            </div>
+                            <input type="hidden" name="produto" data-product-value>
+                            <p class="outflow-selected-product" data-selected-product aria-live="polite"></p>
+                        </div>
+                        <div class="outflow-item-field outflow-quantity-field">
+                            <label for="outflow-quantity-1">Quantidade</label>
+                            <input id="outflow-quantity-1" class="form-control" type="number" name="quantidade" min="0.01" step="0.01" value="1" required>
+                        </div>
+                        <button class="btn btn-outline-danger outflow-remove-button" type="button">Remover</button>
+                    </div>
+                </div>
+
+                <div class="outflow-summary" aria-live="polite">
+                    <strong id="outflow-item-count">1 produto</strong>
+                    <span><strong id="outflow-quantity-count">1 unidade</strong> será baixada</span>
+                </div>
+                <div class="outflow-actions">
+                    <button class="btn btn-success" type="submit">Registrar baixa</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="surface-section" aria-labelledby="outflow-history-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="outflow-history-heading">Histórico de baixas</h2>
+                    <p class="section-help">Consulte tudo que já foi baixado do estoque.</p>
+                </div>
+            </div>
+            {% if historico %}
+                <div class="table-responsive">
+                    <table class="table table-dark outflow-history">
+                        <thead>
+                            <tr>
+                                <th scope="col">Data e hora</th>
+                                <th scope="col">Produtos</th>
+                                <th scope="col">Quantidade</th>
+                                <th scope="col">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for baixa in historico %}
+                                <tr>
+                                    <td>{{ baixa.criada_em|date:"d/m/Y · H:i" }}</td>
+                                    <td>
+                                        {% for item in baixa.itens.all %}
+                                            {{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {% for item in baixa.itens.all %}
+                                            {{ item.quantidade|floatformat:2 }}{% if not forloop.last %} + {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td><span class="outflow-status">Registrada</span></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state" role="status">
+                    <strong>Nenhuma baixa registrada.</strong>
+                    <span>As próximas baixas aparecerão aqui com seus produtos e quantidades.</span>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+
+    <script>
+        window.addEventListener('load', function () {
+            const items = document.getElementById('outflow-items');
+            const addButton = document.getElementById('add-outflow-item');
+            const itemCount = document.getElementById('outflow-item-count');
+            const quantityCount = document.getElementById('outflow-quantity-count');
+            const form = document.getElementById('outflow-form');
+            const productCatalog = [
+                {% for produto in produtos %}
+                    {id: '{{ produto.id }}', name: '{{ produto.nome|escapejs }}', stock: '{{ produto.quantidade|floatformat:2|escapejs }}'}{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ];
+
+            if (!items || !addButton || !itemCount || !quantityCount || !form) {
+                return;
+            }
+
+            function updateSummary() {
+                const rows = Array.from(items.querySelectorAll('[data-outflow-row]'));
+                const total = rows.reduce(function (sum, row) {
+                    return sum + (parseFloat(row.querySelector('input[name="quantidade"]').value) || 0);
+                }, 0);
+                itemCount.textContent = rows.length + (rows.length === 1 ? ' produto' : ' produtos');
+                quantityCount.textContent = total.toLocaleString('pt-BR', {maximumFractionDigits: 2}) + (total === 1 ? ' unidade' : ' unidades');
+                quantityCount.nextSibling.textContent = total === 1 ? ' será baixada' : ' serão baixadas';
+            }
+
+            function renderProductResults(widget) {
+                const query = widget.querySelector('.outflow-product-query');
+                const results = widget.querySelector('.outflow-search-results');
+                const term = query.value.trim().toLocaleLowerCase('pt-BR');
+                results.innerHTML = '';
+
+                if (!term) {
+                    results.hidden = true;
+                    return;
+                }
+
+                const matches = productCatalog
+                    .filter(function (product) {
+                        return product.name.toLocaleLowerCase('pt-BR').includes(term);
+                    })
+                    .slice(0, 8);
+
+                if (!matches.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'outflow-search-empty';
+                    empty.textContent = 'Nenhum produto encontrado.';
+                    results.appendChild(empty);
+                } else {
+                    matches.forEach(function (product) {
+                        const option = document.createElement('button');
+                        option.type = 'button';
+                        option.className = 'outflow-search-option';
+                        option.setAttribute('role', 'option');
+
+                        const name = document.createElement('span');
+                        name.textContent = product.name;
+                        const stock = document.createElement('span');
+                        stock.className = 'outflow-search-stock';
+                        stock.textContent = 'estoque: ' + product.stock;
+                        option.append(name, stock);
+
+                        option.addEventListener('click', function () {
+                            widget.querySelector('.outflow-product-query').value = product.name;
+                            widget.querySelector('[data-product-value]').value = product.id;
+                            widget.querySelector('[data-selected-product]').textContent = 'Selecionado: ' + product.name;
+                            query.setCustomValidity('');
+                            results.hidden = true;
+                        });
+                        results.appendChild(option);
+                    });
+                }
+
+                results.hidden = false;
+            }
+
+            function bindProductSearch(row) {
+                const widget = row.querySelector('[data-product-search]') || row;
+                const query = widget.querySelector('.outflow-product-query');
+                query.addEventListener('input', function () {
+                    widget.querySelector('[data-product-value]').value = '';
+                    widget.querySelector('[data-selected-product]').textContent = '';
+                    query.setCustomValidity('');
+                    renderProductResults(widget);
+                });
+                query.addEventListener('focus', function () {
+                    renderProductResults(widget);
+                });
+            }
+
+            function bindRow(row) {
+                row.querySelector('input[name="quantidade"]').addEventListener('input', updateSummary);
+                row.querySelector('.outflow-remove-button').addEventListener('click', function () {
+                    const rows = items.querySelectorAll('[data-outflow-row]');
+                    if (rows.length === 1) {
+                        row.querySelector('.outflow-product-query').value = '';
+                        row.querySelector('[data-product-value]').value = '';
+                        row.querySelector('[data-selected-product]').textContent = '';
+                        row.querySelector('input[name="quantidade"]').value = 1;
+                    } else {
+                        row.remove();
+                    }
+                    updateSummary();
+                });
+                bindProductSearch(row);
+            }
+
+            addButton.addEventListener('click', function () {
+                const row = items.querySelector('[data-outflow-row]').cloneNode(true);
+                const index = items.querySelectorAll('[data-outflow-row]').length + 1;
+                row.querySelector('label[for^="outflow-product-query"]').htmlFor = 'outflow-product-query-' + index;
+                row.querySelector('.outflow-product-query').id = 'outflow-product-query-' + index;
+                row.querySelector('.outflow-search-results').id = 'outflow-product-results-' + index;
+                row.querySelector('label[for^="outflow-quantity"]').htmlFor = 'outflow-quantity-' + index;
+                row.querySelector('input[name="quantidade"]').id = 'outflow-quantity-' + index;
+                row.querySelector('.outflow-product-query').value = '';
+                row.querySelector('[data-product-value]').value = '';
+                row.querySelector('[data-selected-product]').textContent = '';
+                row.querySelector('.outflow-search-results').innerHTML = '';
+                row.querySelector('.outflow-search-results').hidden = true;
+                row.querySelector('input[name="quantidade"]').value = 1;
+                items.appendChild(row);
+                bindRow(row);
+                updateSummary();
+            });
+
+            form.addEventListener('submit', function (event) {
+                const invalidQuery = Array.from(items.querySelectorAll('[data-outflow-row]'))
+                    .map(function (row) {
+                        const query = row.querySelector('.outflow-product-query');
+                        return query.value && !row.querySelector('[data-product-value]').value ? query : null;
+                    })
+                    .find(Boolean);
+
+                if (invalidQuery) {
+                    event.preventDefault();
+                    invalidQuery.setCustomValidity('Selecione um produto nos resultados da busca.');
+                    invalidQuery.reportValidity();
+                }
+            });
+
+            document.addEventListener('click', function (event) {
+                items.querySelectorAll('[data-product-search]').forEach(function (widget) {
+                    if (!widget.contains(event.target)) {
+                        widget.querySelector('.outflow-search-results').hidden = true;
+                    }
+                });
+            });
+
+            bindRow(items.querySelector('[data-outflow-row]'));
+            updateSummary();
+        });
+    </script>
+{% endblock %}

@@ -1,70 +1,94 @@
 {% extends "base.html" %}
 
+{% block 'title' %}Vendedores | Cruz Fit{% endblock %}
 
 
 {% block 'body' %}
-    
 
-    <div class='container'>
+    <main class="container vendor-page">
+        <header class="page-heading">
+            <h1>Vendedores</h1>
+            <p>Cadastre e administre os acessos da equipe Cruz Fit.</p>
+        </header>
 
         {% if messages %}
-        <br>
+        <div class="feedback-stack" aria-live="polite">
             {% for message in messages %}
-                <div class="alert {{message.tags}}">
+                <div class="alert {{ message.tags }}" role="alert">
                     {{message}}
                 </div>
             {% endfor %}
+        </div>
         {% endif %}
 
-        <form action="{% url "cadastrar_vendedor" %}" method="POST"> {% csrf_token %}
-            <br>
-            <br>
-            <label>Nome</label>
-            <input type="nome" placeholder="Digite seu nome..." name="nome" class="form-control">
-            <br>
-            <label>sobrenome</label>
-            <input type="sobrenome" placeholder="Digite seu sobrenome..." name="sobrenome" class="form-control">
-            <br>
-            <label>E-mail</label>
-            <input type="email" placeholder="Digite seu E-mail..." name="email" class="form-control">
-            <br>
-            <label>Senha</label>
-            <input type="password" placeholder="Digite seu Senha..." name="senha" class="form-control">
-            <br>
-            <input type="submit" class="btn btn-success">
-        </form>
+        <section class="surface-section" aria-labelledby="vendor-create-heading">
+            <h2 id="vendor-create-heading">Cadastrar vendedor</h2>
+            <p class="section-help">Campos marcados são obrigatórios.</p>
+            <form action="{% url 'cadastrar_vendedor' %}" method="POST" class="operational-form">
+                {% csrf_token %}
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="vendor-name">Nome <span aria-hidden="true">*</span></label>
+                        <input id="vendor-name" type="text" placeholder="Nome" name="nome" class="form-control" value="{{ form_data.nome|default:'' }}" autocomplete="given-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="vendor-last-name">Sobrenome <span aria-hidden="true">*</span></label>
+                        <input id="vendor-last-name" type="text" placeholder="Sobrenome" name="sobrenome" class="form-control" value="{{ form_data.sobrenome|default:'' }}" autocomplete="family-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="vendor-email">E-mail <span aria-hidden="true">*</span></label>
+                        <input id="vendor-email" type="email" placeholder="email@exemplo.com" name="email" class="form-control" value="{{ form_data.email|default:'' }}" autocomplete="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="vendor-password">Senha <span aria-hidden="true">*</span></label>
+                        <input id="vendor-password" type="password" placeholder="Digite sua senha" name="senha" class="form-control" autocomplete="new-password" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-success">Cadastrar vendedor</button>
+            </form>
+        </section>
 
-        <hr class="bg-hr">
-
-        <table class="table table-striped table-dark">
-            <thead>
-              <tr>
-                <th scope="col">Nome</th>
-                <th scope="col">Sobrenome</th>
-                <th scope="col">E-mail</th>
-                <th scope="col">Último login</th>
-                <th scope="col">Excluir</th>
-              </tr>
-            </thead>
-            <tbody>
-                {% for vendedor in vendedores %}
-                    <tr>
-                        <th>{{vendedor.first_name}}</th>
-                        <td>{{vendedor.last_name}}</td>
-                        <td>{{vendedor.email}}</td>
-                        <td>{% if not vendedor.last_login  %}
-                            Primeiro acesso!
-                        {% else %}
-                            {{vendedor.last_login}}
-                        {% endif %}</td>
-                        <td><a href="{% url "excluir_usuario" vendedor.id %}" class="btn btn-danger">Excluir</a></td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-          </table>
-
-
-    </div>
+        <section class="surface-section" aria-labelledby="vendor-list-heading">
+            <h2 id="vendor-list-heading">Vendedores cadastrados</h2>
+            {% if vendedores %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-dark">
+                        <caption class="sr-only">Lista de vendedores cadastrados e ações disponíveis</caption>
+                        <thead>
+                          <tr>
+                            <th scope="col">Nome</th>
+                            <th scope="col">Sobrenome</th>
+                            <th scope="col">E-mail</th>
+                            <th scope="col">Último login</th>
+                            <th scope="col">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                            {% for vendedor in vendedores %}
+                                <tr>
+                                    <th scope="row">{{ vendedor.first_name }}</th>
+                                    <td>{{ vendedor.last_name }}</td>
+                                    <td>{{ vendedor.email }}</td>
+                                    <td>{% if not vendedor.last_login %}Primeiro acesso!{% else %}{{ vendedor.last_login }}{% endif %}</td>
+                                    <td>
+                                        <form action="{% url 'excluir_usuario' vendedor.id %}" method="POST" class="d-inline" onsubmit="return confirm('Tem certeza que deseja excluir este vendedor?');">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-danger">Excluir</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state" role="status">
+                    <strong>Nenhum vendedor cadastrado.</strong>
+                    <span>O primeiro vendedor cadastrado aparecerá nesta lista.</span>
+                </div>
+            {% endif %}
+        </section>
+    </main>
 
 
 {% endblock %}

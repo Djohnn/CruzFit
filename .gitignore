@@ -134,6 +134,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.runtime/
 env/
 venv/
 ENV/
@@ -264,3 +265,24 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,django
+
+# Cruz Fit local development and QA artifacts
+.runtime/
+.agent/
+.agents/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.hermes/
+.impeccable/
+.kiro/
+.opencode/
+.pi/
+.qoder/
+.rovodev/
+.superpowers/
+.vibe/
+qa-browser-*.png
+qa-browser-*/
+server-*.log
