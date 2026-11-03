@@ -21,9 +21,9 @@
             <form action="{% url 'login' %}" method="POST">
                 {% csrf_token %}
                 <div class="form-group">
-                    <label for="login-email">E-mail</label>
-                    <input id="login-email" type="email" placeholder="seu@email.com" name="email" class="form-control" value="{{ email|default:'' }}" autocomplete="email" required aria-describedby="login-email-help">
-                    <small id="login-email-help" class="form-text login-intro">Use o e-mail cadastrado no Cruz Fit.</small>
+                    <label for="login-name">Nome</label>
+                    <input id="login-name" type="text" placeholder="Digite seu nome" name="nome" class="form-control" value="{{ nome|default:'' }}" autocomplete="username" required aria-describedby="login-name-help">
+                    <small id="login-name-help" class="form-text login-intro">Use o nome cadastrado no Cruz Fit.</small>
                 </div>
 
                 <div class="form-group">

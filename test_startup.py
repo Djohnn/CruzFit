@@ -52,10 +52,12 @@ class BrandAndLoginContractTests(unittest.TestCase):
         )
 
         self.assertIn("Entrar no Cruz Fit", source)
-        self.assertIn('for="login-email"', source)
-        self.assertIn('id="login-email"', source)
-        self.assertIn('autocomplete="email"', source)
+        self.assertIn('for="login-name"', source)
+        self.assertIn('id="login-name"', source)
+        self.assertIn('name="nome"', source)
+        self.assertIn('autocomplete="username"', source)
         self.assertIn('autocomplete="current-password"', source)
+        self.assertNotIn('type="email"', source)
         self.assertIn('required', source)
         self.assertIn('>Entrar</button>', source)
 
@@ -151,6 +153,7 @@ class RemediationRegressionTests(TestCase):
         self.manager = Users.objects.create_user(
             username="gerente@example.com",
             email="gerente@example.com",
+            first_name="Gerente",
             password="Teste@123",
             cargo="G",
         )
@@ -164,15 +167,15 @@ class RemediationRegressionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/")
 
-    def test_invalid_login_redirects_with_inline_error_and_preserves_email(self):
+    def test_invalid_login_redirects_with_inline_error_and_preserves_name(self):
         response = self.client.post(
             "/auth/login/",
-            {"email": "tentativa@example.com", "senha": "errada"},
+            {"nome": "Tentativa", "senha": "errada"},
         )
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/auth/login/")
-        self.assertEqual(self.client.session["login_email"], "tentativa@example.com")
+        self.assertEqual(self.client.session["login_name"], "Tentativa")
         self.assertIn(
             "Não foi possível entrar",
             str(list(get_messages(response.wsgi_request))),
@@ -181,7 +184,7 @@ class RemediationRegressionTests(TestCase):
     def test_valid_login_redirects_to_home_page(self):
         response = self.client.post(
             "/auth/login/",
-            {"email": "gerente@example.com", "senha": "Teste@123"},
+            {"nome": "Gerente", "senha": "Teste@123"},
         )
 
         self.assertEqual(response.status_code, 302)

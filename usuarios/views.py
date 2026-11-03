@@ -58,18 +58,22 @@ def login(request):
     if request.method == 'GET':
         if request.user.is_authenticated:
             return redirect(reverse('home'))
-        email = request.session.pop('login_email', '')
-        return render(request, 'login.html', {'email': email})
+        nome = request.session.pop('login_name', '')
+        return render(request, 'login.html', {'nome': nome})
     
     elif request.method == 'POST':
-        email = (request.POST.get('email') or '').strip()
+        nome = (request.POST.get('nome') or '').strip()
         senha = request.POST.get('senha') or ''
 
-        user = auth.authenticate(username=email, password=senha)
+        user = auth.authenticate(username=nome, password=senha)
+        if not user and nome:
+            user_by_name = Users.objects.filter(first_name__iexact=nome).first()
+            if user_by_name:
+                user = auth.authenticate(username=user_by_name.username, password=senha)
 
         if not user:
-            request.session['login_email'] = email
-            messages.error(request, 'Não foi possível entrar. Verifique seu e-mail e senha.')
+            request.session['login_name'] = nome
+            messages.error(request, 'Não foi possível entrar. Verifique seu nome e senha.')
             return redirect(reverse('login'))
         
         auth.login(request, user)
