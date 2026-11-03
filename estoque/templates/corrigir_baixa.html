@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Corrigir baixa #{{ baixa.pk }} | Cruz Fit{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">{% endblock %}
+{% block 'body' %}
+<main class="container report-page">
+    <header class="page-heading"><p class="eyebrow">Correção auditada</p><h1>Corrigir baixa #{{ baixa.pk }}</h1><p>A correção integral cria uma entrada compensatória e mantém a baixa original no histórico.</p></header>
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}</div>{% endif %}
+    <section class="surface-section reversal-form-section">
+        <p><strong>Itens:</strong> {% for item in baixa.itens.all %}{{ item.produto.nome }} ({{ item.quantidade|floatformat:2 }}){% if not forloop.last %}, {% endif %}{% endfor %}</p>
+        <form method="post" class="operational-form">
+            {% csrf_token %}<input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+            <div class="form-group"><label for="correction-reason">Motivo obrigatório</label><textarea id="correction-reason" class="form-control" name="motivo" rows="4" required maxlength="500"></textarea></div>
+            <div class="sale-actions-inline"><a class="btn btn-outline-light" href="{% url 'movimentacoes' %}">Voltar</a><button class="btn btn-success" type="submit">Confirmar correção</button></div>
+        </form>
+    </section>
+</main>
+{% endblock %}

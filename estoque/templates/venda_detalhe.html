@@ -17,9 +17,17 @@
         </div>
         <div class="sale-actions-inline">
             <a class="btn btn-primary" href="{% url 'venda_comprovante' venda.pk %}">Abrir comprovante</a>
+            <a class="btn btn-outline-light" href="{% url 'devolver_venda' venda.pk %}">Devolver itens</a>
+            <a class="btn btn-outline-danger" href="{% url 'cancelar_venda' venda.pk %}">Cancelar venda</a>
             <a class="btn btn-outline-light" href="{% url 'vendas' %}">Voltar às vendas</a>
         </div>
     </header>
+
+    {% if messages %}
+        <div class="feedback-stack" aria-live="polite">
+        {% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}
+        </div>
+    {% endif %}
 
     <section class="surface-section" aria-labelledby="sale-detail-heading">
         <div class="section-heading-row">

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Cancelar venda #{{ venda.pk }} | Cruz Fit{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">{% endblock %}
+{% block 'body' %}
+<main class="container sale-page">
+    <header class="page-heading"><p class="eyebrow">Reversão auditada</p><h1>Cancelar venda #{{ venda.pk }}</h1><p>O cancelamento integral devolve todos os itens ao estoque e preserva a venda original.</p></header>
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}</div>{% endif %}
+    <section class="surface-section reversal-form-section">
+        <form method="post" class="operational-form">
+            {% csrf_token %}
+            <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+            <div class="form-group"><label for="cancel-reason">Motivo obrigatório</label><textarea id="cancel-reason" class="form-control" name="motivo" rows="4" required maxlength="500" placeholder="Explique o motivo do cancelamento"></textarea></div>
+            <div class="sale-actions-inline"><a class="btn btn-outline-light" href="{% url 'venda_detalhe' venda.pk %}">Voltar</a><button class="btn btn-danger" type="submit">Confirmar cancelamento</button></div>
+        </form>
+    </section>
+</main>
+{% endblock %}

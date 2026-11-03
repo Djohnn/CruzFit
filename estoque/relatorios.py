@@ -21,7 +21,9 @@ from .models import (
     ItemBaixaEstoque,
     ItemEntradaEstoque,
     ItemVenda,
+    ItemVendaDevolucao,
     Produto,
+    VendaCancelamento,
 )
 
 MOVEMENTS_PER_PAGE = 20
@@ -51,6 +53,9 @@ class MovementRow(TypedDict):
     responsavel_id: int | None
     fornecedor: str
     fornecedor_id: int | None
+    origem: str
+    pode_corrigir: bool
+    pode_devolver_fornecedor: bool
     itens: list[MovementItem]
     quantidade_total: Decimal
 
@@ -193,6 +198,44 @@ def _responsible_name(movement: BaixaEstoque | EntradaEstoque) -> str:
     return responsible.get_full_name() or responsible.username
 
 
+def _movement_origin(movement: BaixaEstoque | EntradaEstoque) -> str:
+    if isinstance(movement, EntradaEstoque):
+        cancellation = getattr(movement, 'cancelamento_venda', None)
+        if cancellation is not None:
+            return f'Cancelamento da Venda #{cancellation.venda_id}'
+        sale_return = getattr(movement, 'devolucao_venda', None)
+        if sale_return is not None:
+            return f'Devolução da Venda #{sale_return.venda_id}'
+        correction = getattr(movement, 'correcao_baixa', None)
+        if correction is not None:
+            return f'Correção da Baixa #{correction.baixa_id}'
+    else:
+        sale = getattr(movement, 'venda', None)
+        if sale is not None:
+            return f'Venda #{sale.pk}'
+        supplier_return = getattr(movement, 'devolucao_fornecedor', None)
+        if supplier_return is not None:
+            return f'Entrada de compra #{supplier_return.entrada_compra_id}'
+        correction = getattr(movement, 'correcao', None)
+        if correction is not None:
+            return f'Correção da Baixa #{correction.baixa_id}'
+    return '—'
+
+
+def _can_correct_outflow(movement: BaixaEstoque) -> bool:
+    return all(
+        getattr(movement, relation, None) is None
+        for relation in ('venda', 'devolucao_fornecedor', 'correcao')
+    )
+
+
+def _has_supplier_return(movement: EntradaEstoque) -> bool:
+    prefetched = getattr(movement, '_supplier_returns', None)
+    if prefetched is not None:
+        return bool(prefetched)
+    return movement.devolucoes_fornecedor.exists()
+
+
 def _entry_row(movement: EntradaEstoque, product_id: int | None = None) -> MovementRow:
     items = _movement_items(movement, product_id)
     supplier = movement.fornecedor
@@ -209,6 +252,13 @@ def _entry_row(movement: EntradaEstoque, product_id: int | None = None) -> Movem
         "responsavel_id": movement.responsavel_id,
         "fornecedor": movement.fornecedor_nome or (supplier.nome if supplier else "—"),
         "fornecedor_id": movement.fornecedor_id,
+        "origem": _movement_origin(movement),
+        "pode_corrigir": False,
+        "pode_devolver_fornecedor": (
+            movement.motivo == 'COMPRA'
+            and movement.fornecedor_id is not None
+            and not _has_supplier_return(movement)
+        ),
         "itens": items,
         "quantidade_total": sum((item["quantidade"] for item in items), ZERO),
     }
@@ -229,6 +279,9 @@ def _outflow_row(movement: BaixaEstoque, product_id: int | None = None) -> Movem
         "responsavel_id": movement.responsavel_id,
         "fornecedor": "—",
         "fornecedor_id": None,
+        "origem": _movement_origin(movement),
+        "pode_corrigir": _can_correct_outflow(movement),
+        "pode_devolver_fornecedor": False,
         "itens": items,
         "quantidade_total": sum((item["quantidade"] for item in items), ZERO),
     }
@@ -236,14 +289,19 @@ def _outflow_row(movement: BaixaEstoque, product_id: int | None = None) -> Movem
 
 def _entries(filters: MovementFilters) -> QuerySet:
     queryset = EntradaEstoque.objects.select_related(
-        "responsavel", "fornecedor"
+        "responsavel",
+        "fornecedor",
+        "cancelamento_venda__venda",
+        "devolucao_venda__venda",
+        "correcao_baixa__baixa",
     ).prefetch_related(
         Prefetch(
             "itens",
             queryset=ItemEntradaEstoque.objects.select_related("produto").order_by(
                 "produto__nome", "pk"
             ),
-        )
+        ),
+        Prefetch("devolucoes_fornecedor", to_attr="_supplier_returns"),
     )
     queryset = _date_filters(queryset, filters)
     if filters.fornecedor_id:
@@ -252,7 +310,12 @@ def _entries(filters: MovementFilters) -> QuerySet:
 
 
 def _outflows(filters: MovementFilters) -> QuerySet:
-    queryset = BaixaEstoque.objects.select_related("responsavel").prefetch_related(
+    queryset = BaixaEstoque.objects.select_related(
+        "responsavel",
+        "venda",
+        "devolucao_fornecedor__entrada_compra",
+        "correcao__baixa",
+    ).prefetch_related(
         Prefetch(
             "itens",
             queryset=ItemBaixaEstoque.objects.select_related("produto").order_by(
@@ -384,6 +447,7 @@ def movement_csv(filters: MovementFilters) -> str:
                 movement["responsavel"],
                 movement["motivo_label"],
                 movement["fornecedor"],
+                movement["origem"],
                 movement["observacao"],
             ]
         )
@@ -397,6 +461,7 @@ def movement_csv(filters: MovementFilters) -> str:
             "Responsável",
             "Motivo",
             "Fornecedor",
+            "Origem",
             "Observação",
         ],
         rows,
@@ -435,29 +500,37 @@ def stock_report(*, only_reorder: bool) -> list[StockReportRow]:
 
 
 def sales_ranking() -> list[SalesRankingRow]:
-    """Agrupa somente itens de vendas confirmadas, sem inventar preço legado."""
-    ranking: list[SalesRankingRow] = []
-    rows = ItemVenda.objects.values(
-        "produto_id",
-        "produto__nome",
-    ).annotate(
-        quantidade_total=Sum("quantidade"),
-        faturamento_total=Sum("total"),
-    ).order_by(
-        "-quantidade_total",
-        "produto__nome",
-        "produto_id",
+    """Agrupa vendas confirmadas pelo saldo líquido de suas reversões."""
+    cancelled_sale_ids = set(
+        VendaCancelamento.objects.values_list("venda_id", flat=True)
     )
-    for row in rows:
-        ranking.append(
-            {
-                "produto_id": row["produto_id"],
-                "produto": row["produto__nome"],
-                "quantidade": row["quantidade_total"] or ZERO,
-                "faturamento": row["faturamento_total"] or ZERO,
-            }
+    totals: dict[int, SalesRankingRow] = {}
+    for item in ItemVenda.objects.select_related("produto").order_by("pk"):
+        if item.venda_id in cancelled_sale_ids:
+            continue
+        returned = ItemVendaDevolucao.objects.filter(item_venda_id=item.pk).aggregate(
+            quantidade=Sum("quantidade"),
+            total=Sum("total"),
         )
-    return ranking
+        quantity = item.quantidade - (returned["quantidade"] or ZERO)
+        revenue = item.total - (returned["total"] or ZERO)
+        if quantity <= ZERO:
+            continue
+        row = totals.setdefault(
+            item.produto_id,
+            {
+                "produto_id": item.produto_id,
+                "produto": item.produto.nome,
+                "quantidade": ZERO,
+                "faturamento": ZERO,
+            },
+        )
+        row["quantidade"] += quantity
+        row["faturamento"] += revenue
+    return sorted(
+        totals.values(),
+        key=lambda row: (-row["quantidade"], row["produto"], row["produto_id"]),
+    )
 
 
 def ranking_csv() -> str:

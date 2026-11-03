@@ -206,6 +206,7 @@ class BaixaEstoque(models.Model):
         ('VENDA', 'Venda'),
         ('AJUSTE', 'Ajuste'),
         ('PERDA', 'Perda'),
+        ('DEVOLUCAO', 'Devolução'),
     )
 
     criada_em = models.DateTimeField(auto_now_add=True)
@@ -474,6 +475,211 @@ class ItemEntradaEstoque(models.Model):
 
     def __str__(self) -> str:
         return f'{self.produto.nome} - {self.quantidade:g}'
+
+
+class VendaCancelamento(models.Model):
+    venda = models.OneToOneField(
+        Venda,
+        on_delete=models.PROTECT,
+        related_name='cancelamento',
+    )
+    entrada = models.OneToOneField(
+        'EntradaEstoque',
+        on_delete=models.PROTECT,
+        related_name='cancelamento_venda',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='cancelamentos_venda',
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    valor_total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0'))],
+    )
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class VendaDevolucao(models.Model):
+    venda = models.ForeignKey(
+        Venda,
+        on_delete=models.PROTECT,
+        related_name='devolucoes',
+    )
+    entrada = models.OneToOneField(
+        'EntradaEstoque',
+        on_delete=models.PROTECT,
+        related_name='devolucao_venda',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='devolucoes_venda',
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    valor_total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0'))],
+    )
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class ItemVendaDevolucao(models.Model):
+    devolucao = models.ForeignKey(
+        VendaDevolucao,
+        on_delete=models.CASCADE,
+        related_name='itens',
+    )
+    item_venda = models.ForeignKey(
+        ItemVenda,
+        on_delete=models.PROTECT,
+        related_name='devolucoes',
+    )
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT)
+    quantidade = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    preco_unitario = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0'))],
+    )
+    total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0'))],
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('devolucao', 'item_venda'),
+                name='unique_item_por_devolucao_venda',
+            ),
+        ]
+
+
+class BaixaCorrecao(models.Model):
+    baixa = models.OneToOneField(
+        BaixaEstoque,
+        on_delete=models.PROTECT,
+        related_name='correcao',
+    )
+    entrada = models.OneToOneField(
+        'EntradaEstoque',
+        on_delete=models.PROTECT,
+        related_name='correcao_baixa',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='correcoes_baixa',
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class ItemBaixaCorrecao(models.Model):
+    correcao = models.ForeignKey(
+        BaixaCorrecao,
+        on_delete=models.CASCADE,
+        related_name='itens',
+    )
+    item_baixa = models.ForeignKey(
+        ItemBaixaEstoque,
+        on_delete=models.PROTECT,
+        related_name='correcoes',
+    )
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT)
+    quantidade = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('correcao', 'item_baixa'),
+                name='unique_item_por_correcao_baixa',
+            ),
+        ]
+
+
+class DevolucaoFornecedor(models.Model):
+    entrada_compra = models.ForeignKey(
+        'EntradaEstoque',
+        on_delete=models.PROTECT,
+        related_name='devolucoes_fornecedor',
+    )
+    baixa = models.OneToOneField(
+        BaixaEstoque,
+        on_delete=models.PROTECT,
+        related_name='devolucao_fornecedor',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='devolucoes_fornecedor',
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class ItemDevolucaoFornecedor(models.Model):
+    devolucao = models.ForeignKey(
+        DevolucaoFornecedor,
+        on_delete=models.CASCADE,
+        related_name='itens',
+    )
+    item_entrada = models.ForeignKey(
+        ItemEntradaEstoque,
+        on_delete=models.PROTECT,
+        related_name='devolucoes_fornecedor',
+    )
+    produto = models.ForeignKey(Produto, on_delete=models.PROTECT)
+    quantidade = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('devolucao', 'item_entrada'),
+                name='unique_item_por_devolucao_fornecedor',
+            ),
+        ]
 
 
 class Imagem(models.Model):

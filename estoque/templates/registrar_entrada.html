@@ -114,6 +114,7 @@
                                 <th scope="col">Motivo</th>
                                 <th scope="col">Fornecedor</th>
                                 <th scope="col">Status</th>
+                                <th scope="col">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -133,6 +134,13 @@
                                     <td>{{ entrada.get_motivo_display }}</td>
                                     <td>{% if entrada.fornecedor_id %}<a href="{% url 'fornecedor_detalhe' entrada.fornecedor_id %}">{{ entrada.fornecedor_nome }}</a>{% else %}Não informado{% endif %}</td>
                                     <td><span class="inflow-status">Registrada</span></td>
+                                    <td>
+                                        {% if entrada.motivo == 'COMPRA' and entrada.fornecedor_id and not entrada.devolucoes_fornecedor.all %}
+                                            <a class="btn btn-outline-light btn-sm" href="{% url 'devolver_fornecedor' entrada.pk %}">Devolver ao fornecedor</a>
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                             {% endfor %}
                         </tbody>

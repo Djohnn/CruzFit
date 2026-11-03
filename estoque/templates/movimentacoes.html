@@ -114,7 +114,9 @@
                             <th>Motivo</th>
                             <th>Responsável</th>
                             <th>Fornecedor</th>
+                            <th>Origem vinculada</th>
                             <th>Observação</th>
+                            <th>Ações</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -133,7 +135,21 @@
                             <td>{{ movement.motivo_label }}</td>
                             <td>{{ movement.responsavel }}</td>
                             <td>{{ movement.fornecedor }}</td>
+                            <td>{{ movement.origem }}</td>
                             <td>{{ movement.observacao|default:'—' }}</td>
+                            <td>
+                                <div class="report-actions">
+                                    {% if movement.pode_corrigir %}
+                                        <a class="btn btn-outline-light btn-sm" href="{% url 'corrigir_baixa' movement.id %}">Corrigir baixa</a>
+                                    {% endif %}
+                                    {% if movement.pode_devolver_fornecedor %}
+                                        <a class="btn btn-outline-light btn-sm" href="{% url 'devolver_fornecedor' movement.id %}">Devolver ao fornecedor</a>
+                                    {% endif %}
+                                    {% if not movement.pode_corrigir and not movement.pode_devolver_fornecedor %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </div>
+                            </td>
                         </tr>
                     {% endfor %}
                     </tbody>

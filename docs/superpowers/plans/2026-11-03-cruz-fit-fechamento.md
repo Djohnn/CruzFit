@@ -97,6 +97,8 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 
 ## 5. Entregar venda de balcão local
 
+**Registro de publicação** — Etapa 5 aceita conforme resultado auditado informado pelo usuário, com 238 testes aprovados e publicação em bac20406ab51c112d247e4dfd4f993435708bfd1. Sol confirmou esse HEAD e o checkout limpo na entrada do acompanhamento. A migração 0016 foi publicada. A aplicação no banco real permanece na janela final. Os critérios desta etapa têm aceite registrado na matriz.
+
 **Aceite do recorte anterior** — Sol aceita histórico, filtros, relatórios e CSV da Etapa 4 conforme reauditoria independente informada pelo usuário, com 9 testes focados e 225 na suíte completa. Checkout limpo conferido em 502add827f1528bbdcdab87e1ac3b38d51cca734. O ranking permanece aberto na Etapa 4. A implementação da venda segue liberada.
 
 **Liberação de Sol** — Implementação autorizada pelo usuário na mesma sequência. Iniciar a escrita após o auditor liberar o recorte da Etapa 4, no checkout compartilhado. Validar preço, desconto, total, forma de pagamento, baixa vinculada e comprovante em dados sintéticos. A auditoria das Etapas 4 e 5 precede o aceite de Sol. A janela de ativação real continua registrada nas Etapas 1 e 8.
@@ -162,8 +164,8 @@ Reservar a última janela para revisão e correções. O coordenador pode anteci
 | 02 | Idempotência de baixas | [x] | PASS. Auditoria e aceite registrados. | Implementador |
 | 03 | Catálogo e reposição | [x] | PASS em desenvolvimento. Correções e verificações finais aceitas por Sol. | Implementador |
 | 04 | Histórico e relatórios | [ ] | Recorte de histórico/relatórios/CSV PASS em 502add8. Ranking pendente das Etapas 5 e 6. | Implementador |
-| 05 | Venda de balcão | [ ] | LIBERADA na sequência da auditoria do recorte da Etapa 4. | Implementador |
-| 06 | Cancelamentos e devoluções | [ ] | LIBERADA. Reversões de venda dependem do aceite da Etapa 5. | Implementador |
+| 05 | Venda de balcão | [x] | PASS conforme auditoria informada pelo usuário, 238 testes. Publicada em bac2040. | Implementador |
+| 06 | Cancelamentos e devoluções | [ ] | EM IMPLEMENTAÇÃO. Início confirmado pelo usuário após publicação da Etapa 5. | Implementador |
 | 07 | Operação offline | [ ] | LIBERADA. Validação final após integrar os fluxos das Etapas 5 e 6. | Implementador |
 | 08 | Integração final | [ ] | PENDENTE | Sol |
 

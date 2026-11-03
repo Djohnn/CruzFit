@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Devolver venda #{{ venda.pk }} | Cruz Fit{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">{% endblock %}
+{% block 'body' %}
+<main class="container sale-page">
+    <header class="page-heading"><p class="eyebrow">Reversão auditada</p><h1>Devolver itens da venda #{{ venda.pk }}</h1><p>Informe somente a quantidade que retornou. O preço histórico do item será preservado.</p></header>
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}</div>{% endif %}
+    <section class="surface-section reversal-form-section">
+        <form method="post" class="operational-form">
+            {% csrf_token %}
+            <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+            {% for item in venda.itens.all %}
+                <div class="reversal-line-item">
+                    <div><strong>{{ item.produto.nome }}</strong><small>Vendido: {{ item.quantidade|floatformat:2 }} · R$ {{ item.preco_unitario|floatformat:2 }}</small></div>
+                    <input type="hidden" name="item_venda" value="{{ item.pk }}">
+                    <label>Quantidade devolvida<input class="form-control" type="number" name="quantidade" min="0" max="{{ item.quantidade }}" step="0.01" value=""></label>
+                </div>
+            {% endfor %}
+            <div class="form-group"><label for="return-reason">Motivo obrigatório</label><textarea id="return-reason" class="form-control" name="motivo" rows="4" required maxlength="500" placeholder="Explique a devolução"></textarea></div>
+            <div class="sale-actions-inline"><a class="btn btn-outline-light" href="{% url 'venda_detalhe' venda.pk %}">Voltar</a><button class="btn btn-success" type="submit">Confirmar devolução</button></div>
+        </form>
+    </section>
+</main>
+{% endblock %}

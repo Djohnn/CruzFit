@@ -364,3 +364,205 @@ git status --short
 ```
 
 Os artefatos de configuração temporária foram removidos da raiz do checkout. O banco/mídia sintéticos usados no ensaio permanecem fora do projeto para evidência; nenhum dado real foi usado como fixture ou alterado.
+
+## Etapa 6 — reversões e correções transacionais
+
+- [ ] Etapa 6 — PASS técnico, pendente de auditoria independente e aceite de Sol. Revisão examinada: `bac20406ab51c112d247e4dfd4f993435708bfd1` com diff não commitado no checkout compartilhado. Evidência: 22 testes focados, 251 testes completos, `check`, migrações, Ruff, mypy e `git diff --check` com código 0. Parecer do auditor: PENDENTE.
+
+### Entrega e uso
+
+Foram criados fluxos autenticados, exclusivos do gerente, com motivo, chave de idempotência, responsável, data, vínculo histórico e transação atômica:
+
+1. Na venda, use `Cancelar venda` para cancelamento integral. O sistema cria entrada compensatória `DEVOLUCAO`, preserva a venda e seus itens e rejeita cancelamento após devolução parcial.
+2. Na venda, use `Devolver itens`, informe somente as quantidades devolvidas e deixe as demais em branco. O sistema registra devolução parcial por item, conserva o preço histórico, limita o acumulado ao vendido e restaura o saldo.
+3. No histórico de uma baixa avulsa, use `Corrigir baixa`. O sistema cria uma entrada compensatória vinculada, sem aceitar vendas ou devoluções de fornecedor como baixa avulsa.
+4. Na entrada de compra, use `Devolver compra`. O sistema exige fornecedor, valida quantidade elegível e saldo físico, cria baixa explícita `DEVOLUCAO` e preserva a compra original.
+5. Reenvios com a mesma chave, autor e conteúdo retornam a operação existente. Mudança de autor, motivo, itens ou quantidades entra em conflito sem nova alteração de saldo.
+
+### Arquivos alterados
+
+- `estoque/models.py:480-708` — modelos próprios `VendaCancelamento`, `VendaDevolucao`, `ItemVendaDevolucao`, `BaixaCorrecao`, `ItemBaixaCorrecao`, `DevolucaoFornecedor` e `ItemDevolucaoFornecedor`, com vínculos protegidos, auditoria, motivo, responsável, data e chave.
+- `estoque/migrations/0017_reversoes_venda_baixa_fornecedor.py:1-133` — alteração de motivo e criação das estruturas de reversão.
+- `estoque/services.py:811-1247` — validação, assinatura, replay, bloqueio de saldo, compensações e quatro serviços transacionais.
+- `estoque/relatorios.py:31-58,150-391,437-521` — origem vinculada no histórico/CSV e ranking líquido após cancelamentos/devoluções.
+- `estoque/views.py:101-116,577-705` — adaptação HTTP manager-only, seleção de linhas positivas e ações protegidas por POST/CSRF.
+- `estoque/urls.py:20-23` — rotas das quatro ações.
+- `estoque/templates/cancelar_venda.html`, `devolver_venda.html`, `corrigir_baixa.html`, `devolver_fornecedor.html` — telas operacionais com motivo e chave.
+- `estoque/templates/venda_detalhe.html:37-48`, `movimentacoes.html:31-67` — ações e origem histórica.
+- `templates/static/estoque/css/css.css:1094-1110` — estilo das telas de reversão.
+- `estoque/test_reversoes.py:1-485` — contrato, serviços, atomicidade, idempotência, histórico, ranking, CSV e rotas HTTP.
+
+### Critérios exercitados
+
+- PASS — cancelamento integral e preservação da venda original.
+- PASS — devolução parcial com preço histórico e limite cumulativo.
+- PASS — correção de baixa avulsa com entrada compensatória.
+- PASS — devolução ao fornecedor com limite elegível e saldo físico.
+- PASS — motivo e chave obrigatórios, autor/conteúdo conflitantes e replay idempotente.
+- PASS — item de outra operação, venda com retorno prévio e saldo insuficiente rejeitados sem alteração parcial.
+- PASS — histórico, ranking líquido e CSV exibem as reversões e preservam a origem.
+- PASS — tela de devolução ignora linhas não selecionadas, sem enviar quantidades zero ao serviço estrito.
+- PENDENTE — auditoria independente e aceite de Sol.
+- NÃO INICIADA — Etapa 7 de assets locais e verificação com rede externa bloqueada.
+
+### Verificação — output bruto
+
+```text
+graphify check-update .
+EXIT_CODE=0
+
+graphify extract . --code-only --no-cluster --max-workers 2
+[graphify extract] incremental scan of C:\desenvolvimento\Contruct\Project_construct
+[graphify extract] --code-only: skipping 49 non-code file(s) (47 docs, 0 papers, 2 images) — no LLM extraction
+[graphify extract] 23 code, 0 docs, 0 papers, 0 images changed; 63 unchanged; 0 deleted
+[graphify extract] AST extraction on 23 code files...
+[graphify extract] wrote C:\desenvolvimento\Contruct\Project_construct\graphify-out\graph.json — 1128 nodes, 3083 edges (no clustering)
+EXIT_CODE=0
+
+graphify query "cancelar_venda devolver_venda corrigir_baixa devolver_fornecedor VendaCancelamento VendaDevolucao BaixaCorrecao DevolucaoFornecedor historical movement ranking CSV HTTP" --budget 3000
+Traversal: BFS depth=2; nodes including reversal models, services, reports and routes returned
+EXIT_CODE=0
+
+venv\Scripts\python.exe manage.py test estoque.test_reversoes estoque.test_relatorios -v 2
+Found 22 test(s).
+Ran 22 tests in 0.786s
+OK
+EXIT_CODE=0
+
+venv\Scripts\python.exe manage.py test -v 2
+Found 251 test(s).
+Ran 251 tests in 83.101s
+OK
+EXIT_CODE=0
+
+venv\Scripts\python.exe manage.py check
+System check identified no issues (0 silenced).
+EXIT_CODE=0
+
+venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+No changes detected
+EXIT_CODE=0
+
+venv\Scripts\ruff.exe check .
+All checks passed!
+EXIT_CODE=0
+
+venv\Scripts\mypy.exe .
+Success: no issues found in 50 source files
+EXIT_CODE=0
+
+git diff --check
+warning: in the working copy of 'estoque/relatorios.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'estoque/services.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'estoque/templates/movimentacoes.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'estoque/templates/venda_detalhe.html', LF will be replaced by CRLF the next time Git touches it
+EXIT_CODE=0
+```
+
+O primeiro ensaio completo antes da correção da tela passou com 250 testes. A regressão adicionada para dois itens e uma quantidade em branco passou isoladamente (`1/1`) e a suíte final passou com 251 testes. Os testes criaram banco temporário em memória e não usaram `db.sqlite3`, `media/` ou backups reais como fixture.
+
+### Estado da revisão congelada
+
+```text
+git rev-parse HEAD
+bac20406ab51c112d247e4dfd4f993435708bfd1
+
+git branch --show-current
+codex/impeccable-remediation
+
+git status --short
+ M docs/superpowers/plans/2026-11-03-cruz-fit-fechamento.md
+ M estoque/models.py
+ M estoque/relatorios.py
+ M estoque/services.py
+ M estoque/templates/movimentacoes.html
+ M estoque/templates/venda_detalhe.html
+ M estoque/urls.py
+ M estoque/views.py
+ M templates/static/estoque/css/css.css
+?? estoque/migrations/0017_reversoes_venda_baixa_fornecedor.py
+?? estoque/templates/cancelar_venda.html
+?? estoque/templates/corrigir_baixa.html
+?? estoque/templates/devolver_fornecedor.html
+?? estoque/templates/devolver_venda.html
+?? estoque/test_reversoes.py
+```
+
+Não houve commit, push, merge ou migração real. A Etapa 7 permanece aberta para execução posterior com assets locais e rede externa bloqueada.
+
+## Reauditoria — ações de reversão no histórico
+
+- [ ] Correção entregue e tecnicamente PASS; pendente de reauditoria e aceite de Sol. A revisão permanece sem commit no mesmo HEAD `bac20406ab51c112d247e4dfd4f993435708bfd1`.
+
+### Alterações
+
+- `estoque/relatorios.py:42-59,224-285` — cada linha normalizada informa se permite corrigir uma baixa avulsa ou devolver uma compra; vínculos de venda, devolução e correção tornam a ação indisponível.
+- `estoque/templates/movimentacoes.html:111-163` — coluna de ações com links condicionais para `Corrigir baixa` e `Devolver ao fornecedor`.
+- `estoque/views.py:774-778` — histórico de entradas carrega devoluções vinculadas sem alterar dados reais.
+- `estoque/templates/registrar_entrada.html:120-151` — ação de fornecedor somente para compra com fornecedor e sem devolução já registrada.
+- `templates/static/estoque/css/css.css:646-657` — agrupamento responsivo dos controles de ação.
+- `estoque/test_reversoes.py:415-490` — regressões HTTP para presença, ausência por vínculo e ocultação após execução.
+
+### RED/GREEN
+
+```text
+RED — manage.py test estoque.test_reversoes.ReversalServiceTests.test_movement_history_shows_only_eligible_correction_action estoque.test_reversoes.ReversalServiceTests.test_entry_history_shows_supplier_return_only_once_for_purchase -v 2
+Found 2 test(s).
+Ran 2 tests in 0.187s
+FAILED (failures=2)
+Falhas esperadas: links de ação ainda não existiam.
+EXIT_CODE=1
+
+GREEN — mesmo comando após a implementação
+Found 2 test(s).
+Ran 2 tests in 0.174s
+OK
+EXIT_CODE=0
+```
+
+### QA visual sintético
+
+Servidor temporário em `127.0.0.1:15003`, banco copiado e migrado em `C:\desenvolvimento\Contruct\qa-etapa6-links-20261103\qa.sqlite3`, usuário sintético `qa.etapa4`. Nenhum banco ou mídia real foi usado.
+
+- Desktop `1365x900`: histórico de movimentações e entradas exibiram as ações elegíveis.
+- Mobile `390x844`: layout responsivo e snapshots de acessibilidade confirmaram os links; tabelas permanecem em contêiner horizontal, conforme o padrão existente.
+- Capturas: `C:\desenvolvimento\Contruct\qa-etapa6-links-20261103\movimentacoes-desktop.png`, `registrar-entrada-desktop.png`, `movimentacoes-mobile-full.png` e `registrar-entrada-mobile-full.png`.
+- Detector disponível do Impeccable contra as rotas locais: código 0, sem achados emitidos. Os comandos `audit/polish` não existem nesta versão local; `detect` foi a verificação disponível.
+
+### Verificação final — output bruto
+
+```text
+venv\Scripts\python.exe manage.py test estoque.test_reversoes estoque.test_relatorios -v 2
+Found 24 test(s).
+Ran 24 tests in 1.101s
+OK
+EXIT_CODE=0
+
+venv\Scripts\python.exe manage.py test -v 2
+Found 253 test(s).
+Ran 253 tests in 84.121s
+OK
+EXIT_CODE=0
+
+venv\Scripts\python.exe manage.py check
+System check identified no issues (0 silenced).
+EXIT_CODE=0
+
+venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+No changes detected
+EXIT_CODE=0
+
+venv\Scripts\ruff.exe check .
+All checks passed!
+EXIT_CODE=0
+
+venv\Scripts\mypy.exe .
+Success: no issues found in 50 source files
+EXIT_CODE=0
+
+git diff --check
+EXIT_CODE=0
+Avisos somente de conversão LF/CRLF em arquivos já modificados.
+```
+
+Migrações reais, commit, push e publicação continuam pendentes e não foram executados.

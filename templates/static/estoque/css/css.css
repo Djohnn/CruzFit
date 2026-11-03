@@ -644,6 +644,18 @@
     margin-top: 0.25rem;
 }
 
+.report-actions {
+    display: flex;
+    min-width: 10rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+}
+
+.report-actions .btn {
+    white-space: nowrap;
+}
+
 .report-badge {
     display: inline-flex;
     align-items: center;
@@ -681,6 +693,27 @@
 
 .sale-page {
     max-width: 1240px;
+}
+
+.reversal-form-section {
+    max-width: 820px;
+}
+
+.reversal-line-item {
+    align-items: end;
+    border: 1px solid var(--border-gold, #6f4c08);
+    border-radius: 0.75rem;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr minmax(180px, 260px);
+    margin-bottom: 1rem;
+    padding: 1rem;
+}
+
+.reversal-line-item small {
+    color: var(--muted-text, #d8c89d);
+    display: block;
+    margin-top: 0.25rem;
 }
 
 .sale-page-heading {

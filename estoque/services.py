@@ -21,17 +21,24 @@ from .fornecedores import editar_fornecedor as editar_fornecedor
 from .fornecedores import inativar_fornecedor as inativar_fornecedor
 from .fornecedores import obter_fornecedor_ativo
 from .models import (
+    BaixaCorrecao,
     BaixaEstoque,
+    DevolucaoFornecedor,
     EntradaEstoque,
     Imagem,
+    ItemBaixaCorrecao,
     ItemBaixaEstoque,
+    ItemDevolucaoFornecedor,
     ItemEntradaEstoque,
     ItemVenda,
+    ItemVendaDevolucao,
     Produto,
     ProdutoAlteracao,
     ProdutoCadastro,
     ProdutoInativacao,
     Venda,
+    VendaCancelamento,
+    VendaDevolucao,
 )
 
 TWO_PLACES = Decimal('0.01')
@@ -43,6 +50,10 @@ class StockOperationError(ValueError):
 
 class SaleOperationError(ValueError):
     """Erro de validação ou conflito em uma venda local."""
+
+
+class ReversalOperationError(ValueError):
+    """Erro de validação ou conflito em uma reversão."""
 
 
 class ProductOperationError(ValidationError):
@@ -58,6 +69,12 @@ class MovementResult:
 @dataclass(frozen=True)
 class SaleResult:
     sale: Venda
+    created: bool
+
+
+@dataclass(frozen=True)
+class ReversalResult:
+    operation: object
     created: bool
 
 
@@ -591,6 +608,10 @@ def registrar_entrada(
     lines = _parse_lines(product_ids, quantities)
     if reason not in dict(EntradaEstoque.MOTIVO_CHOICES):
         raise StockOperationError('Selecione um motivo válido para a entrada.')
+    if reason == 'DEVOLUCAO':
+        raise StockOperationError(
+            'Devoluções devem ser vinculadas à venda ou à compra original.',
+        )
     try:
         supplier_pk = int(supplier_id) if supplier_id not in (None, '') else None
         if supplier_pk is not None and supplier_pk <= 0:
@@ -661,6 +682,10 @@ def registrar_baixa(
     lines = _parse_lines(product_ids, quantities)
     if reason not in dict(BaixaEstoque.MOTIVO_CHOICES):
         raise StockOperationError('Selecione um motivo válido para a baixa.')
+    if reason == 'DEVOLUCAO':
+        raise StockOperationError(
+            'Devoluções ao fornecedor devem ser vinculadas à compra original.',
+        )
 
     with transaction.atomic():
         existing = BaixaEstoque.objects.select_for_update().filter(
@@ -788,3 +813,435 @@ def registrar_venda(
                 total=item_total,
             )
     return SaleResult(sale, created=True)
+
+
+def _reversal_key(key: str | None) -> str:
+    normalized = (key or '').strip()
+    if not normalized:
+        raise ReversalOperationError('A chave de idempotência é obrigatória.')
+    if len(normalized) > 64:
+        raise ReversalOperationError('Chave de idempotência inválida.')
+    return normalized
+
+
+def _reversal_reason(reason: str) -> str:
+    normalized = (reason or '').strip()
+    if not normalized or len(normalized) > 500:
+        raise ReversalOperationError('Informe um motivo com até 500 caracteres.')
+    return normalized
+
+
+def _reversal_lines(
+    item_ids: Sequence[str] | Iterable[str],
+    quantities: Sequence[str] | Iterable[str],
+) -> list[tuple[int, Decimal]]:
+    raw_item_ids = list(item_ids)
+    raw_quantities = list(quantities)
+    if not raw_item_ids or len(raw_item_ids) != len(raw_quantities):
+        raise ReversalOperationError('Adicione pelo menos um item à reversão.')
+
+    lines: list[tuple[int, Decimal]] = []
+    selected_ids: set[int] = set()
+    for raw_item_id, raw_quantity in zip(raw_item_ids, raw_quantities):
+        try:
+            item_id = int(raw_item_id)
+            quantity = Decimal(str(raw_quantity))
+            normalized_quantity = quantity.quantize(TWO_PLACES)
+        except (InvalidOperation, TypeError, ValueError) as error:
+            raise ReversalOperationError(
+                'Informe quantidades maiores que zero com no máximo duas casas decimais.',
+            ) from error
+        if (
+            item_id <= 0
+            or not quantity.is_finite()
+            or quantity <= 0
+            or quantity != normalized_quantity
+        ):
+            raise ReversalOperationError(
+                'Informe quantidades maiores que zero com no máximo duas casas decimais.',
+            )
+        if item_id in selected_ids:
+            raise ReversalOperationError('Não repita o mesmo item na reversão.')
+        selected_ids.add(item_id)
+        lines.append((item_id, normalized_quantity))
+    return lines
+
+
+def _reversal_signature(
+    actor_id: int,
+    operation: str,
+    origin_id: int,
+    reason: str,
+    lines: Sequence[tuple[int, Decimal]] = (),
+) -> str:
+    payload = [
+        actor_id,
+        operation,
+        origin_id,
+        reason,
+        [[item_id, str(quantity)] for item_id, quantity in sorted(lines)],
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8'),
+    ).hexdigest()
+
+
+def _check_reversal_replay(operation, actor_id: int, signature: str) -> None:
+    if operation.responsavel_id != actor_id or operation.assinatura != signature:
+        raise ReversalOperationError(
+            'Essa chave de reversão já foi usada com outros dados. Abra uma nova operação.',
+        )
+
+
+def _locked_reversal_products(product_ids: Iterable[int]) -> dict[int, Produto]:
+    selected_ids = set(product_ids)
+    products = {
+        product.pk: product
+        for product in Produto.objects.select_for_update().filter(pk__in=selected_ids)
+    }
+    if len(products) != len(selected_ids):
+        raise ReversalOperationError('Um dos produtos da operação não existe.')
+    return products
+
+
+def _sum_reversed_quantities(queryset) -> Decimal:
+    return sum(queryset, Decimal('0.00')).quantize(TWO_PLACES)
+
+
+def cancelar_venda(
+    *,
+    actor,
+    sale_id: int,
+    reason: str,
+    idempotency_key: str | None,
+) -> ReversalResult:
+    _require_reversal_manager(actor)
+    key = _reversal_key(idempotency_key)
+    motivo = _reversal_reason(reason)
+    signature = _reversal_signature(actor.pk, 'cancelamento-venda', sale_id, motivo)
+
+    with transaction.atomic():
+        existing = VendaCancelamento.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            _check_reversal_replay(existing, actor.pk, signature)
+            return ReversalResult(existing, created=False)
+
+        try:
+            sale = Venda.objects.select_for_update().get(pk=sale_id)
+        except Venda.DoesNotExist as error:
+            raise ReversalOperationError('Venda não encontrada.') from error
+        if VendaCancelamento.objects.filter(venda=sale).exists():
+            raise ReversalOperationError('Essa venda já foi cancelada.')
+        if VendaDevolucao.objects.filter(venda=sale).exists():
+            raise ReversalOperationError(
+                'Uma venda com devolução parcial não pode ser cancelada integralmente.',
+            )
+
+        sale_items = list(
+            ItemVenda.objects.select_for_update().filter(venda=sale).order_by('pk')
+        )
+        products = _locked_reversal_products(item.produto_id for item in sale_items)
+        entry = EntradaEstoque.objects.create(
+            motivo='DEVOLUCAO',
+            observacao=f'Cancelamento da Venda #{sale.pk}',
+            responsavel=actor,
+        )
+        value_total = Decimal('0.00')
+        for item in sale_items:
+            product = products[item.produto_id]
+            product.quantidade += item.quantidade
+            product.save(update_fields=('quantidade',))
+            ItemEntradaEstoque.objects.create(
+                entrada=entry,
+                produto=product,
+                quantidade=item.quantidade,
+            )
+            value_total += item.total
+        cancellation = VendaCancelamento.objects.create(
+            venda=sale,
+            entrada=entry,
+            responsavel=actor,
+            motivo=motivo,
+            chave_idempotencia=key,
+            assinatura=signature,
+            valor_total=value_total.quantize(TWO_PLACES),
+        )
+    return ReversalResult(cancellation, created=True)
+
+
+def devolver_venda(
+    *,
+    actor,
+    sale_id: int,
+    item_ids: Sequence[str] | Iterable[str],
+    quantities: Sequence[str] | Iterable[str],
+    reason: str,
+    idempotency_key: str | None,
+) -> ReversalResult:
+    _require_reversal_manager(actor)
+    key = _reversal_key(idempotency_key)
+    motivo = _reversal_reason(reason)
+    lines = _reversal_lines(item_ids, quantities)
+    signature = _reversal_signature(actor.pk, 'devolucao-venda', sale_id, motivo, lines)
+
+    with transaction.atomic():
+        existing = VendaDevolucao.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            _check_reversal_replay(existing, actor.pk, signature)
+            return ReversalResult(existing, created=False)
+
+        try:
+            sale = Venda.objects.select_for_update().get(pk=sale_id)
+        except Venda.DoesNotExist as error:
+            raise ReversalOperationError('Venda não encontrada.') from error
+        if VendaCancelamento.objects.filter(venda=sale).exists():
+            raise ReversalOperationError('Uma venda cancelada não aceita devolução adicional.')
+        item_ids_set = {item_id for item_id, _ in lines}
+        sale_items = {
+            item.pk: item
+            for item in ItemVenda.objects.select_for_update().filter(
+                venda=sale,
+                pk__in=item_ids_set,
+            )
+        }
+        if len(sale_items) != len(item_ids_set):
+            raise ReversalOperationError('Um dos itens não pertence à venda informada.')
+
+        previous_returns = {
+            item_id: _sum_reversed_quantities(
+                ItemVendaDevolucao.objects.filter(
+                    devolucao__venda=sale,
+                    item_venda_id=item_id,
+                ).values_list('quantidade', flat=True),
+            )
+            for item_id in item_ids_set
+        }
+        for item_id, quantity in lines:
+            item = sale_items[item_id]
+            eligible = item.quantidade - previous_returns[item_id]
+            if quantity > eligible:
+                raise ReversalOperationError(
+                    f'A quantidade devolvida de {item.produto.nome} supera o saldo elegível.',
+                )
+
+        products = _locked_reversal_products(item.produto_id for item in sale_items.values())
+        entry = EntradaEstoque.objects.create(
+            motivo='DEVOLUCAO',
+            observacao=f'Devolução da Venda #{sale.pk}',
+            responsavel=actor,
+        )
+        value_total = Decimal('0.00')
+        devolucao = VendaDevolucao.objects.create(
+            venda=sale,
+            entrada=entry,
+            responsavel=actor,
+            motivo=motivo,
+            chave_idempotencia=key,
+            assinatura=signature,
+            valor_total=Decimal('0.00'),
+        )
+        for item_id, quantity in lines:
+            item = sale_items[item_id]
+            product = products[item.produto_id]
+            item_total = (item.preco_unitario * quantity).quantize(TWO_PLACES)
+            product.quantidade += quantity
+            product.save(update_fields=('quantidade',))
+            ItemEntradaEstoque.objects.create(
+                entrada=entry,
+                produto=product,
+                quantidade=quantity,
+            )
+            ItemVendaDevolucao.objects.create(
+                devolucao=devolucao,
+                item_venda=item,
+                produto=product,
+                quantidade=quantity,
+                preco_unitario=item.preco_unitario,
+                total=item_total,
+            )
+            value_total += item_total
+        devolucao.valor_total = value_total.quantize(TWO_PLACES)
+        devolucao.save(update_fields=('valor_total',))
+    return ReversalResult(devolucao, created=True)
+
+
+def corrigir_baixa(
+    *,
+    actor,
+    baixa_id: int,
+    reason: str,
+    idempotency_key: str | None,
+) -> ReversalResult:
+    _require_reversal_manager(actor)
+    key = _reversal_key(idempotency_key)
+    motivo = _reversal_reason(reason)
+    signature = _reversal_signature(actor.pk, 'correcao-baixa', baixa_id, motivo)
+
+    with transaction.atomic():
+        existing = BaixaCorrecao.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            _check_reversal_replay(existing, actor.pk, signature)
+            return ReversalResult(existing, created=False)
+
+        try:
+            movement = BaixaEstoque.objects.select_for_update().get(pk=baixa_id)
+        except BaixaEstoque.DoesNotExist as error:
+            raise ReversalOperationError('Baixa não encontrada.') from error
+        if hasattr(movement, 'venda'):
+            raise ReversalOperationError('Baixas de venda devem ser revertidas pela venda original.')
+        if hasattr(movement, 'devolucao_fornecedor'):
+            raise ReversalOperationError('A devolução ao fornecedor não pode ser corrigida como baixa avulsa.')
+        if BaixaCorrecao.objects.filter(baixa=movement).exists():
+            raise ReversalOperationError('Essa baixa já foi corrigida.')
+
+        original_items = list(
+            ItemBaixaEstoque.objects.select_for_update().filter(baixa=movement).order_by('pk')
+        )
+        products = _locked_reversal_products(item.produto_id for item in original_items)
+        entry = EntradaEstoque.objects.create(
+            motivo='AJUSTE',
+            observacao=f'Correção da Baixa #{movement.pk}',
+            responsavel=actor,
+        )
+        correction = BaixaCorrecao.objects.create(
+            baixa=movement,
+            entrada=entry,
+            responsavel=actor,
+            motivo=motivo,
+            chave_idempotencia=key,
+            assinatura=signature,
+        )
+        for item in original_items:
+            product = products[item.produto_id]
+            product.quantidade += item.quantidade
+            product.save(update_fields=('quantidade',))
+            ItemEntradaEstoque.objects.create(
+                entrada=entry,
+                produto=product,
+                quantidade=item.quantidade,
+            )
+            ItemBaixaCorrecao.objects.create(
+                correcao=correction,
+                item_baixa=item,
+                produto=product,
+                quantidade=item.quantidade,
+            )
+    return ReversalResult(correction, created=True)
+
+
+def devolver_fornecedor(
+    *,
+    actor,
+    entrada_id: int,
+    item_ids: Sequence[str] | Iterable[str],
+    quantities: Sequence[str] | Iterable[str],
+    reason: str,
+    idempotency_key: str | None,
+) -> ReversalResult:
+    _require_reversal_manager(actor)
+    key = _reversal_key(idempotency_key)
+    motivo = _reversal_reason(reason)
+    lines = _reversal_lines(item_ids, quantities)
+    signature = _reversal_signature(
+        actor.pk,
+        'devolucao-fornecedor',
+        entrada_id,
+        motivo,
+        lines,
+    )
+
+    with transaction.atomic():
+        existing = DevolucaoFornecedor.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            _check_reversal_replay(existing, actor.pk, signature)
+            return ReversalResult(existing, created=False)
+
+        try:
+            purchase = EntradaEstoque.objects.select_for_update().get(pk=entrada_id)
+        except EntradaEstoque.DoesNotExist as error:
+            raise ReversalOperationError('Entrada de compra não encontrada.') from error
+        if purchase.motivo != 'COMPRA' or purchase.fornecedor_id is None:
+            raise ReversalOperationError('A origem informada não é uma compra com fornecedor.')
+
+        item_ids_set = {item_id for item_id, _ in lines}
+        purchase_items = {
+            item.pk: item
+            for item in ItemEntradaEstoque.objects.select_for_update().filter(
+                entrada=purchase,
+                pk__in=item_ids_set,
+            )
+        }
+        if len(purchase_items) != len(item_ids_set):
+            raise ReversalOperationError('Um dos itens não pertence à compra informada.')
+
+        previous_returns = {
+            item_id: _sum_reversed_quantities(
+                ItemDevolucaoFornecedor.objects.filter(
+                    devolucao__entrada_compra=purchase,
+                    item_entrada_id=item_id,
+                ).values_list('quantidade', flat=True),
+            )
+            for item_id in item_ids_set
+        }
+        for item_id, quantity in lines:
+            item = purchase_items[item_id]
+            eligible = item.quantidade - previous_returns[item_id]
+            if quantity > eligible:
+                raise ReversalOperationError(
+                    f'A quantidade devolvida de {item.produto.nome} supera o saldo comprado.',
+                )
+
+        products = _locked_reversal_products(item.produto_id for item in purchase_items.values())
+        for item_id, quantity in lines:
+            product = products[purchase_items[item_id].produto_id]
+            if quantity > product.quantidade:
+                raise ReversalOperationError(f'Estoque insuficiente para {product.nome}.')
+
+        movement = BaixaEstoque.objects.create(
+            motivo='DEVOLUCAO',
+            observacao=f'Devolução ao fornecedor da Entrada #{purchase.pk}',
+            responsavel=actor,
+        )
+        operation = DevolucaoFornecedor.objects.create(
+            entrada_compra=purchase,
+            baixa=movement,
+            responsavel=actor,
+            motivo=motivo,
+            chave_idempotencia=key,
+            assinatura=signature,
+        )
+        for item_id, quantity in lines:
+            item = purchase_items[item_id]
+            product = products[item.produto_id]
+            product.quantidade -= quantity
+            product.save(update_fields=('quantidade',))
+            ItemBaixaEstoque.objects.create(
+                baixa=movement,
+                produto=product,
+                quantidade=quantity,
+            )
+            ItemDevolucaoFornecedor.objects.create(
+                devolucao=operation,
+                item_entrada=item,
+                produto=product,
+                quantidade=quantity,
+            )
+    return ReversalResult(operation, created=True)
+
+
+def _require_reversal_manager(actor) -> None:
+    if not (
+        actor
+        and actor.is_authenticated
+        and actor.is_active
+        and (actor.is_superuser or actor.cargo == 'G')
+    ):
+        raise ReversalOperationError('Apenas o gerente pode registrar reversões.')

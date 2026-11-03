@@ -44,11 +44,24 @@ from .relatorios import (
 )
 from .services import (
     ProductOperationError,
+    ReversalOperationError,
     SaleOperationError,
     StockOperationError,
 )
 from .services import (
     cadastrar_produto as cadastrar_produto_service,
+)
+from .services import (
+    cancelar_venda as cancelar_venda_service,
+)
+from .services import (
+    corrigir_baixa as corrigir_baixa_service,
+)
+from .services import (
+    devolver_fornecedor as devolver_fornecedor_service,
+)
+from .services import (
+    devolver_venda as devolver_venda_service,
 )
 from .services import (
     editar_produto as editar_produto_service,
@@ -62,7 +75,9 @@ from .services import (
 from .services import (
     registrar_entrada as registrar_entrada_service,
 )
-from .services import registrar_venda as registrar_venda_service
+from .services import (
+    registrar_venda as registrar_venda_service,
+)
 
 MAX_PRODUCT_IMAGE_COUNT = 5
 MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024
@@ -80,6 +95,21 @@ def gerente_required(view_func):
         return view_func(request, *args, **kwargs)
 
     return wrapped
+
+
+def _selected_reversal_lines(request, item_field):
+    """Keep optional zero rows out of the strict reversal service contract."""
+    selected = []
+    for item_id, quantity in zip_longest(
+        request.POST.getlist(item_field),
+        request.POST.getlist('quantidade'),
+        fillvalue='',
+    ):
+        normalized = str(quantity).strip().replace(',', '.')
+        if normalized in {'', '0', '0.0', '0.00'}:
+            continue
+        selected.append((item_id, quantity))
+    return [item_id for item_id, _ in selected], [quantity for _, quantity in selected]
 
 
 def _validate_product_images(images):
@@ -526,6 +556,140 @@ def venda_comprovante(request, pk):
     return render(request, 'venda_comprovante.html', {'venda': venda})
 
 
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def cancelar_venda(request, pk):
+    try:
+        sale = Venda.objects.select_related('baixa').get(pk=pk)
+    except Venda.DoesNotExist:
+        return HttpResponseNotFound('Venda não encontrada.')
+
+    if request.method == 'POST':
+        try:
+            result = cancelar_venda_service(
+                actor=request.user,
+                sale_id=sale.pk,
+                reason=request.POST.get('motivo') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except ReversalOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                'Venda cancelada.' if result.created else 'Esse cancelamento já foi registrado.',
+            )
+            return redirect('venda_detalhe', pk=sale.pk)
+    return render(
+        request,
+        'cancelar_venda.html',
+        {'venda': sale, 'chave_idempotencia': uuid.uuid4().hex},
+    )
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def devolver_venda(request, pk):
+    try:
+        sale = Venda.objects.prefetch_related('itens__produto').get(pk=pk)
+    except Venda.DoesNotExist:
+        return HttpResponseNotFound('Venda não encontrada.')
+
+    if request.method == 'POST':
+        item_ids, quantities = _selected_reversal_lines(request, 'item_venda')
+        try:
+            result = devolver_venda_service(
+                actor=request.user,
+                sale_id=sale.pk,
+                item_ids=item_ids,
+                quantities=quantities,
+                reason=request.POST.get('motivo') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except ReversalOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                'Devolução registrada.' if result.created else 'Essa devolução já foi registrada.',
+            )
+            return redirect('venda_detalhe', pk=sale.pk)
+    return render(
+        request,
+        'devolver_venda.html',
+        {'venda': sale, 'chave_idempotencia': uuid.uuid4().hex},
+    )
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def corrigir_baixa(request, pk):
+    try:
+        movement = BaixaEstoque.objects.prefetch_related('itens__produto').get(pk=pk)
+    except BaixaEstoque.DoesNotExist:
+        return HttpResponseNotFound('Baixa não encontrada.')
+
+    if request.method == 'POST':
+        try:
+            result = corrigir_baixa_service(
+                actor=request.user,
+                baixa_id=movement.pk,
+                reason=request.POST.get('motivo') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except ReversalOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                'Baixa corrigida.' if result.created else 'Essa correção já foi registrada.',
+            )
+            return redirect('movimentacoes')
+    return render(
+        request,
+        'corrigir_baixa.html',
+        {'baixa': movement, 'chave_idempotencia': uuid.uuid4().hex},
+    )
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def devolver_fornecedor(request, pk):
+    try:
+        purchase = EntradaEstoque.objects.select_related('fornecedor').prefetch_related(
+            'itens__produto',
+        ).get(pk=pk)
+    except EntradaEstoque.DoesNotExist:
+        return HttpResponseNotFound('Entrada de compra não encontrada.')
+
+    if request.method == 'POST':
+        item_ids, quantities = _selected_reversal_lines(request, 'item_entrada')
+        try:
+            result = devolver_fornecedor_service(
+                actor=request.user,
+                entrada_id=purchase.pk,
+                item_ids=item_ids,
+                quantities=quantities,
+                reason=request.POST.get('motivo') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except ReversalOperationError as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                'Devolução ao fornecedor registrada.'
+                if result.created
+                else 'Essa devolução já foi registrada.',
+            )
+            return redirect('movimentacoes')
+    return render(
+        request,
+        'devolver_fornecedor.html',
+        {'entrada': purchase, 'chave_idempotencia': uuid.uuid4().hex},
+    )
+
+
 @login_required(login_url='login')
 @require_http_methods(['GET', 'POST'])
 def registrar_baixa(request):
@@ -609,6 +773,7 @@ def registrar_entrada(request):
             'chave_idempotencia': posted.get('chave_idempotencia') or uuid.uuid4().hex,
             'historico': EntradaEstoque.objects.select_related('fornecedor').prefetch_related(
                 'itens__produto',
+                'devolucoes_fornecedor',
             )[:30],
         },
     )
