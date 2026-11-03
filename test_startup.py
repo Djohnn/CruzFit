@@ -5,6 +5,7 @@ from pathlib import Path
 
 from django.apps import apps
 from django.contrib.messages import get_messages
+from django.core.management import call_command
 from django.template.loader import get_template
 from django.test import TestCase, override_settings
 
@@ -189,6 +190,18 @@ class RemediationRegressionTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/")
+
+    def test_first_account_command_creates_manager_without_email(self):
+        call_command(
+            "criar_conta_cruz_fit",
+            nome="Conta Inicial",
+            senha="Senha@123",
+        )
+
+        account = Users.objects.get(first_name="Conta Inicial")
+        self.assertEqual(account.cargo, "G")
+        self.assertEqual(account.email, "")
+        self.assertTrue(account.check_password("Senha@123"))
 
     def test_authenticated_home_renders_the_approved_action_cards(self):
         response = self.client.get("/")

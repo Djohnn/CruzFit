@@ -9,7 +9,8 @@ REQUISITOS
 PRIMEIRA INSTALACAO
 1. Copie a pasta inteira do projeto para o computador.
 2. Execute INSTALAR_CRUZ_FIT.bat.
-3. Aguarde a instalacao terminar.
+3. Execute CRIAR_CONTA_CRUZ_FIT.bat e informe o nome e a senha do responsavel.
+4. Execute INICIAR_CRUZ_FIT.bat para abrir o sistema.
 
 USO DIARIO
 1. Execute INICIAR_CRUZ_FIT.bat.
