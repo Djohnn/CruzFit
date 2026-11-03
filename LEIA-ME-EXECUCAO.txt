@@ -12,17 +12,24 @@ PRIMEIRA INSTALACAO
 3. Execute CRIAR_CONTA_CRUZ_FIT.bat e informe o nome e a senha do responsavel.
 4. Execute CRIAR_ATALHO_CRUZ_FIT.bat para criar o icone na Area de Trabalho.
 5. Execute INICIAR_CRUZ_FIT.bat para abrir o sistema.
+6. Na primeira instalação, execute CONFIGURAR_BACKUP_CRUZ_FIT.bat e escolha uma
+   pasta no pendrive ou HD externo.
 
 USO DIARIO
 1. Execute INICIAR_CRUZ_FIT.bat.
 2. O navegador abrira automaticamente em:
    http://127.0.0.1:15001/auth/login/
 3. Para parar o sistema, execute PARAR_CRUZ_FIT.bat.
+4. Para backup manual, pare o sistema e execute BACKUP_CRUZ_FIT.bat.
+5. Para restaurar, pare o sistema e execute RESTAURAR_BACKUP_CRUZ_FIT.bat.
 
 DADOS
 - O banco local fica em db.sqlite3.
 - As imagens ficam na pasta media.
-- Faca backup copiando db.sqlite3 e a pasta media com o sistema parado.
+- O INICIAR_CRUZ_FIT.bat faz backup validado antes das migracoes quando o banco
+  ja existe.
+- Para uma copia manual, use BACKUP_CRUZ_FIT.bat com o sistema parado.
+- Consulte docs/BACKUP_E_RESTAURACAO.md antes de restaurar dados.
 - Nao copie a pasta .runtime para outro computador; o instalador cria um ambiente novo.
 
 OBSERVACAO

@@ -267,6 +267,10 @@ pyrightconfig.json
 # End of https://www.toptal.com/developers/gitignore/api/python,django
 
 # Cruz Fit local development and QA artifacts
+.backup/
+backups/
+graphify-out/
+*.partial
 .runtime/
 .agent/
 .agents/

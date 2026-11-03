@@ -35,8 +35,14 @@ if errorlevel 1 goto failure
 "%PYTHON_EXE%" -m pip install -r "%~dp0requirements.txt"
 if errorlevel 1 goto failure
 
-echo Preparando o banco de dados...
-"%PYTHON_EXE%" manage.py migrate --noinput
+if not exist "%~dp0.backup\config.json" (
+    echo Configure agora o pendrive ou HD externo que recebera os backups.
+    call "%~dp0CONFIGURAR_BACKUP_CRUZ_FIT.bat"
+    if errorlevel 1 goto failure
+)
+
+echo Preparando o banco de dados com backup validado...
+"%PYTHON_EXE%" -m construct.backup.cli runtime prepare-database --reason "Instalacao inicial" --operation-id "install-%RANDOM%-%RANDOM%"
 if errorlevel 1 goto failure
 
 echo.
