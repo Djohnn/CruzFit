@@ -12,7 +12,7 @@
         <header class="page-heading">
             <p class="eyebrow">Movimentação de estoque</p>
             <h1>Registrar entrada</h1>
-            <p>Adicione produtos recebidos ao estoque. Esta operação não registra fornecedor, usuário ou pagamento.</p>
+            <p>Registre as mercadorias recebidas e identifique o fornecedor nas compras.</p>
         </header>
 
         {% if messages %}
@@ -36,22 +36,24 @@
                 {% csrf_token %}
                 <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
                 <div id="inflow-items" class="inflow-line-items">
+                    {% for linha in linhas %}
                     <div class="inflow-line-item" data-inflow-row>
                         <div class="inflow-item-field">
-                            <label for="inflow-product-1">Produto</label>
-                            <select id="inflow-product-1" class="form-control" name="produto" required>
+                            <label for="inflow-product-{{ forloop.counter }}">Produto</label>
+                            <select id="inflow-product-{{ forloop.counter }}" class="form-control" name="produto" required>
                                 <option value="">Selecione um produto</option>
                                 {% for produto in produtos %}
-                                    <option value="{{ produto.id }}">{{ produto.nome }} (estoque: {{ produto.quantidade|floatformat:2 }})</option>
+                                    <option value="{{ produto.id }}" {% if produto.pk|stringformat:'s' == linha.produto %}selected{% endif %}>{{ produto.nome }} (estoque: {{ produto.quantidade|floatformat:2 }})</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="inflow-item-field inflow-quantity-field">
-                            <label for="inflow-quantity-1">Quantidade</label>
-                            <input id="inflow-quantity-1" class="form-control" type="number" name="quantidade" min="0.01" step="0.01" value="1" required>
+                            <label for="inflow-quantity-{{ forloop.counter }}">Quantidade</label>
+                            <input id="inflow-quantity-{{ forloop.counter }}" class="form-control" type="number" name="quantidade" min="0.01" step="0.01" value="{{ linha.quantidade }}" required>
                         </div>
                         <button class="btn btn-outline-danger inflow-remove-button" type="button">Remover</button>
                     </div>
+                    {% endfor %}
                 </div>
 
                 <div class="inflow-fields">
@@ -60,13 +62,21 @@
                         <select id="inflow-reason" class="form-control" name="motivo" required>
                             <option value="">Selecione o motivo</option>
                             {% for value, label in motivo_choices %}
-                                <option value="{{ value }}">{{ label }}</option>
+                                <option value="{{ value }}" {% if value == motivo_selecionado %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="form-group">
+                        <label for="inflow-supplier">Fornecedor</label>
+                        <select id="inflow-supplier" class="form-control" name="fornecedor" aria-describedby="inflow-supplier-help" data-testid="entrada-fornecedor" {% if motivo_selecionado == 'COMPRA' %}required{% endif %}>
+                            <option value="">Selecione um fornecedor</option>
+                            {% for fornecedor in fornecedores %}<option value="{{ fornecedor.pk }}" {% if fornecedor.pk|stringformat:'s' == fornecedor_selecionado %}selected{% endif %}>{{ fornecedor.nome }}{% if fornecedor.documento %} · {{ fornecedor.documento }}{% endif %}</option>{% endfor %}
+                        </select>
+                        <small id="inflow-supplier-help" class="section-help">Obrigatório nas compras. Apenas fornecedores ativos aparecem aqui. {% if request.user.is_superuser or request.user.cargo == 'G' %}<a href="{% url 'fornecedor_novo' %}" target="_blank" rel="noopener">Cadastrar fornecedor (nova aba)</a>{% endif %}</small>
+                    </div>
+                    <div class="form-group">
                         <label for="inflow-note">Observação <span class="field-optional">(opcional)</span></label>
-                        <textarea id="inflow-note" class="form-control" name="observacao" rows="3" placeholder="Ex.: reposição de coleção"></textarea>
+                        <textarea id="inflow-note" class="form-control" name="observacao" rows="3" placeholder="Ex.: reposição de coleção">{{ observacao }}</textarea>
                     </div>
                 </div>
 
@@ -102,6 +112,7 @@
                                 <th scope="col">Produtos</th>
                                 <th scope="col">Quantidade</th>
                                 <th scope="col">Motivo</th>
+                                <th scope="col">Fornecedor</th>
                                 <th scope="col">Status</th>
                             </tr>
                         </thead>
@@ -120,6 +131,7 @@
                                         {% endfor %}
                                     </td>
                                     <td>{{ entrada.get_motivo_display }}</td>
+                                    <td>{% if entrada.fornecedor_id %}<a href="{% url 'fornecedor_detalhe' entrada.fornecedor_id %}">{{ entrada.fornecedor_nome }}</a>{% else %}Não informado{% endif %}</td>
                                     <td><span class="inflow-status">Registrada</span></td>
                                 </tr>
                             {% endfor %}
@@ -153,6 +165,13 @@
             }
 
             let reviewed = false;
+            let nextRowIndex = items.querySelectorAll('[data-inflow-row]').length;
+            const supplier = document.getElementById('inflow-supplier');
+            const reasonSelect = document.getElementById('inflow-reason');
+            function updateSupplierRequirement() {
+                supplier.required = reasonSelect.value === 'COMPRA';
+                resetReview();
+            }
 
             function updateSummary() {
                 const rows = Array.from(items.querySelectorAll('[data-inflow-row]'));
@@ -172,6 +191,7 @@
             }
 
             function buildReview() {
+                if (!form.reportValidity()) return false;
                 const rows = Array.from(items.querySelectorAll('[data-inflow-row]'));
                 const selectedRows = rows.map(function (row) {
                     return {
@@ -201,6 +221,11 @@
                 const reason = document.createElement('li');
                 reason.textContent = 'Motivo: ' + document.getElementById('inflow-reason').selectedOptions[0].textContent;
                 reviewList.appendChild(reason);
+                if (supplier.value) {
+                    const supplierItem = document.createElement('li');
+                    supplierItem.textContent = 'Fornecedor: ' + supplier.selectedOptions[0].textContent;
+                    reviewList.appendChild(supplierItem);
+                }
                 review.hidden = false;
                 confirmButton.hidden = false;
                 reviewButton.hidden = true;
@@ -230,7 +255,7 @@
 
             addButton.addEventListener('click', function () {
                 const row = items.querySelector('[data-inflow-row]').cloneNode(true);
-                const index = items.querySelectorAll('[data-inflow-row]').length + 1;
+                const index = ++nextRowIndex;
                 row.querySelector('label[for^="inflow-product"]').htmlFor = 'inflow-product-' + index;
                 row.querySelector('select[name="produto"]').id = 'inflow-product-' + index;
                 row.querySelector('label[for^="inflow-quantity"]').htmlFor = 'inflow-quantity-' + index;
@@ -243,7 +268,8 @@
                 updateSummary();
             });
 
-            document.getElementById('inflow-reason').addEventListener('change', resetReview);
+            reasonSelect.addEventListener('change', updateSupplierRequirement);
+            supplier.addEventListener('change', resetReview);
             document.getElementById('inflow-note').addEventListener('input', resetReview);
             reviewButton.addEventListener('click', buildReview);
             form.addEventListener('submit', function (event) {
@@ -252,7 +278,8 @@
                 }
             });
 
-            bindRow(items.querySelector('[data-inflow-row]'));
+            Array.from(items.querySelectorAll('[data-inflow-row]')).forEach(bindRow);
+            updateSupplierRequirement();
             updateSummary();
         });
     </script>

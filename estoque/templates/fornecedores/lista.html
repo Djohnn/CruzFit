@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load static %}
+{% block 'title' %}Fornecedores | Cruz Fit{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/fornecedores.css' %}">{% endblock %}
+{% block 'body' %}
+<main class="container supplier-page">
+<header class="page-heading supplier-heading">
+<div><h1>Fornecedores</h1><p>Contatos e origem das mercadorias recebidas.</p></div>
+{% if request.user.is_superuser or request.user.cargo == 'G' %}<a class="btn btn-primary" href="{% url 'fornecedor_novo' %}" data-testid="fornecedor-novo">Cadastrar fornecedor</a>{% endif %}
+</header>
+{% include 'fornecedores/_mensagens.html' %}
+<section class="surface-section" aria-labelledby="supplier-search-heading">
+<h2 id="supplier-search-heading">Consultar fornecedores</h2>
+<form method="get" class="supplier-search">
+<div><label for="supplier-query">Nome, CPF/CNPJ ou contato</label><input id="supplier-query" class="form-control" type="search" name="q" value="{{ q }}" maxlength="160" data-testid="fornecedor-pesquisa"></div>
+<div><label for="supplier-status">Situação</label><select id="supplier-status" name="situacao" class="form-control"><option value="ativos" {% if situacao == 'ativos' %}selected{% endif %}>Ativos</option><option value="inativos" {% if situacao == 'inativos' %}selected{% endif %}>Inativos</option><option value="todos" {% if situacao == 'todos' %}selected{% endif %}>Todos</option></select></div>
+<button class="btn btn-primary" type="submit">Pesquisar</button>
+</form>
+<p class="section-help supplier-result-count" role="status">{{ pagina.paginator.count }} fornecedor{{ pagina.paginator.count|pluralize:",es" }} encontrado{{ pagina.paginator.count|pluralize }}</p>
+{% if pagina %}<div class="table-responsive"><table class="table table-dark supplier-table">
+<thead><tr><th scope="col">Fornecedor</th><th scope="col">CPF / CNPJ</th><th scope="col">Contato</th><th scope="col">Situação</th><th scope="col">Detalhes</th></tr></thead>
+<tbody>{% for fornecedor in pagina %}<tr>
+<td><strong>{{ fornecedor.nome }}</strong>{% if fornecedor.nome_fantasia %}<small>{{ fornecedor.nome_fantasia }}</small>{% endif %}</td>
+<td>{{ fornecedor.documento|default:'Não informado' }}</td>
+<td>{{ fornecedor.contato|default:'Não informado' }}{% if fornecedor.telefone %}<small>{{ fornecedor.telefone }}</small>{% endif %}</td>
+<td><span class="supplier-status {% if not fornecedor.ativo %}supplier-status-inactive{% endif %}">{% if fornecedor.ativo %}Ativo{% else %}Inativo{% endif %}</span></td>
+<td><a href="{% url 'fornecedor_detalhe' fornecedor.pk %}" aria-label="Ver {{ fornecedor.nome }}">Ver fornecedor</a></td>
+</tr>{% endfor %}</tbody></table></div>{% include 'fornecedores/_paginacao.html' %}
+{% else %}<div class="empty-state" role="status"><strong>Nenhum fornecedor encontrado.</strong><p>Altere a pesquisa ou a situação. Para registrar uma compra, cadastre primeiro um fornecedor ativo.</p></div>{% endif %}
+</section>
+</main>
+{% endblock %}

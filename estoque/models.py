@@ -7,6 +7,7 @@ from django.db import models
 from django.template.defaultfilters import slugify
 
 from .barcodes import validate_ean13
+from .documentos import validar_documento
 
 
 class Categoria(models.Model):
@@ -195,6 +196,12 @@ class EntradaEstoque(models.Model):
         ('AJUSTE', 'Ajuste'),
     )
 
+    fornecedor = models.ForeignKey(
+        'Fornecedor', blank=True, null=True, on_delete=models.PROTECT,
+        related_name='entradas',
+    )
+    fornecedor_nome = models.CharField(max_length=160, blank=True, default='')
+    fornecedor_documento = models.CharField(max_length=14, blank=True, default='')
     criada_em = models.DateTimeField(auto_now_add=True)
     motivo = models.CharField(max_length=12, choices=MOTIVO_CHOICES)
     observacao = models.TextField(blank=True, default='')
@@ -217,6 +224,75 @@ class EntradaEstoque(models.Model):
 
     def __str__(self) -> str:
         return f'Entrada em {self.criada_em:%d/%m/%Y %H:%M}'
+
+
+class Fornecedor(models.Model):
+    nome = models.CharField('Nome / razão social', max_length=160)
+    nome_fantasia = models.CharField(max_length=160, blank=True, default='')
+    documento = models.CharField('CPF / CNPJ', max_length=14, blank=True,
+                                 null=True, unique=True)
+    contato = models.CharField('Pessoa de contato', max_length=120, blank=True)
+    telefone = models.CharField(max_length=40, blank=True)
+    email = models.EmailField('E-mail', blank=True)
+    endereco = models.CharField('Endereço', max_length=500, blank=True)
+    observacoes = models.TextField('Observações', max_length=2000, blank=True)
+    ativo = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='fornecedores_cadastrados',
+    )
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ('nome', 'pk')
+        verbose_name = 'Fornecedor'
+        verbose_name_plural = 'Fornecedores'
+
+    def clean(self):
+        super().clean()
+        self.nome = self.nome.strip()
+        if not self.nome:
+            raise ValidationError({'nome': 'Informe o nome ou razão social.'})
+        try:
+            self.documento = validar_documento(self.documento or '')
+        except ValidationError as error:
+            raise ValidationError({'documento': error.messages}) from error
+
+    def __str__(self) -> str:
+        return self.nome
+
+
+class FornecedorAlteracao(models.Model):
+    fornecedor = models.ForeignKey(Fornecedor, on_delete=models.PROTECT,
+                                   related_name='alteracoes')
+    responsavel = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                    on_delete=models.SET_NULL)
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    dados_anteriores = models.JSONField()
+    dados_novos = models.JSONField()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class FornecedorInativacao(models.Model):
+    fornecedor = models.ForeignKey(Fornecedor, on_delete=models.PROTECT,
+                                   related_name='inativacoes')
+    responsavel = models.ForeignKey(settings.AUTH_USER_MODEL, null=True,
+                                    on_delete=models.SET_NULL)
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
 
 
 class ItemEntradaEstoque(models.Model):

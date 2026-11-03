@@ -4,8 +4,13 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from .fornecedores import cadastrar_fornecedor as cadastrar_fornecedor
+from .fornecedores import editar_fornecedor as editar_fornecedor
+from .fornecedores import inativar_fornecedor as inativar_fornecedor
+from .fornecedores import obter_fornecedor_ativo
 from .models import (
     BaixaEstoque,
     EntradaEstoque,
@@ -99,26 +104,56 @@ def registrar_entrada(
     reason: str,
     observation: str = '',
     idempotency_key: str | None,
+    supplier_id: str | int | None = None,
 ) -> MovementResult:
     _require_authenticated(actor)
     key = _parse_idempotency_key(idempotency_key)
     lines = _parse_lines(product_ids, quantities)
     if reason not in dict(EntradaEstoque.MOTIVO_CHOICES):
         raise StockOperationError('Selecione um motivo válido para a entrada.')
+    try:
+        supplier_pk = int(supplier_id) if supplier_id not in (None, '') else None
+        if supplier_pk is not None and supplier_pk <= 0:
+            raise ValueError('Identificador deve ser positivo.')
+    except (TypeError, ValueError, OverflowError) as error:
+        raise StockOperationError('Selecione um fornecedor válido.') from error
 
     with transaction.atomic():
         existing = EntradaEstoque.objects.select_for_update().filter(
             chave_idempotencia=key,
         ).first()
         if existing:
+            existing_lines = sorted(
+                (item.produto_id, item.quantidade) for item in existing.itens.all()
+            )
+            if (
+                existing.responsavel_id != actor.pk
+                or existing.motivo != reason
+                or existing.observacao != observation.strip()
+                or existing.fornecedor_id != supplier_pk
+                or existing_lines != sorted(lines)
+            ):
+                raise StockOperationError(
+                    'Essa chave de entrada já foi usada com outros dados. '
+                    'Abra uma nova entrada.',
+                )
             return MovementResult(existing, created=False)
 
+        if reason == 'COMPRA' and supplier_pk is None:
+            raise StockOperationError('Selecione o fornecedor para registrar uma compra.')
+        try:
+            supplier = obter_fornecedor_ativo(supplier_pk) if supplier_pk is not None else None
+        except ValidationError as error:
+            raise StockOperationError(' '.join(error.messages)) from error
         products = _locked_products(lines)
         movement = EntradaEstoque.objects.create(
             motivo=reason,
             observacao=observation.strip(),
             responsavel=actor,
             chave_idempotencia=key,
+            fornecedor=supplier,
+            fornecedor_nome=supplier.nome if supplier else '',
+            fornecedor_documento=(supplier.documento or '') if supplier else '',
         )
         for product_id, quantity in lines:
             product = products[product_id]

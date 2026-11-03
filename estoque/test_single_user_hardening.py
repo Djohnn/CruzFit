@@ -9,6 +9,7 @@ from django.urls import reverse
 from PIL import Image
 
 from .forms import ModeloEtiquetaForm, ProdutoForm
+from .fornecedores import cadastrar_fornecedor
 from .models import (
     BaixaEstoque,
     Categoria,
@@ -27,6 +28,10 @@ class CruzFitSingleUserHardeningTests(TestCase):
             password="test-password",
             first_name="Gerente",
             cargo="G",
+        )
+        self.supplier = cadastrar_fornecedor(
+            actor=self.manager, dados={'nome': 'Fornecedor de teste'},
+            idempotency_key='supplier-fixture',
         )
         self.category = Categoria.objects.create(titulo="Camisetas")
         self.product = Produto.objects.create(
@@ -102,6 +107,7 @@ class CruzFitSingleUserHardeningTests(TestCase):
                 "produto": [str(self.product.pk)],
                 "quantidade": ["2"],
                 "motivo": "COMPRA",
+                "fornecedor": self.supplier.pk,
                 "observacao": "Reposição",
                 "chave_idempotencia": "entry-1",
             },
@@ -146,10 +152,12 @@ class CruzFitSingleUserHardeningTests(TestCase):
                 "produto": [str(self.product.pk)],
                 "quantidade": ["2"],
                 "motivo": "COMPRA",
+                "fornecedor": self.supplier.pk,
             },
         )
 
-        self.assertRedirects(response, reverse("registrar_entrada"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'chave de idempotência')
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantidade, 10)
         self.assertFalse(EntradaEstoque.objects.exists())
@@ -202,6 +210,7 @@ class CruzFitSingleUserHardeningTests(TestCase):
                             "produto": [str(self.product.pk)],
                             "quantidade": [quantity],
                             "motivo": reason,
+                            "fornecedor": self.supplier.pk,
                             "chave_idempotencia": f"invalid-{url}-{quantity}",
                         },
                     )
@@ -362,6 +371,7 @@ class CruzFitSingleUserHardeningTests(TestCase):
             "produto": [str(self.product.pk)],
             "quantidade": ["2"],
             "motivo": "COMPRA",
+            "fornecedor": self.supplier.pk,
             "chave_idempotencia": "same-operation",
         }
 

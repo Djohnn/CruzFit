@@ -1,0 +1,33 @@
+.supplier-page { max-width: 1140px; }
+.supplier-heading { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.supplier-heading > div { min-width: 0; }
+.supplier-page h1, .supplier-data dd, .supplier-table td { overflow-wrap: anywhere; }
+.supplier-form-page { max-width: 900px; }
+.supplier-search { display: grid; grid-template-columns: minmax(0, 1fr) 180px auto; gap: 1rem; align-items: end; }
+.supplier-search label { display: block; }
+.supplier-result-count { margin: 1rem 0; }
+.supplier-form-grid, .supplier-data { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 1.5rem; }
+.supplier-field-wide { grid-column: 1 / -1; }
+.supplier-form-grid .form-group { margin-bottom: 0; }
+.supplier-form-grid small { display: block; margin-top: .35rem; }
+.supplier-actions, .supplier-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.supplier-actions { margin-top: 1.5rem; }
+.supplier-heading .supplier-actions { margin-top: 0; }
+.supplier-pagination { justify-content: center; margin-top: 1.5rem; }
+.supplier-status { color: var(--brand-success); font-weight: 600; }
+.supplier-status-inactive { color: var(--brand-muted); }
+.supplier-table small { display: block; margin-top: .3rem; color: var(--brand-muted); }
+.supplier-table td { vertical-align: middle; min-width: 8rem; }
+.supplier-data dt { color: var(--brand-muted); font-weight: 400; }
+.supplier-data dd { margin: .25rem 0 0; }
+.supplier-field-errors { color: var(--brand-danger); margin-top: .35rem; }
+.supplier-field-errors ul { padding-left: 1.2rem; margin-bottom: 0; }
+.supplier-page input:focus-visible, .supplier-page textarea:focus-visible,
+.supplier-page select:focus-visible, .supplier-page a:focus-visible,
+.supplier-page button:focus-visible { outline: 2px solid var(--brand-gold-light); outline-offset: 3px; }
+.supplier-page .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 767.98px) {
+    .supplier-heading { align-items: stretch; flex-direction: column; }
+    .supplier-search, .supplier-form-grid, .supplier-data { grid-template-columns: minmax(0, 1fr); }
+    .supplier-actions .btn { flex: 1 1 auto; }
+}

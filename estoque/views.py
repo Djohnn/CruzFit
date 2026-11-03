@@ -3,6 +3,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from io import BytesIO
+from itertools import zip_longest
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -18,6 +19,7 @@ from rolepermissions.decorators import has_permission_decorator
 
 from .barcodes import generate_ean13, render_ean13_svg
 from .forms import ModeloEtiquetaForm, ProdutoForm
+from .fornecedores import fornecedores_ativos
 from .models import (
     BaixaEstoque,
     Categoria,
@@ -396,25 +398,39 @@ def registrar_entrada(request):
                 reason=request.POST.get('motivo') or '',
                 observation=request.POST.get('observacao') or '',
                 idempotency_key=request.POST.get('chave_idempotencia'),
+                supplier_id=request.POST.get('fornecedor'),
             )
         except StockOperationError as error:
             messages.error(request, str(error))
+        else:
+            if result.created:
+                messages.success(request, 'Entrada registrada com sucesso.')
+            else:
+                messages.info(request, 'Essa entrada já foi registrada.')
             return redirect('registrar_entrada')
 
-        if result.created:
-            messages.success(request, 'Entrada registrada com sucesso.')
-        else:
-            messages.info(request, 'Essa entrada já foi registrada.')
-        return redirect('registrar_entrada')
+    posted = request.POST if request.method == 'POST' else request.GET
+    linhas = [
+        {'produto': produto, 'quantidade': quantidade}
+        for produto, quantidade in zip_longest(
+            request.POST.getlist('produto'), request.POST.getlist('quantidade'),
+            fillvalue='',
+        )
+    ] if request.method == 'POST' else [{'produto': '', 'quantidade': '1'}]
 
     return render(
         request,
         'registrar_entrada.html',
         {
             'produtos': Produto.objects.order_by('nome'),
+            'fornecedores': fornecedores_ativos(),
+            'fornecedor_selecionado': posted.get('fornecedor', ''),
+            'motivo_selecionado': posted.get('motivo', 'COMPRA' if posted.get('fornecedor') else ''),
+            'observacao': posted.get('observacao', ''),
+            'linhas': linhas or [{'produto': '', 'quantidade': '1'}],
             'motivo_choices': EntradaEstoque.MOTIVO_CHOICES,
-            'chave_idempotencia': uuid.uuid4().hex,
-            'historico': EntradaEstoque.objects.prefetch_related(
+            'chave_idempotencia': posted.get('chave_idempotencia') or uuid.uuid4().hex,
+            'historico': EntradaEstoque.objects.select_related('fornecedor').prefetch_related(
                 'itens__produto',
             )[:30],
         },

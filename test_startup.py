@@ -9,6 +9,7 @@ from django.core.management import CommandError, call_command
 from django.template.loader import get_template
 from django.test import TestCase, override_settings
 
+from estoque.fornecedores import cadastrar_fornecedor
 from estoque.models import Categoria, Produto
 from usuarios.models import Users
 
@@ -160,6 +161,10 @@ class RemediationRegressionTests(TestCase):
             is_superuser=True,
         )
         self.category = Categoria.objects.create(titulo="Ferramentas")
+        self.supplier = cadastrar_fornecedor(
+            actor=self.manager, dados={'nome': 'Fornecedor de teste'},
+            idempotency_key='startup-supplier',
+        )
         self.client.handler.raise_request_exception = False
         self.client.force_login(self.manager)
 
@@ -353,6 +358,7 @@ class RemediationRegressionTests(TestCase):
                 "produto": [str(first_product.pk), str(second_product.pk)],
                 "quantidade": ["2", "1"],
                 "motivo": "COMPRA",
+                "fornecedor": self.supplier.pk,
                 "observacao": "Reposição da coleção",
                 "chave_idempotencia": "startup-entry-success",
             },
@@ -386,11 +392,12 @@ class RemediationRegressionTests(TestCase):
                 "produto": [str(product.pk)],
                 "quantidade": ["0"],
                 "motivo": "COMPRA",
+                "fornecedor": self.supplier.pk,
                 "chave_idempotencia": "startup-entry-invalid",
             },
         )
 
-        self.assertRedirects(response, "/estoque/entrada/")
+        self.assertEqual(response.status_code, 200)
         product.refresh_from_db()
         self.assertEqual(product.quantidade, 5)
         entrada_model = apps.get_model("estoque", "EntradaEstoque")

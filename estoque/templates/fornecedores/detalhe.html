@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% load static %}
+{% block 'title' %}{{ fornecedor.nome }} | Cruz Fit{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/fornecedores.css' %}">{% endblock %}
+{% block 'body' %}
+<main class="container supplier-page">
+<header class="page-heading supplier-heading"><div><a href="{% url 'fornecedores' %}">Voltar aos fornecedores</a><h1>{{ fornecedor.nome }}</h1><p>{% if fornecedor.nome_fantasia %}{{ fornecedor.nome_fantasia }} · {% endif %}<span class="supplier-status {% if not fornecedor.ativo %}supplier-status-inactive{% endif %}">{% if fornecedor.ativo %}Ativo{% else %}Inativo{% endif %}</span></p></div>
+{% if request.user.is_superuser or request.user.cargo == 'G' %}<div class="supplier-actions"><a class="btn btn-primary" href="{% url 'fornecedor_editar' fornecedor.pk %}">Editar cadastro</a>{% if fornecedor.ativo %}<a class="btn btn-outline-light" href="{% url 'fornecedor_inativar' fornecedor.pk %}">Inativar fornecedor</a>{% endif %}</div>{% endif %}
+</header>
+{% include 'fornecedores/_mensagens.html' %}
+{% if not fornecedor.ativo %}<p class="alert alert-warning">Este fornecedor não pode ser selecionado em novas entradas. O histórico continua disponível.</p>{% endif %}
+<section class="surface-section" aria-labelledby="supplier-contact-heading"><h2 id="supplier-contact-heading">Dados do fornecedor</h2>
+<dl class="supplier-data">
+<div><dt>CPF / CNPJ</dt><dd>{{ fornecedor.documento|default:'Não informado' }}</dd></div>
+<div><dt>Pessoa de contato</dt><dd>{{ fornecedor.contato|default:'Não informada' }}</dd></div>
+<div><dt>Telefone</dt><dd>{{ fornecedor.telefone|default:'Não informado' }}</dd></div>
+<div><dt>E-mail</dt><dd>{% if fornecedor.email %}<a href="mailto:{{ fornecedor.email }}">{{ fornecedor.email }}</a>{% else %}Não informado{% endif %}</dd></div>
+<div class="supplier-field-wide"><dt>Endereço</dt><dd>{{ fornecedor.endereco|default:'Não informado' }}</dd></div>
+<div class="supplier-field-wide"><dt>Observações</dt><dd>{{ fornecedor.observacoes|default:'Nenhuma observação.'|linebreaksbr }}</dd></div>
+</dl>
+<p class="section-help">Cadastrado em {{ fornecedor.criado_em|date:'d/m/Y H:i' }} por {% firstof fornecedor.responsavel.first_name fornecedor.responsavel.username 'Usuário removido' %}.</p>
+{% if ultima_alteracao %}<p class="section-help">Última alteração: {{ ultima_alteracao.criada_em|date:'d/m/Y H:i' }} · {{ ultima_alteracao.motivo }}</p>{% endif %}
+{% if inativacao %}<p class="section-help">Inativação: {{ inativacao.criada_em|date:'d/m/Y H:i' }} · {{ inativacao.motivo }}</p>{% endif %}
+</section>
+<section class="surface-section" aria-labelledby="supplier-history-heading"><div class="section-heading-row"><div><h2 id="supplier-history-heading">Mercadorias recebidas</h2><p class="section-help">{{ pagina.paginator.count }} entrada{{ pagina.paginator.count|pluralize }} registrada{{ pagina.paginator.count|pluralize }}. Nome e documento preservados como estavam no recebimento.</p></div>{% if fornecedor.ativo %}<a class="btn btn-outline-light" href="{% url 'registrar_entrada' %}?fornecedor={{ fornecedor.pk }}">Registrar entrada</a>{% endif %}</div>
+{% if pagina %}<div class="table-responsive"><table class="table table-dark supplier-table"><thead><tr><th scope="col">Data</th><th scope="col">Fornecedor no recebimento</th><th scope="col">Produtos e quantidades</th><th scope="col">Motivo / responsável</th></tr></thead><tbody>{% for entrada in pagina %}<tr><td>{{ entrada.criada_em|date:'d/m/Y H:i' }}</td><td>{{ entrada.fornecedor_nome }}<small>{{ entrada.fornecedor_documento|default:'Documento não informado' }}</small></td><td>{% for item in entrada.itens.all %}<div><a href="{% url 'produto' item.produto.slug %}">{{ item.produto.nome }}</a> · {{ item.quantidade|floatformat:2 }}</div>{% endfor %}</td><td>{{ entrada.get_motivo_display }}<small>{% firstof entrada.responsavel.first_name entrada.responsavel.username 'Não informado' %}</small></td></tr>{% endfor %}</tbody></table></div>{% include 'fornecedores/_paginacao.html' %}
+{% else %}<div class="empty-state" role="status"><strong>Nenhuma mercadoria recebida deste fornecedor.</strong><p>Selecione o fornecedor ao registrar a próxima entrada por compra.</p></div>{% endif %}
+</section></main>
+{% endblock %}
