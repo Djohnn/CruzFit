@@ -43,6 +43,14 @@ class Produto(models.Model):
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0'))],
     )
+    estoque_minimo = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        default=None,
+        validators=[MinValueValidator(Decimal('0'))],
+    )
     preco_compra = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -60,6 +68,7 @@ class Produto(models.Model):
         blank=True,
         null=True,
     )
+    ativo = models.BooleanField(default=True)
 
 
     def __str__(self) -> str:
@@ -127,6 +136,69 @@ class Produto(models.Model):
             return Decimal('0')
         lucro = self.preco_venda - self.preco_compra
         return (lucro * 100) / self.preco_compra
+
+
+class ProdutoAlteracao(models.Model):
+    produto = models.ForeignKey(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name='alteracoes',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    dados_anteriores = models.JSONField()
+    dados_novos = models.JSONField()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class ProdutoCadastro(models.Model):
+    produto = models.ForeignKey(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name='cadastros',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    dados_novos = models.JSONField()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class ProdutoInativacao(models.Model):
+    produto = models.ForeignKey(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name='inativacoes',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
 
 
 class BaixaEstoque(models.Model):

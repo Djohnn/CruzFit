@@ -1,13 +1,18 @@
 import subprocess
 import sys
 import unittest
+from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from django.apps import apps
 from django.contrib.messages import get_messages
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import CommandError, call_command
 from django.template.loader import get_template
 from django.test import TestCase, override_settings
+from django.urls import reverse
+from PIL import Image
 
 from estoque.fornecedores import cadastrar_fornecedor
 from estoque.models import Categoria, Produto
@@ -142,7 +147,7 @@ class BrandAndLoginContractTests(unittest.TestCase):
         self.assertIn(":focus-visible", global_source)
 
     def test_product_image_watermark_uses_cruz_fit_brand(self):
-        source = (PROJECT_ROOT / "estoque" / "views.py").read_text(encoding="utf-8")
+        source = (PROJECT_ROOT / "estoque" / "services.py").read_text(encoding="utf-8")
 
         self.assertIn("CRUZ FIT", source)
         self.assertNotIn("CONSTRUC", source)
@@ -571,6 +576,153 @@ class RemediationRegressionTests(TestCase):
             str(list(get_messages(response.wsgi_request))),
         )
 
+    def _product_image(self, name, color):
+        content = BytesIO()
+        Image.new("RGB", (12, 12), color=color).save(content, format="PNG")
+        return SimpleUploadedFile(name, content.getvalue(), content_type="image/png")
+
+    def _product_registration_data(self, name, key):
+        return {
+            "nome": name,
+            "categoria": self.category.pk,
+            "tamanho": "G2",
+            "modelo": "Manga curta",
+            "cor": "Preto",
+            "tecido": "Poliamida",
+            "genero": "MASCULINO",
+            "quantidade": "10",
+            "preco_compra": "20",
+            "preco_venda": "35",
+            "motivo": "Cadastro HTTP de teste",
+            "chave_idempotencia": key,
+        }
+
+    def test_product_registration_http_replay_returns_confirmation_without_duplicates(self):
+        """Given POST concluído; When repetir; Then confirmar sem duplicar."""
+        url = reverse("add_produto")
+        data = self._product_registration_data("Cadastro HTTP replay", "http-replay-001")
+
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            first = self.client.post(
+                url,
+                {**data, "imagens": self._product_image("replay.png", "purple")},
+            )
+            replay = self.client.post(
+                url,
+                {**data, "imagens": self._product_image("replay.png", "purple")},
+            )
+
+        self.assertRedirects(first, url)
+        self.assertRedirects(replay, url)
+        self.assertIn(
+            "Esse cadastro já foi registrado.",
+            str(list(get_messages(replay.wsgi_request))),
+        )
+        self.assertEqual(Produto.objects.filter(nome="Cadastro HTTP replay").count(), 1)
+        cadastro_model = apps.get_model("estoque", "ProdutoCadastro")
+        self.assertEqual(cadastro_model.objects.count(), 1)
+
+    def test_product_registration_http_replay_preserves_generated_barcode(self):
+        """Given código automático; When repetir; Then manter o código original."""
+        url = reverse("add_produto")
+        data = self._product_registration_data("Cadastro HTTP EAN", "http-ean-001")
+
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            self.client.post(
+                url,
+                {**data, "imagens": self._product_image("ean.png", "green")},
+            )
+            product = Produto.objects.get(nome="Cadastro HTTP EAN")
+            original_barcode = product.codigo_barras
+            replay = self.client.post(
+                url,
+                {**data, "imagens": self._product_image("ean.png", "green")},
+            )
+
+        self.assertRedirects(replay, url)
+        product.refresh_from_db()
+        self.assertEqual(product.codigo_barras, original_barcode)
+        self.assertEqual(Produto.objects.filter(nome="Cadastro HTTP EAN").count(), 1)
+
+    def test_product_registration_http_replay_with_changed_content_conflicts(self):
+        """Given chave usada; When bytes mudam; Then recusar sem alterar cadastro."""
+        url = reverse("add_produto")
+        data = self._product_registration_data("Cadastro HTTP conflito", "http-conflict-001")
+
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            self.client.post(
+                url,
+                {**data, "imagens": self._product_image("same.png", "red")},
+            )
+            original = Produto.objects.get(nome="Cadastro HTTP conflito")
+            original_barcode = original.codigo_barras
+            replay = self.client.post(
+                url,
+                {**data, "imagens": self._product_image("same.png", "blue")},
+            )
+
+        self.assertRedirects(replay, url)
+        self.assertIn(
+            "Essa chave já foi usada com outros dados.",
+            str(list(get_messages(replay.wsgi_request))),
+        )
+        original.refresh_from_db()
+        self.assertEqual(original.codigo_barras, original_barcode)
+        self.assertEqual(Produto.objects.filter(nome="Cadastro HTTP conflito").count(), 1)
+
+    def test_product_registration_http_replay_with_other_author_conflicts(self):
+        """Given chave de outro autor; When repetir; Then recusar sem duplicar."""
+        url = reverse("add_produto")
+        data = self._product_registration_data("Cadastro HTTP autor", "http-author-001")
+
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            self.client.post(
+                url,
+                {**data, "imagens": self._product_image("author.png", "red")},
+            )
+            other_manager = Users.objects.create_user(
+                username="outro-gerente@example.com",
+                password="Teste@123",
+                cargo="G",
+                is_staff=True,
+                is_superuser=True,
+            )
+            self.client.force_login(other_manager)
+            replay = self.client.post(
+                url,
+                {**data, "imagens": self._product_image("author.png", "red")},
+            )
+
+        self.assertRedirects(replay, url)
+        self.assertIn(
+            "Essa chave já foi usada com outros dados.",
+            str(list(get_messages(replay.wsgi_request))),
+        )
+        self.assertEqual(Produto.objects.filter(nome="Cadastro HTTP autor").count(), 1)
+
+    def test_product_registration_http_same_name_with_new_key_is_rejected(self):
+        """Given nome existente; When chave muda; Then recusar cadastro novo."""
+        url = reverse("add_produto")
+        first_data = self._product_registration_data("Cadastro HTTP nome", "http-name-001")
+        second_data = self._product_registration_data("Cadastro HTTP nome", "http-name-002")
+
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            self.client.post(
+                url,
+                {**first_data, "imagens": self._product_image("name.png", "red")},
+            )
+            response = self.client.post(
+                url,
+                {**second_data, "imagens": self._product_image("name.png", "red")},
+            )
+
+        self.assertRedirects(response, url)
+        self.assertIn(
+            "Já existe um produto com esse nome.",
+            str(list(get_messages(response.wsgi_request))),
+        )
+        self.assertEqual(Produto.objects.filter(nome="Cadastro HTTP nome").count(), 1)
+
     def test_product_registration_persists_approved_attributes(self):
         response = self.client.post(
             "/estoque/add_produto/",
@@ -585,6 +737,8 @@ class RemediationRegressionTests(TestCase):
                 "quantidade": "10",
                 "preco_compra": "20",
                 "preco_venda": "35",
+                "motivo": "Cadastro de teste",
+                "chave_idempotencia": "startup-product-create",
             },
         )
 

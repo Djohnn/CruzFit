@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Editar produto | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container product-edit-page">
+        <header class="page-heading">
+            <p class="eyebrow">Gestão de catálogo</p>
+            <h1>Editar produto</h1>
+            <p>Corrija o cadastro sem alterar o saldo atual de {{ produto.nome }}.</p>
+        </header>
+
+        <section class="surface-section" aria-labelledby="product-edit-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="product-edit-heading">Dados cadastrais</h2>
+                    <p class="section-help">O motivo fica registrado no histórico de auditoria.</p>
+                </div>
+                <span class="stock-status {% if produto.ativo %}stock-status-success{% else %}stock-status-muted{% endif %}">{% if produto.ativo %}Ativo{% else %}Inativo{% endif %}</span>
+            </div>
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">
+                    {% for error in form.non_field_errors %}{{ error }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
+                </div>
+            {% endif %}
+
+            <form method="POST" enctype="multipart/form-data" class="operational-form">
+                {% csrf_token %}
+                <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+                <div class="form-grid">
+                    <div class="form-grid-divider" role="presentation">Identificação</div>
+                    <div class="form-group">
+                        <label for="edit-product-name">Nome</label>
+                        {{ form.nome }}
+                        {{ form.nome.errors }}
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-product-category">Categoria</label>
+                        {{ form.categoria }}
+                        {{ form.categoria.errors }}
+                    </div>
+                    <div class="form-group form-grid-wide">
+                        <label for="edit-product-barcode">Código de barras (EAN-13)</label>
+                        {{ form.codigo_barras }}
+                        {{ form.codigo_barras.errors }}
+                    </div>
+
+                    <div class="form-grid-divider" role="presentation">Características</div>
+                    <div class="form-group">
+                        <label for="edit-product-gender">Gênero</label>
+                        {{ form.genero }}
+                        {{ form.genero.errors }}
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-product-size">Tamanho</label>
+                        {{ form.tamanho }}
+                        {{ form.tamanho.errors }}
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-product-model">Modelo</label>
+                        {{ form.modelo }}
+                        {{ form.modelo.errors }}
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-product-color">Cor</label>
+                        {{ form.cor }}
+                        {{ form.cor.errors }}
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-product-fabric">Tecido</label>
+                        {{ form.tecido }}
+                        {{ form.tecido.errors }}
+                    </div>
+
+                    <div class="form-grid-divider" role="presentation">Preços e reposição</div>
+                    <div class="form-group">
+                        <label for="edit-product-cost">Preço de compra</label>
+                        {{ form.preco_compra }}
+                        {{ form.preco_compra.errors }}
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-product-price">Preço de venda</label>
+                        {{ form.preco_venda }}
+                        {{ form.preco_venda.errors }}
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-product-minimum">Estoque mínimo <span class="field-optional">(opcional)</span></label>
+                        {{ form.estoque_minimo }}
+                        {{ form.estoque_minimo.errors }}
+                        <small class="form-text section-help">Alerta quando o saldo for igual ou menor que o limite.</small>
+                    </div>
+
+                    <div class="form-grid-divider" role="presentation">Imagem</div>
+                    <div class="form-group form-grid-wide">
+                        <label for="edit-product-images">Novas imagens <span class="field-optional">(opcional)</span></label>
+                        <input id="edit-product-images" class="form-control" type="file" name="imagens" accept="image/jpeg,image/png,image/webp" multiple>
+                        <small class="form-text section-help">Se enviar imagens, elas substituirão as atuais. Até 5 arquivos, 5 MB e 4000×4000 pixels cada.</small>
+                    </div>
+
+                    <div class="form-grid-divider" role="presentation">Auditoria</div>
+                    <div class="form-group form-grid-wide">
+                        <label for="edit-product-reason">Motivo da alteração</label>
+                        <textarea id="edit-product-reason" class="form-control" name="motivo" rows="3" maxlength="500" required>{{ motivo }}</textarea>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <a href="{% url 'produto' produto.slug %}" class="btn btn-outline-light">Cancelar</a>
+                    <button type="submit" class="btn btn-success">Salvar alteração</button>
+                </div>
+            </form>
+        </section>
+    </main>
+{% endblock %}

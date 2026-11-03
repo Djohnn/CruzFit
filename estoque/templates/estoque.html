@@ -17,6 +17,8 @@
             <a href="{% url 'add_produto' %}" class="btn btn-primary">Cadastrar produto</a>
             <a href="{% url 'registrar_baixa' %}" class="btn btn-outline-light">Registrar baixa</a>
             <a href="{% url 'registrar_entrada' %}" class="btn btn-outline-light">Registrar entrada</a>
+            <a href="{% url 'estoque' %}" class="btn {% if not reposicao %}btn-secondary{% else %}btn-outline-light{% endif %}">Todos</a>
+            <a href="{% url 'estoque' %}?reposicao=1" class="btn {% if reposicao %}btn-warning{% else %}btn-outline-light{% endif %}">Reposição</a>
         </header>
 
         {% if messages %}
@@ -51,7 +53,11 @@
                                 {% endif %}
                                 <div class="product-stock-summary">
                                     <span>Estoque: {{ produto.quantidade|floatformat:2 }}</span>
-                                    {% if produto.quantidade <= 0 %}
+                                    {% if not produto.ativo %}
+                                        <span class="stock-status stock-status-muted">Inativo</span>
+                                    {% elif produto.reposicao_necessaria %}
+                                        <span class="stock-status stock-status-warning">Reposição necessária</span>
+                                    {% elif produto.quantidade <= 0 %}
                                         <span class="stock-status stock-status-danger">Sem estoque</span>
                                     {% elif produto.quantidade <= 5 %}
                                         <span class="stock-status stock-status-warning">Estoque baixo</span>
@@ -59,6 +65,9 @@
                                         <span class="stock-status stock-status-success">Disponível</span>
                                     {% endif %}
                                 </div>
+                                {% if produto.tem_estoque_minimo %}
+                                    <div class="product-minimum">Mínimo: {{ produto.estoque_minimo|floatformat:2 }}</div>
+                                {% endif %}
                                 <div class="product-price"><span>Preço de venda</span><strong>R$ {{ produto.preco_venda|floatformat:2 }}</strong></div>
                                 <a href="{% url 'produto' produto.slug %}" class="btn btn-primary card-action">Ver detalhes</a>
                             </div>

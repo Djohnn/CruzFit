@@ -1,35 +1,40 @@
 import uuid
-from datetime import date
-from decimal import Decimal, InvalidOperation
 from functools import wraps
-from io import BytesIO
 from itertools import zip_longest
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
-from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.db.models import BooleanField, Case, F, Value, When
 from django.http import HttpResponseForbidden, HttpResponseNotFound, JsonResponse
 from django.shortcuts import redirect, render
-from django.template.defaultfilters import slugify
 from django.urls import reverse
-from django.views.decorators.http import require_GET, require_http_methods
-from PIL import Image, ImageDraw, UnidentifiedImageError
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from PIL import Image, UnidentifiedImageError
 from rolepermissions.decorators import has_permission_decorator
 
 from .barcodes import generate_ean13, render_ean13_svg
-from .forms import ModeloEtiquetaForm, ProdutoForm
+from .forms import ModeloEtiquetaForm, ProdutoEdicaoForm, ProdutoForm
 from .fornecedores import fornecedores_ativos
 from .models import (
     BaixaEstoque,
     Categoria,
     EntradaEstoque,
-    Imagem,
     ModeloEtiqueta,
     Produto,
+    ProdutoCadastro,
 )
 from .services import (
+    ProductOperationError,
     StockOperationError,
+)
+from .services import (
+    cadastrar_produto as cadastrar_produto_service,
+)
+from .services import (
+    editar_produto as editar_produto_service,
+)
+from .services import (
+    inativar_produto as inativar_produto_service,
 )
 from .services import (
     registrar_baixa as registrar_baixa_service,
@@ -50,7 +55,7 @@ def gerente_required(view_func):
         if not request.user.is_authenticated:
             return redirect(f'{reverse("login")}?next={request.path}')
         if not (request.user.is_superuser or request.user.cargo == 'G'):
-            return HttpResponseForbidden('Apenas o gerente pode administrar etiquetas.')
+            return HttpResponseForbidden('Apenas o gerente pode administrar produtos.')
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -95,173 +100,129 @@ def _existing_barcode_codes():
 @has_permission_decorator('cadastrar_produtos')
 @require_http_methods(['GET', 'POST'])
 def add_produto(request):
-    if request.method == "GET":
-        categorias = Categoria.objects.all()
+    if request.method == 'GET':
         form_data = request.session.pop('produto_form_data', {})
-        if not form_data.get('codigo_barras'):
-            form_data['codigo_barras'] = generate_ean13(_existing_barcode_codes())
+        form_data.setdefault('codigo_barras', generate_ean13(_existing_barcode_codes()))
+        form_data.setdefault('chave_idempotencia', uuid.uuid4().hex)
         return render(
             request,
             'add_produto.html',
             {
-                'categorias': categorias,
+                'categorias': Categoria.objects.all(),
                 'form_data': form_data,
                 'tamanho_choices': Produto.TAMANHO_CHOICES,
                 'genero_choices': Produto.GENERO_CHOICES,
             },
         )
-    elif request.method == 'POST':
-        if request.POST.get('acao') == 'cadastrar_categoria':
-            titulo = (request.POST.get('titulo_categoria') or '').strip()
-            if not titulo:
-                return JsonResponse(
-                    {'error': 'Informe o nome da categoria.'},
-                    status=400,
-                )
-            if len(titulo) > 40:
-                return JsonResponse(
-                    {'error': 'O nome da categoria deve ter no máximo 40 caracteres.'},
-                    status=400,
-                )
-            if Categoria.objects.filter(titulo__iexact=titulo).exists():
-                return JsonResponse(
-                    {'error': 'Essa categoria já está cadastrada.'},
-                    status=400,
-                )
 
-            categoria_nova = Categoria.objects.create(titulo=titulo)
+    if request.POST.get('acao') == 'cadastrar_categoria':
+        titulo = (request.POST.get('titulo_categoria') or '').strip()
+        if not titulo:
+            return JsonResponse({'error': 'Informe o nome da categoria.'}, status=400)
+        if len(titulo) > 40:
             return JsonResponse(
-                {'id': categoria_nova.pk, 'titulo': categoria_nova.titulo},
-                status=201,
+                {'error': 'O nome da categoria deve ter no máximo 40 caracteres.'},
+                status=400,
             )
+        if Categoria.objects.filter(titulo__iexact=titulo).exists():
+            return JsonResponse(
+                {'error': 'Essa categoria já está cadastrada.'},
+                status=400,
+            )
+        categoria_nova = Categoria.objects.create(titulo=titulo)
+        return JsonResponse(
+            {'id': categoria_nova.pk, 'titulo': categoria_nova.titulo},
+            status=201,
+        )
 
-        form_data = {
-            'nome': (request.POST.get('nome') or '').strip(),
-            'categoria': request.POST.get('categoria') or '',
-            'tamanho': request.POST.get('tamanho') or '',
-            'modelo': (request.POST.get('modelo') or '').strip(),
-            'cor': (request.POST.get('cor') or '').strip(),
-            'tecido': (request.POST.get('tecido') or '').strip(),
-            'genero': request.POST.get('genero') or '',
-            'quantidade': request.POST.get('quantidade') or '',
-            'preco_compra': request.POST.get('preco_compra') or '',
-            'preco_venda': request.POST.get('preco_venda') or '',
-            'codigo_barras': (request.POST.get('codigo_barras') or '').strip(),
-        }
-        nome = form_data['nome']
-        categoria = form_data['categoria']
-        tamanho = form_data['tamanho']
-        modelo = form_data['modelo']
-        cor = form_data['cor']
-        tecido = form_data['tecido']
-        genero = form_data['genero']
-        quantidade = form_data['quantidade']
-        preco_compra = form_data['preco_compra']
-        preco_venda = form_data['preco_venda']
+    form_data = {
+        field: (request.POST.get(field) or '').strip()
+        for field in (
+            'nome',
+            'modelo',
+            'cor',
+            'tecido',
+            'codigo_barras',
+            'motivo',
+            'chave_idempotencia',
+        )
+    }
+    form_data.update({
+        field: request.POST.get(field) or ''
+        for field in (
+            'categoria',
+            'tamanho',
+            'genero',
+            'quantidade',
+            'preco_compra',
+            'preco_venda',
+            'estoque_minimo',
+        )
+    })
+    previous_registration = None
+    operation_key = form_data['chave_idempotencia']
+    if operation_key:
+        previous_registration = ProdutoCadastro.objects.filter(
+            chave_idempotencia=operation_key,
+        ).first()
+        if previous_registration and not form_data['codigo_barras']:
+            previous_data = previous_registration.dados_novos or {}
+            previous_barcode = previous_data.get('codigo_barras')
+            if previous_barcode:
+                form_data['codigo_barras'] = str(previous_barcode)
+    if not all(form_data.get(field) for field in ('nome', 'quantidade', 'preco_compra', 'preco_venda')):
+        request.session['produto_form_data'] = form_data
+        messages.error(request, 'Preencha os campos obrigatórios do produto.')
+        return redirect(reverse('add_produto'))
 
-        if any(value in (None, '') for value in (nome, quantidade, preco_compra, preco_venda)):
-            request.session['produto_form_data'] = form_data
-            messages.error(request, 'Preencha os campos obrigatórios do produto.')
-            return redirect(reverse('add_produto'))
+    if not previous_registration and Produto.objects.filter(nome=form_data['nome']).exists():
+        request.session['produto_form_data'] = form_data
+        messages.error(request, 'Já existe um produto com esse nome.')
+        return redirect(reverse('add_produto'))
 
-        try:
-            quantidade = Decimal(str(quantidade))
-            preco_compra = Decimal(str(preco_compra))
-            preco_venda = Decimal(str(preco_venda))
-            if (
-                not quantidade.is_finite()
-                or not preco_compra.is_finite()
-                or not preco_venda.is_finite()
-                or quantidade < 0
-                or preco_compra < 0
-                or preco_venda < 0
-            ):
-                raise ValueError
-        except (InvalidOperation, TypeError, ValueError):
-            request.session['produto_form_data'] = form_data
-            messages.error(request, 'Use valores numéricos não negativos no produto.')
-            return redirect(reverse('add_produto'))
-
-        if categoria and not Categoria.objects.filter(pk=categoria).exists():
-            request.session['produto_form_data'] = form_data
-            messages.error(request, 'Selecione uma categoria válida.')
-            return redirect(reverse('add_produto'))
-
-        tamanhos_validos = {value for value, _ in Produto.TAMANHO_CHOICES}
-        generos_validos = {value for value, _ in Produto.GENERO_CHOICES}
-        if (tamanho and tamanho not in tamanhos_validos) or (genero and genero not in generos_validos):
-            request.session['produto_form_data'] = form_data
-            messages.error(request, 'Selecione valores válidos para tamanho e gênero.')
-            return redirect(reverse('add_produto'))
-
-        if Produto.objects.filter(nome=nome).exists() or Produto.objects.filter(slug=slugify(nome)).exists():
-            request.session['produto_form_data'] = form_data
-            messages.error(request, 'Já existe um produto com esse nome.')
-            return redirect(reverse('add_produto'))
-
-        produto_form = ProdutoForm(data=form_data)
-        if not produto_form.is_valid():
-            request.session['produto_form_data'] = form_data
-            codigo_errors = produto_form.errors.get('codigo_barras')
-            if codigo_errors:
-                messages.error(request, f'Código de barras: {codigo_errors[0]}')
+    produto_form = ProdutoForm(
+        data=form_data,
+        instance=previous_registration.produto if previous_registration else None,
+    )
+    if not produto_form.is_valid():
+        request.session['produto_form_data'] = form_data
+        codigo_errors = produto_form.errors.get('codigo_barras')
+        if codigo_errors:
+            messages.error(request, f'Código de barras: {codigo_errors[0]}')
+        else:
+            field_name, field_errors = next(iter(produto_form.errors.items()))
+            if field_name in {'tamanho', 'genero'}:
+                messages.error(request, 'Selecione valores válidos para tamanho e gênero.')
             else:
-                field_name, field_errors = next(iter(produto_form.errors.items()))
                 field = produto_form.fields.get(field_name)
                 field_label = field.label if field else 'Produto'
                 messages.error(request, f'{field_label}: {field_errors[0]}')
-            return redirect(reverse('add_produto'))
-
-        codigo_barras = produto_form.cleaned_data.get('codigo_barras')
-
-        imagens = request.FILES.getlist('imagens')
-        try:
-            _validate_product_images(imagens)
-        except ValueError as error:
-            request.session['produto_form_data'] = form_data
-            messages.error(request, str(error))
-            return redirect(reverse('add_produto'))
-
-        if not codigo_barras:
-            codigo_barras = generate_ean13(_existing_barcode_codes())
-
-        produto = Produto(nome=nome,
-                          categoria_id=categoria or None,
-                          tamanho=tamanho,
-                          modelo=modelo,
-                          cor=cor,
-                          tecido=tecido,
-                          genero=genero,
-                          quantidade=quantidade,
-                          preco_compra=preco_compra,
-                           preco_venda=preco_venda,
-                           codigo_barras=codigo_barras)
-        try:
-            produto.save()
-        except ValidationError as error:
-            request.session['produto_form_data'] = form_data
-            messages.error(request, str(error))
-            return redirect(reverse('add_produto'))
-        
-        for f in imagens:
-            name = f'{date.today()}-{produto.id}.jpg'
-
-            with Image.open(f) as opened:
-                img = opened.convert('RGB')
-            img = img.resize((300, 300))
-            draw = ImageDraw.Draw(img)
-            draw.text((20, 280), f"CRUZ FIT {date.today()}", (255, 255, 255))
-            output = BytesIO()
-            img.save(output, format="JPEG", quality=100)
-            output.seek(0)
-            img_final = InMemoryUploadedFile(
-                output, 'ImageField', name, 'image/jpeg', output.getbuffer().nbytes, None
-            )
-
-            img_dj = Imagem(imagem=img_final, produto=produto)
-            img_dj.save()
-        messages.add_message(request, messages.SUCCESS, 'Produto cadastrado com sucesso')
         return redirect(reverse('add_produto'))
+
+    imagens = request.FILES.getlist('imagens')
+    try:
+        _validate_product_images(imagens)
+        codigo_barras = produto_form.cleaned_data.get('codigo_barras')
+        dados = dict(produto_form.cleaned_data)
+        dados['codigo_barras'] = codigo_barras or generate_ean13(_existing_barcode_codes())
+        result = cadastrar_produto_service(
+            actor=request.user,
+            dados=dados,
+            reason=form_data['motivo'],
+            idempotency_key=form_data['chave_idempotencia'],
+            images=imagens,
+        )
+    except (ProductOperationError, ValueError) as error:
+        request.session['produto_form_data'] = form_data
+        messages.error(request, str(error))
+        return redirect(reverse('add_produto'))
+
+    messages.success(
+        request,
+        'Produto cadastrado com sucesso.' if result.created
+        else 'Esse cadastro já foi registrado.',
+    )
+    return redirect(reverse('add_produto'))
 
 
 @login_required(login_url='login')
@@ -341,11 +302,30 @@ def imprimir_etiquetas(request, slug):
 @login_required(login_url='login')
 @require_GET
 def estoque(request):
-    produtos = Produto.objects.select_related('categoria').all()
+    reposicao = request.GET.get('reposicao') == '1'
+    produtos = Produto.objects.select_related('categoria').annotate(
+        reposicao_necessaria=Case(
+            When(
+                ativo=True,
+                estoque_minimo__isnull=False,
+                quantidade__lte=F('estoque_minimo'),
+                then=Value(True),
+            ),
+            default=Value(False),
+            output_field=BooleanField(),
+        ),
+        tem_estoque_minimo=Case(
+            When(estoque_minimo__isnull=False, then=Value(True)),
+            default=Value(False),
+            output_field=BooleanField(),
+        ),
+    )
+    if reposicao:
+        produtos = produtos.filter(reposicao_necessaria=True)
     return render(
         request,
         'estoque.html',
-        {'produtos': produtos},
+        {'produtos': produtos, 'reposicao': reposicao},
     )
 
 
@@ -376,7 +356,7 @@ def registrar_baixa(request):
         request,
         'registrar_baixa.html',
         {
-            'produtos': Produto.objects.order_by('nome'),
+            'produtos': Produto.objects.filter(ativo=True).order_by('nome'),
             'motivo_choices': BaixaEstoque.MOTIVO_CHOICES,
             'chave_idempotencia': uuid.uuid4().hex,
             'historico': BaixaEstoque.objects.prefetch_related(
@@ -422,7 +402,7 @@ def registrar_entrada(request):
         request,
         'registrar_entrada.html',
         {
-            'produtos': Produto.objects.order_by('nome'),
+            'produtos': Produto.objects.filter(ativo=True).order_by('nome'),
             'fornecedores': fornecedores_ativos(),
             'fornecedor_selecionado': posted.get('fornecedor', ''),
             'motivo_selecionado': posted.get('motivo', 'COMPRA' if posted.get('fornecedor') else ''),
@@ -487,6 +467,82 @@ def consulta_produto(request):
     )
 
 
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def editar_produto(request, slug):
+    try:
+        produto = Produto.objects.select_related('categoria').get(slug=slug)
+    except Produto.DoesNotExist:
+        return HttpResponseNotFound('Produto não encontrado.')
+
+    if request.method == 'POST':
+        form = ProdutoEdicaoForm(request.POST, request.FILES, instance=produto)
+        operation_key = (request.POST.get('chave_idempotencia') or '').strip()
+        reason = request.POST.get('motivo') or ''
+        images = request.FILES.getlist('imagens')
+        if form.is_valid():
+            try:
+                _validate_product_images(images)
+                result = editar_produto_service(
+                    actor=request.user,
+                    product_id=produto.pk,
+                    dados=form.cleaned_data,
+                    reason=reason,
+                    idempotency_key=operation_key,
+                    images=images,
+                )
+            except (ProductOperationError, ValueError) as error:
+                form.add_error(None, str(error))
+            else:
+                message = (
+                    'Cadastro do produto atualizado.'
+                    if result.created
+                    else 'Essa edição já foi registrada.'
+                )
+                messages.success(request, message)
+                return redirect('produto', slug=result.product.slug)
+    else:
+        form = ProdutoEdicaoForm(instance=produto)
+        operation_key = uuid.uuid4().hex
+        reason = ''
+
+    return render(
+        request,
+        'editar_produto.html',
+        {
+            'produto': produto,
+            'form': form,
+            'motivo': reason,
+            'chave_idempotencia': operation_key,
+        },
+    )
+
+
+@gerente_required
+@require_POST
+def inativar_produto(request, slug):
+    try:
+        produto = Produto.objects.get(slug=slug)
+    except Produto.DoesNotExist:
+        return HttpResponseNotFound('Produto não encontrado.')
+
+    try:
+        result = inativar_produto_service(
+            actor=request.user,
+            product_id=produto.pk,
+            reason=request.POST.get('motivo') or '',
+            idempotency_key=request.POST.get('chave_idempotencia'),
+        )
+    except ProductOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(
+            request,
+            'Produto inativado.' if result.created else 'Essa inativação já foi registrada.',
+        )
+    return redirect('produto', slug=produto.slug)
+
+
 @login_required(login_url='login')
 @require_GET
 def produto(request, slug):
@@ -495,4 +551,11 @@ def produto(request, slug):
     except Produto.DoesNotExist:
         return HttpResponseNotFound('Produto não encontrado.')
 
-    return render(request, 'produto.html', {'produto': produto})
+    return render(
+        request,
+        'produto.html',
+        {
+            'produto': produto,
+            'inativacao_chave': uuid.uuid4().hex,
+        },
+    )

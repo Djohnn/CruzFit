@@ -75,6 +75,31 @@
     color: var(--brand-danger);
 }
 
+.stock-status-muted {
+    color: var(--brand-muted);
+}
+
+.product-minimum {
+    margin-top: 0.35rem;
+    color: var(--brand-muted);
+    font-size: 0.82rem;
+}
+
+.product-inactivation-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.product-inactivation-form .form-control {
+    min-width: min(18rem, 100%);
+}
+
+.product-edit-page {
+    max-width: 1100px;
+}
+
 .product-price strong {
     color: var(--brand-cream);
 }

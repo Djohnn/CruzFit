@@ -18,6 +18,7 @@ from .models import (
     ItemEntradaEstoque,
     Produto,
 )
+from .services import StockOperationError, registrar_baixa
 
 
 class CruzFitSingleUserHardeningTests(TestCase):
@@ -54,6 +55,8 @@ class CruzFitSingleUserHardeningTests(TestCase):
             "quantidade": "1",
             "preco_compra": "20.00",
             "preco_venda": "40.00",
+            "motivo": "Cadastro de teste",
+            "chave_idempotencia": "hardening-product-create",
         }
         data.update(overrides)
         return data
@@ -143,6 +146,127 @@ class CruzFitSingleUserHardeningTests(TestCase):
         self.assertEqual(baixa.observacao, "Venda no balcão")
         self.assertEqual(ItemBaixaEstoque.objects.filter(baixa=baixa).count(), 1)
 
+    def test_withdrawal_replay_returns_existing_operation_and_debits_once(self):
+        """Given baixa concluída; When repetir; Then debitar uma única vez."""
+        self.login_manager()
+        payload = {
+            "produto": [str(self.product.pk)],
+            "quantidade": ["3"],
+            "motivo": "VENDA",
+            "observacao": "Venda idempotente",
+            "chave_idempotencia": "withdrawal-replay-identical",
+        }
+
+        first = self.client.post(reverse("registrar_baixa"), payload, follow=True)
+        second = self.client.post(reverse("registrar_baixa"), payload, follow=True)
+
+        self.assertContains(first, "Baixa registrada com sucesso.")
+        self.assertContains(second, "Essa baixa já foi registrada.")
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantidade, 7)
+        self.assertEqual(BaixaEstoque.objects.count(), 1)
+        self.assertEqual(ItemBaixaEstoque.objects.count(), 1)
+
+    def test_withdrawal_replay_accepts_same_lines_in_different_order(self):
+        """Given linhas idênticas; When inverter a ordem; Then aceitar o replay."""
+        second_product = Produto.objects.create(
+            nome="Short para replay",
+            categoria=self.category,
+            quantidade=5,
+            preco_compra=15,
+            preco_venda=30,
+        )
+        first = registrar_baixa(
+            actor=self.manager,
+            product_ids=[str(self.product.pk), str(second_product.pk)],
+            quantities=["2.00", "1.00"],
+            reason="VENDA",
+            observation="Venda com duas linhas",
+            idempotency_key="withdrawal-replay-order",
+        )
+        replay = registrar_baixa(
+            actor=self.manager,
+            product_ids=[str(second_product.pk), str(self.product.pk)],
+            quantities=["1", "2"],
+            reason="VENDA",
+            observation="Venda com duas linhas",
+            idempotency_key="withdrawal-replay-order",
+        )
+
+        self.assertTrue(first.created)
+        self.assertFalse(replay.created)
+        self.product.refresh_from_db()
+        second_product.refresh_from_db()
+        self.assertEqual(self.product.quantidade, 8)
+        self.assertEqual(second_product.quantidade, 4)
+        self.assertEqual(BaixaEstoque.objects.count(), 1)
+
+    def test_withdrawal_replay_rejects_changed_reason_observation_or_lines(self):
+        """Given chave concluída; When mudar conteúdo; Then rejeitar sem débito novo."""
+        variants = (
+            ("motivo", {"reason": "AJUSTE"}),
+            ("observacao", {"observation": "Outro texto"}),
+            ("linhas", {"quantities": ["4"]}),
+        )
+
+        for suffix, changes in variants:
+            with self.subTest(variant=suffix):
+                key = f"withdrawal-replay-conflict-{suffix}"
+                registrar_baixa(
+                    actor=self.manager,
+                    product_ids=[str(self.product.pk)],
+                    quantities=["2"],
+                    reason="VENDA",
+                    observation="Venda original",
+                    idempotency_key=key,
+                )
+                with self.assertRaisesRegex(
+                    StockOperationError,
+                    "Essa chave de baixa já foi usada com outros dados",
+                ):
+                    registrar_baixa(
+                        actor=self.manager,
+                        product_ids=[str(self.product.pk)],
+                        quantities=changes.get("quantities", ["2"]),
+                        reason=changes.get("reason", "VENDA"),
+                        observation=changes.get("observation", "Venda original"),
+                        idempotency_key=key,
+                    )
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantidade, 4)
+        self.assertEqual(BaixaEstoque.objects.count(), 3)
+
+    def test_withdrawal_replay_rejects_other_author_and_shows_message(self):
+        """Given autor diferente; When repetir chave; Then rejeitar e informar."""
+        self.login_manager()
+        payload = {
+            "produto": [str(self.product.pk)],
+            "quantidade": ["2"],
+            "motivo": "VENDA",
+            "observacao": "Venda do gerente",
+            "chave_idempotencia": "withdrawal-replay-author",
+        }
+        self.client.post(reverse("registrar_baixa"), payload)
+
+        other_manager = self.user_model.objects.create_user(
+            username="other-manager@example.com",
+            password="test-password",
+            cargo="G",
+        )
+        self.client.force_login(other_manager)
+        response = self.client.post(
+            reverse("registrar_baixa"), payload, follow=True
+        )
+
+        self.assertContains(
+            response,
+            "Essa chave de baixa já foi usada com outros dados",
+        )
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantidade, 8)
+        self.assertEqual(BaixaEstoque.objects.count(), 1)
+
     def test_stock_entry_without_idempotency_key_is_rejected(self):
         self.login_manager()
 
@@ -182,15 +306,17 @@ class CruzFitSingleUserHardeningTests(TestCase):
     def test_withdrawal_rejects_insufficient_balance(self):
         self.login_manager()
 
-        self.client.post(
+        response = self.client.post(
             reverse("registrar_baixa"),
             {
                 "produto": [str(self.product.pk)],
                 "quantidade": ["11"],
                 "chave_idempotencia": "outflow-insufficient",
             },
+            follow=True,
         )
 
+        self.assertContains(response, "Estoque insuficiente")
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantidade, 10)
         self.assertFalse(BaixaEstoque.objects.exists())

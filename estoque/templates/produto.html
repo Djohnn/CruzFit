@@ -15,6 +15,14 @@
             <p>Detalhes do produto no estoque Cruz Fit.</p>
         </header>
 
+        {% if messages %}
+            <div class="feedback-stack" aria-live="polite">
+            {% for message in messages %}
+                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+
         <section class="surface-section" aria-labelledby="product-detail-heading">
             <h2 id="product-detail-heading">Informações do produto</h2>
             <div class="product-detail-grid">
@@ -66,6 +74,16 @@
                         <output id="detail-product-quantity" class="detail-value readonly" data-readonly="true">{{ produto.quantidade|floatformat:2 }}</output>
                     </div>
                     <div class="detail-field">
+                        <label for="detail-product-status">Status</label>
+                        <output id="detail-product-status" class="detail-value readonly" data-readonly="true">{% if produto.ativo %}Ativo{% else %}Inativo{% endif %}</output>
+                    </div>
+                    {% if produto.estoque_minimo != None %}
+                        <div class="detail-field">
+                            <label for="detail-product-minimum">Estoque mínimo</label>
+                            <output id="detail-product-minimum" class="detail-value readonly" data-readonly="true">{{ produto.estoque_minimo|floatformat:2 }}</output>
+                        </div>
+                    {% endif %}
+                    <div class="detail-field">
                         <label for="detail-product-cost">Preço de compra</label>
                         <output id="detail-product-cost" class="detail-value readonly" data-readonly="true">R$ {{ produto.preco_compra|floatformat:2 }}</output>
                     </div>
@@ -79,7 +97,19 @@
                 {% if produto.codigo_barras %}
                     <a href="{% url 'imprimir_etiquetas' produto.slug %}" class="btn btn-primary">Imprimir etiquetas</a>
                 {% endif %}
-                <p class="section-help">Esta tela é somente leitura. As alterações continuam sendo feitas pelo cadastro de produtos.</p>
+                {% if request.user.is_superuser or request.user.cargo == 'G' %}
+                    <a href="{% url 'editar_produto' produto.slug %}" class="btn btn-outline-light">Editar cadastro</a>
+                    {% if produto.ativo %}
+                        <form action="{% url 'inativar_produto' produto.slug %}" method="POST" class="product-inactivation-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="chave_idempotencia" value="{{ inativacao_chave }}">
+                            <label class="sr-only" for="product-inactivation-reason">Motivo da inativação</label>
+                            <input id="product-inactivation-reason" class="form-control" type="text" name="motivo" required maxlength="500" placeholder="Motivo para inativar">
+                            <button type="submit" class="btn btn-outline-danger">Inativar produto</button>
+                        </form>
+                    {% endif %}
+                {% endif %}
+                <p class="section-help">O saldo só muda por entrada ou baixa. A edição corrige o cadastro sem alterar o estoque.</p>
             </div>
         </section>
     </main>

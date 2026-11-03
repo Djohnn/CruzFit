@@ -114,6 +114,8 @@ class BarcodeFeatureTests(TestCase):
             "preco_compra": "20",
             "preco_venda": "40",
             "codigo_barras": "4006381333931",
+            "motivo": "Cadastro de teste",
+            "chave_idempotencia": "barcode-product-create",
         }
         data.update(overrides)
         return data
