@@ -15,7 +15,7 @@
             <h1>Vendas registradas</h1>
             <p>Consulte os comprovantes e os valores praticados em cada venda.</p>
         </div>
-        <a class="btn btn-primary" href="{% url 'registrar_venda' %}">Nova venda</a>
+        <a class="btn btn-primary" href="{% url 'vendas:registrar_venda' %}">Nova venda</a>
     </header>
 
     {% if messages %}
@@ -42,13 +42,13 @@
                 <tbody>
                 {% for venda in vendas %}
                     <tr>
-                        <th scope="row"><a href="{% url 'venda_detalhe' venda.pk %}">Venda #{{ venda.pk }}</a></th>
+                        <th scope="row"><a href="{% url 'vendas:venda_detalhe' venda.pk %}">Venda #{{ venda.pk }}</a></th>
                         <td>{{ venda.criada_em|date:"d/m/Y H:i" }}</td>
                         <td>{% for item in venda.itens.all %}{{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
                         <td>{{ venda.get_forma_pagamento_display }}</td>
                         <td>R$ {{ venda.total|floatformat:2 }}</td>
                         <td>{{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</td>
-                        <td><a class="btn btn-sm btn-outline-light" href="{% url 'venda_comprovante' venda.pk %}">Comprovante</a></td>
+                        <td><a class="btn btn-sm btn-outline-light" href="{% url 'vendas:venda_comprovante' venda.pk %}">Comprovante</a></td>
                     </tr>
                 {% endfor %}
                 </tbody>

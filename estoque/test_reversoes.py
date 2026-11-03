@@ -6,6 +6,11 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from vendas import models as sales_models
+from vendas import services as sales_services
+from vendas.models import ItemVendaDevolucao, Venda, VendaCancelamento, VendaDevolucao
+from vendas.services import registrar_venda
+
 from . import models, services
 from .models import (
     BaixaCorrecao,
@@ -14,13 +19,9 @@ from .models import (
     EntradaEstoque,
     ItemBaixaCorrecao,
     ItemDevolucaoFornecedor,
-    ItemVendaDevolucao,
-    Venda,
-    VendaCancelamento,
-    VendaDevolucao,
 )
 from .relatorios import MovementFilters, movement_csv, query_movements, sales_ranking
-from .services import registrar_baixa, registrar_entrada, registrar_venda
+from .services import registrar_baixa, registrar_entrada
 
 
 class ReversalContractTests(TestCase):
@@ -35,7 +36,7 @@ class ReversalContractTests(TestCase):
             'DevolucaoFornecedor',
             'ItemDevolucaoFornecedor',
         ):
-            self.assertTrue(hasattr(models, model_name), model_name)
+            self.assertTrue(hasattr(sales_models if 'Venda' in model_name else models, model_name), model_name)
 
         for service_name in (
             'cancelar_venda',
@@ -43,7 +44,7 @@ class ReversalContractTests(TestCase):
             'corrigir_baixa',
             'devolver_fornecedor',
         ):
-            self.assertTrue(hasattr(services, service_name), service_name)
+            self.assertTrue(hasattr(sales_services if service_name.endswith('_venda') else services, service_name), service_name)
 
 
 class ReversalServiceTests(TestCase):
@@ -101,7 +102,7 @@ class ReversalServiceTests(TestCase):
     def test_full_sale_cancellation_restores_stock_once_and_preserves_origin(self):
         """Given venda; When cancelar; Then compensar uma vez e manter origem."""
         sale = self.make_sale()
-        result = services.cancelar_venda(
+        result = sales_services.cancelar_venda(
             actor=self.manager,
             sale_id=sale.pk,
             reason='Cancelamento solicitado pelo cliente',
@@ -123,7 +124,7 @@ class ReversalServiceTests(TestCase):
         self.assertTrue(Venda.objects.filter(pk=sale.pk).exists())
         self.assertEqual(BaixaEstoque.objects.filter(pk=sale.baixa_id).count(), 1)
 
-        replay = services.cancelar_venda(
+        replay = sales_services.cancelar_venda(
             actor=self.manager,
             sale_id=sale.pk,
             reason='Cancelamento solicitado pelo cliente',
@@ -133,7 +134,7 @@ class ReversalServiceTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantidade, Decimal('10.00'))
         with self.assertRaises(ValueError):
-            services.cancelar_venda(
+            sales_services.cancelar_venda(
                 actor=self.manager,
                 sale_id=sale.pk,
                 reason='Outro motivo',
@@ -144,7 +145,7 @@ class ReversalServiceTests(TestCase):
             cargo='G',
         )
         with self.assertRaises(ValueError):
-            services.cancelar_venda(
+            sales_services.cancelar_venda(
                 actor=other_manager,
                 sale_id=sale.pk,
                 reason='Cancelamento solicitado pelo cliente',
@@ -155,7 +156,7 @@ class ReversalServiceTests(TestCase):
         """Given venda; When devolver parcelas; Then limitar e registrar preço."""
         sale = self.make_sale('venda-devolucao-parcial')
         item = sale.itens.get(produto=self.product)
-        result = services.devolver_venda(
+        result = sales_services.devolver_venda(
             actor=self.manager,
             sale_id=sale.pk,
             item_ids=[str(item.pk)],
@@ -171,7 +172,7 @@ class ReversalServiceTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantidade, Decimal('9.00'))
 
-        replay = services.devolver_venda(
+        replay = sales_services.devolver_venda(
             actor=self.manager,
             sale_id=sale.pk,
             item_ids=[str(item.pk)],
@@ -185,7 +186,7 @@ class ReversalServiceTests(TestCase):
         self.assertEqual(self.product.quantidade, Decimal('9.00'))
 
         with self.assertRaises(ValueError):
-            services.devolver_venda(
+            sales_services.devolver_venda(
                 actor=self.manager,
                 sale_id=sale.pk,
                 item_ids=[str(item.pk)],
@@ -204,7 +205,7 @@ class ReversalServiceTests(TestCase):
         foreign_item = second.itens.get(produto=self.product)
 
         with self.assertRaises(ValueError):
-            services.devolver_venda(
+            sales_services.devolver_venda(
                 actor=self.manager,
                 sale_id=first.pk,
                 item_ids=[str(foreign_item.pk)],
@@ -215,7 +216,7 @@ class ReversalServiceTests(TestCase):
         self.assertEqual(VendaDevolucao.objects.count(), 0)
 
         first_item = first.itens.get(produto=self.product)
-        services.devolver_venda(
+        sales_services.devolver_venda(
             actor=self.manager,
             sale_id=first.pk,
             item_ids=[str(first_item.pk)],
@@ -224,7 +225,7 @@ class ReversalServiceTests(TestCase):
             idempotency_key='devolucao-antes-cancelamento',
         )
         with self.assertRaises(ValueError):
-            services.cancelar_venda(
+            sales_services.cancelar_venda(
                 actor=self.manager,
                 sale_id=first.pk,
                 reason='Tentativa inválida',
@@ -323,14 +324,14 @@ class ReversalServiceTests(TestCase):
         """Given operação de reversão; When faltar metadado; Then rejeitar."""
         sale = self.make_sale('venda-metadados-reversao')
         with self.assertRaises(ValueError):
-            services.cancelar_venda(
+            sales_services.cancelar_venda(
                 actor=self.manager,
                 sale_id=sale.pk,
                 reason='',
                 idempotency_key='cancelamento-sem-motivo',
             )
         with self.assertRaises(ValueError):
-            services.cancelar_venda(
+            sales_services.cancelar_venda(
                 actor=self.manager,
                 sale_id=sale.pk,
                 reason='Motivo válido',
@@ -342,7 +343,7 @@ class ReversalServiceTests(TestCase):
         """Given venda devolvida; Then ranking líquido e histórico mostram vínculos."""
         sale = self.make_sale('venda-ranking-devolucao')
         item = sale.itens.get(produto=self.product)
-        services.devolver_venda(
+        sales_services.devolver_venda(
             actor=self.manager,
             sale_id=sale.pk,
             item_ids=[str(item.pk)],
@@ -366,7 +367,7 @@ class ReversalServiceTests(TestCase):
     def test_cancelled_sale_is_removed_from_ranking_but_remains_in_history(self):
         """Given venda cancelada; Then não ranquear, mas preservar consulta."""
         sale = self.make_sale('venda-ranking-cancelada')
-        services.cancelar_venda(
+        sales_services.cancelar_venda(
             actor=self.manager,
             sale_id=sale.pk,
             reason='Cancelamento para ranking',
@@ -393,7 +394,10 @@ class ReversalServiceTests(TestCase):
                 'chave_idempotencia': 'cancelamento-http-reversao',
             },
         )
-        self.assertRedirects(cancellation_response, f'/estoque/vendas/{sale.pk}/')
+        self.assertRedirects(
+            cancellation_response,
+            reverse('vendas:venda_detalhe', kwargs={'pk': sale.pk}),
+        )
         self.assertTrue(VendaCancelamento.objects.filter(venda=sale).exists())
         self.assertContains(
             self.client.get('/estoque/movimentacoes/'),
@@ -490,7 +494,10 @@ class ReversalServiceTests(TestCase):
             },
         )
 
-        self.assertRedirects(response, f'/estoque/vendas/{sale.pk}/')
+        self.assertRedirects(
+            response,
+            reverse('vendas:venda_detalhe', kwargs={'pk': sale.pk}),
+        )
         self.assertEqual(ItemVendaDevolucao.objects.count(), 1)
         self.product.refresh_from_db()
         self.other_product.refresh_from_db()

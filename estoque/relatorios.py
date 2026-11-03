@@ -15,15 +15,14 @@ from urllib.parse import urlencode
 from django.core.paginator import Page, Paginator
 from django.db.models import F, Prefetch, QuerySet, Sum
 
+from vendas.models import ItemVenda, ItemVendaDevolucao, VendaCancelamento
+
 from .models import (
     BaixaEstoque,
     EntradaEstoque,
     ItemBaixaEstoque,
     ItemEntradaEstoque,
-    ItemVenda,
-    ItemVendaDevolucao,
     Produto,
-    VendaCancelamento,
 )
 
 MOVEMENTS_PER_PAGE = 20

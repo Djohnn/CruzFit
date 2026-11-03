@@ -15,7 +15,7 @@
             <h1>Registrar venda</h1>
             <p>Selecione os produtos, confira os valores e confirme a baixa do estoque em uma única operação.</p>
         </div>
-        <a class="btn btn-outline-light" href="{% url 'vendas' %}">Histórico de vendas</a>
+        <a class="btn btn-outline-light" href="{% url 'vendas:vendas' %}">Histórico de vendas</a>
     </header>
 
     {% if messages %}
@@ -35,7 +35,7 @@
             <button id="add-sale-item" class="btn btn-outline-light" type="button">+ Adicionar produto</button>
         </div>
 
-        <form id="sale-form" action="{% url 'registrar_venda' %}" method="post" class="operational-form">
+        <form id="sale-form" action="{% url 'vendas:registrar_venda' %}" method="post" class="operational-form">
             {% csrf_token %}
             <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
             <div id="sale-items" class="sale-line-items">

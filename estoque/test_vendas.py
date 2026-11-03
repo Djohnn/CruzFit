@@ -7,16 +7,12 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from . import services
-from .models import (
-    BaixaEstoque,
-    Categoria,
-    ItemBaixaEstoque,
-    ItemVenda,
-    Produto,
-    Venda,
-)
-from .services import SaleOperationError, registrar_baixa, registrar_venda
+from vendas import services
+from vendas.models import ItemVenda, Venda
+from vendas.services import SaleOperationError, registrar_venda
+
+from .models import BaixaEstoque, Categoria, ItemBaixaEstoque, Produto
+from .services import registrar_baixa
 
 
 class SaleContractTests(TestCase):
@@ -46,11 +42,13 @@ class SaleContractTests(TestCase):
     def test_sale_model_and_service_contract_exist(self):
         """Given catálogo local; When preparar venda; Then expor modelo e serviço próprios."""
         self.assertTrue(hasattr(services, "registrar_venda"))
-        self.assertIsNotNone(apps.get_model("estoque", "Venda"))
+        self.assertIsNotNone(apps.get_model("vendas", "Venda"))
 
     def test_sale_http_and_ranking_contracts_exist(self):
         """Given venda local; When navegar; Then expor telas e ranking próprios."""
-        from . import relatorios, views
+        from vendas import views
+
+        from . import relatorios
 
         self.assertTrue(hasattr(views, "registrar_venda"))
         self.assertTrue(hasattr(views, "vendas"))
@@ -250,10 +248,16 @@ class SaleContractTests(TestCase):
         }
         first = self.client.post(reverse("registrar_venda"), payload)
         sale = Venda.objects.get(chave_idempotencia="venda-http-replay")
-        self.assertRedirects(first, reverse("venda_detalhe", kwargs={"pk": sale.pk}))
+        self.assertRedirects(
+            first,
+            reverse("vendas:venda_detalhe", kwargs={"pk": sale.pk}),
+        )
 
         replay = self.client.post(reverse("registrar_venda"), payload)
-        self.assertRedirects(replay, reverse("venda_detalhe", kwargs={"pk": sale.pk}))
+        self.assertRedirects(
+            replay,
+            reverse("vendas:venda_detalhe", kwargs={"pk": sale.pk}),
+        )
         self.assertEqual(Venda.objects.count(), 1)
         self.assertEqual(BaixaEstoque.objects.filter(motivo="VENDA").count(), 1)
         self.product.refresh_from_db()

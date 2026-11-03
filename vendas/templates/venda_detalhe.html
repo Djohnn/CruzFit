@@ -16,10 +16,10 @@
             <p>{{ venda.criada_em|date:"d/m/Y H:i" }} · {{ venda.get_forma_pagamento_display }} · baixa #{{ venda.baixa_id }}</p>
         </div>
         <div class="sale-actions-inline">
-            <a class="btn btn-primary" href="{% url 'venda_comprovante' venda.pk %}">Abrir comprovante</a>
-            <a class="btn btn-outline-light" href="{% url 'devolver_venda' venda.pk %}">Devolver itens</a>
-            <a class="btn btn-outline-danger" href="{% url 'cancelar_venda' venda.pk %}">Cancelar venda</a>
-            <a class="btn btn-outline-light" href="{% url 'vendas' %}">Voltar às vendas</a>
+            <a class="btn btn-primary" href="{% url 'vendas:venda_comprovante' venda.pk %}">Abrir comprovante</a>
+            <a class="btn btn-outline-light" href="{% url 'vendas:devolver_venda' venda.pk %}">Devolver itens</a>
+            <a class="btn btn-outline-danger" href="{% url 'vendas:cancelar_venda' venda.pk %}">Cancelar venda</a>
+            <a class="btn btn-outline-light" href="{% url 'vendas:vendas' %}">Voltar às vendas</a>
         </div>
     </header>
 

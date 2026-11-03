@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from . import fornecedor_views, views
 
@@ -15,13 +15,7 @@ urlpatterns = [
     path('relatorios/', views.relatorios, name='relatorios'),
     path('relatorios/exportar.csv', views.exportar_relatorio_csv,
          name='exportar_relatorio_csv'),
-    path('vendas/', views.vendas, name='vendas'),
-    path('vendas/nova/', views.registrar_venda, name='registrar_venda'),
-    path('vendas/<int:pk>/', views.venda_detalhe, name='venda_detalhe'),
-    path('vendas/<int:pk>/comprovante/', views.venda_comprovante,
-         name='venda_comprovante'),
-    path('vendas/<int:pk>/cancelar/', views.cancelar_venda, name='cancelar_venda'),
-    path('vendas/<int:pk>/devolver/', views.devolver_venda, name='devolver_venda'),
+    path('vendas/', include('vendas.urls')),
     path('consulta/', views.consulta_produto, name='consulta_produto'),
     path('baixa/', views.registrar_baixa, name='registrar_baixa'),
     path('baixa/<int:pk>/corrigir/', views.corrigir_baixa, name='corrigir_baixa'),

@@ -23,6 +23,13 @@ USO DIARIO
 4. Para backup manual, pare o sistema e execute BACKUP_CRUZ_FIT.bat.
 5. Para restaurar, pare o sistema e execute RESTAURAR_BACKUP_CRUZ_FIT.bat.
 
+VENDAS
+- O endereço canônico é http://127.0.0.1:15001/vendas/.
+- http://127.0.0.1:15001/estoque/vendas/ permanece como alias de compatibilidade.
+- Se o navegador mostrar TemplateDoesNotExist ou uma tela antiga, pare o servidor
+  com PARAR_CRUZ_FIT.bat e inicie novamente a partir desta pasta do projeto.
+- Não reutilize um servidor antigo iniciado em outro checkout.
+
 DADOS
 - O banco local fica em db.sqlite3.
 - As imagens ficam na pasta media.

@@ -12,7 +12,7 @@
             {% csrf_token %}
             <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
             <div class="form-group"><label for="cancel-reason">Motivo obrigatório</label><textarea id="cancel-reason" class="form-control" name="motivo" rows="4" required maxlength="500" placeholder="Explique o motivo do cancelamento"></textarea></div>
-            <div class="sale-actions-inline"><a class="btn btn-outline-light" href="{% url 'venda_detalhe' venda.pk %}">Voltar</a><button class="btn btn-danger" type="submit">Confirmar cancelamento</button></div>
+            <div class="sale-actions-inline"><a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' venda.pk %}">Voltar</a><button class="btn btn-danger" type="submit">Confirmar cancelamento</button></div>
         </form>
     </section>
 </main>

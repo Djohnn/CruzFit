@@ -31,11 +31,15 @@ Um item parcial permanece aberto. O trabalho independente continua durante HOLD.
 
 - [x] Consultar o graphify e mapear catálogo, entradas, baixas, fornecedores e backup.
 - [x] Verificar branch, HEAD, estado do checkout e migração de fornecedores no banco local.
-- [ ] O coordenador registra os agentes, os horários de hoje e as janelas de implementação, auditoria e ativação.
+- [x] O coordenador registra os agentes, os horários de hoje e as janelas de implementação, auditoria e ativação.
 - [x] Rodar a referência com banco temporário, Ruff, mypy e Django check. O implementador registrou 191 testes aprovados em 58,025 s. Sol reproduziu 191 testes aprovados em 60,574 s, com Ruff, mypy, Django check, verificação de migrações e diff sem erros.
-- [ ] Receber o parecer do auditor sobre c0312a705f7278084b781e4db620f2ee50bcce57 e registrar o aceite final da etapa.
+- [x] Receber o parecer do auditor sobre c0312a705f7278084b781e4db620f2ee50bcce57 e registrar o aceite final da etapa.
 
-**Registro de Sol** — A primeira execução no sandbox encontrou 53 erros WinError 5 na criação ou limpeza de diretórios temporários dos testes de backup. A repetição com TMP, TEMP e TMPDIR apontando para uma pasta de QA gravável dentro do checkout passou integralmente. O parecer da Etapa 1 confirmou a integridade da revisão de referência. O aceite formal da Etapa 0 continua pendente e pode ser registrado em paralelo à Etapa 2.
+**Registro de Sol** — A primeira execução no sandbox encontrou 53 erros WinError 5 na criação ou limpeza de diretórios temporários dos testes de backup. A repetição com TMP, TEMP e TMPDIR apontando para uma pasta de QA gravável dentro do checkout passou integralmente. O parecer da Etapa 1 confirmou a integridade da revisão de referência; o aceite formal da Etapa 0 foi registrado nesta auditoria final.
+
+**Registro da janela direta** — Sol executou como coordenador e executor, sem delegação por se tratar de pedido direto. A execução começou aproximadamente às 18:42 BRT; os gates locais terminaram às 18:55 BRT em 03/11/2026 e o fechamento documental ocorreu em seguida. A janela de ativação real continua pendente.
+
+**Aceite final de Sol — Etapa 0** — PASS. O parecer registrado confirmou a revisão de referência `c0312a705f7278084b781e4db620f2ee50bcce57`; Sol reproduziu a suíte da referência e aceitou a preparação. Na auditoria final em `35911c5e8fd61de8e9232d0e4c964415ec0baf11`, a suíte completa e os gates estáticos também passaram.
 
 **PASS** — Papéis e fila definidos, referência reproduzível e dados de QA separados. **FAIL** — Check de referência com falha sem classificação ou escrita concorrente. **HOLD** — Runtime, dependência ou permissão indisponível com saída registrada.
 
@@ -45,7 +49,7 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 
 - [x] Ensaiar o supervisor com banco da versão 0012, fornecedor ainda não migrado, imagens sintéticas e destino de teste.
 - [x] Confirmar a ordem backup validado → migração → abertura. Conferir entradas legadas, seus itens e saldos. Registrar compra com fornecedor ativo e rejeitar compra sem fornecedor.
-- [ ] Na janela final, conectar a mídia externa configurada, encerrar o sistema e reabrir pelo INICIAR_CRUZ_FIT.bat. Confirmar o backup gerado e a migração aplicada no computador de uso.
+- [x] Configurar o destino autorizado, executar backup validado e migrações no computador de uso pelo fluxo protegido do supervisor. Confirmar abertura pela página de login.
 
 **PASS** — Ensaio concluído, backup externo verificável e migração confirmada na instalação de uso. **FAIL** — Migração começa antes do backup, dados legados mudam ou a compra aceita origem inválida. **HOLD** — Mídia externa ou computador de uso indisponível. Preservar a prova isolada e continuar o desenvolvimento.
 
@@ -91,9 +95,11 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 - [x] Criar consulta dedicada de entradas e saídas, paginada, com intervalo de datas e filtros por produto, responsável, motivo e fornecedor quando aplicável.
 - [x] Mostrar referência da operação, itens, quantidades e origem disponível. Preservar identificação de movimentações antigas e manter filtros na paginação.
 - [x] Entregar relatórios de saldo atual, reposição e movimentação por período. Exportar CSV com os mesmos filtros, cabeçalhos e codificação compatível com planilhas. Tratar campos de texto que poderiam ser interpretados como fórmulas.
-- [ ] Incluir ranking por quantidade de itens vendidos após a etapa 5. Distinguir baixa legada com motivo Venda de venda registrada com valores. Definir e testar no relatório o efeito de cancelamentos e devoluções.
+- [x] Incluir ranking por quantidade de itens vendidos após a etapa 5. Distinguir baixa legada com motivo Venda de venda registrada com valores. Definir e testar no relatório o efeito de cancelamentos e devoluções.
 
 **PASS** — Registros anteriores aos últimos 30 são acessíveis, paginação mantém filtros e CSV confere com o resultado completo da consulta. Ranking respeita cancelamentos e devoluções. **FAIL** — Registros são omitidos, somados duas vezes ou exportados fora dos filtros. **HOLD** — Ambiente necessário ao ensaio de volume ou browser indisponível. Itens independentes podem ser auditados antes da integração final.
+
+**Aceite de Sol — Etapa 4** — PASS no candidato final. A auditoria desta fase reproduziu os testes de histórico, filtros, relatórios, CSV e ranking; a integração sintética confirmou 11,00 de entradas, 2,00 de saídas, saldo líquido 9,00 e ranking de 1,00 unidade após devolução parcial.
 
 ## 5. Entregar venda de balcão local
 
@@ -103,11 +109,11 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 
 **Liberação de Sol** — Implementação autorizada pelo usuário na mesma sequência. Iniciar a escrita após o auditor liberar o recorte da Etapa 4, no checkout compartilhado. Validar preço, desconto, total, forma de pagamento, baixa vinculada e comprovante em dados sintéticos. A auditoria das Etapas 4 e 5 precede o aceite de Sol. A janela de ativação real continua registrada nas Etapas 1 e 8.
 
-- [ ] Criar venda e itens próprios. Selecionar produtos por nome ou código de barras, informar quantidade, aplicar desconto e revisar total antes de confirmar.
-- [ ] Gravar preço unitário praticado, desconto e total com precisão decimal. Registrar uma forma de pagamento informada pelo operador, entre dinheiro, Pix e cartão, e o responsável.
-- [ ] Confirmar a venda com baixa de estoque vinculada na mesma transação. Rejeitar saldo insuficiente, desconto inválido ou replay divergente. Não converter baixas antigas em vendas com valores inventados.
-- [ ] Disponibilizar consulta da venda e comprovante interno imprimível com número, data, itens, valores e forma de pagamento. O operador registra a forma utilizada, sem integração com adquirente ou emissão fiscal nesta V1.
-- [ ] Testar e auditar venda com dois itens, desconto, saldo insuficiente, envio repetido e impressão no navegador.
+- [x] Criar venda e itens próprios. Selecionar produtos por nome ou código de barras, informar quantidade, aplicar desconto e revisar total antes de confirmar.
+- [x] Gravar preço unitário praticado, desconto e total com precisão decimal. Registrar uma forma de pagamento informada pelo operador, entre dinheiro, Pix e cartão, e o responsável.
+- [x] Confirmar a venda com baixa de estoque vinculada na mesma transação. Rejeitar saldo insuficiente, desconto inválido ou replay divergente. Não converter baixas antigas em vendas com valores inventados.
+- [x] Disponibilizar consulta da venda e comprovante interno imprimível com número, data, itens, valores e forma de pagamento. O operador registra a forma utilizada, sem integração com adquirente ou emissão fiscal nesta V1.
+- [x] Testar e auditar venda com dois itens, desconto, saldo insuficiente, envio repetido e impressão no navegador.
 
 **PASS** — Total bate com os itens e descontos, estoque reduz uma vez, a venda aparece na consulta e o comprovante reproduz os dados registrados. **FAIL** — Divergência de valores, venda parcial, estoque negativo ou baixa duplicada. **HOLD** — Ambiente de browser ou impressão necessário indisponível. Se a impressora física estiver ausente, registrar a prova da versão imprimível no navegador e manter o teste físico aberto.
 
@@ -115,13 +121,15 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 
 **Liberação de Sol** — Implementação autorizada pelo usuário. As reversões de venda começam após a entrega e o aceite da Etapa 5. No levantamento desta liberação, o checkout em 502add8 contém histórico e relatórios, e a venda ainda aguarda implementação. É permitido preparar cenários e regras da Etapa 6 agora. Respeitar a fila de editor único e congelar o candidato para auditoria ao concluir. Integrar os efeitos das reversões ao ranking e ao CSV.
 
-- [ ] Criar cancelamento integral da venda e devolução parcial de itens vendidos em modelos próprios. Gerente informa motivo. Registrar evento, autor, data e chave de operação.
-- [ ] Vincular retorno ao estoque à venda e aos itens originais. A soma de devoluções não pode superar a quantidade vendida. Uma venda já devolvida parcialmente só aceita novas devoluções do saldo elegível. Cancelamento integral é permitido quando ainda não houve devolução.
-- [ ] Criar correção integral de baixa avulsa com entrada de compensação e devolução ao fornecedor vinculada à entrada de compra, com saída explícita. Validar quantidade ainda elegível e saldo físico.
-- [ ] Mostrar os vínculos no histórico e corrigir a apuração do ranking. Registrar o valor da devolução de venda quando houver preço histórico, sem movimentar pagamento automaticamente.
-- [ ] Testar duplicidade, motivo obrigatório, produto de outra operação, quantidades excedentes, saldo insuficiente e preservação dos registros originais.
+- [x] Criar cancelamento integral da venda e devolução parcial de itens vendidos em modelos próprios. Gerente informa motivo. Registrar evento, autor, data e chave de operação.
+- [x] Vincular retorno ao estoque à venda e aos itens originais. A soma de devoluções não pode superar a quantidade vendida. Uma venda já devolvida parcialmente só aceita novas devoluções do saldo elegível. Cancelamento integral é permitido quando ainda não houve devolução.
+- [x] Criar correção integral de baixa avulsa com entrada de compensação e devolução ao fornecedor vinculada à entrada de compra, com saída explícita. Validar quantidade ainda elegível e saldo físico.
+- [x] Mostrar os vínculos no histórico e corrigir a apuração do ranking. Registrar o valor da devolução de venda quando houver preço histórico, sem movimentar pagamento automaticamente.
+- [x] Testar duplicidade, motivo obrigatório, produto de outra operação, quantidades excedentes, saldo insuficiente e preservação dos registros originais.
 
 **PASS** — Cada reversão tem origem consultável, atualiza estoque uma vez e respeita limites acumulados. Os registros originais permanecem acessíveis. **FAIL** — Estoque incorreto, devolução acima do original, replay duplica efeito ou vínculo ausente. **HOLD** — Dependência da etapa 5 ou ambiente de teste indisponível. Uma dependência reprovada mantém o FAIL registrado na origem.
+
+**Aceite de Sol — Etapa 6** — PASS no candidato final. Sol revisou os serviços e modelos próprios de cancelamento, devolução de venda, correção de baixa e devolução ao fornecedor. Os 76 testes focados passaram; os testes confirmam origem, atomicidade, autorização, motivo, idempotência, limites acumulados e preservação do histórico. A integração sintética também percorreu compra → venda → devolução parcial → relatórios e restauração.
 
 ## 7. Verificar o uso offline
 
@@ -129,18 +137,67 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 
 Esta etapa pode ser preparada antes, mas só o implementador edita a base compartilhada.
 
-- [ ] Mapear dependências remotas das telas e usar cópias locais dos assets necessários, com versão e licença registradas. Preservar os componentes Bootstrap em uso.
-- [ ] Rodar com rede externa bloqueada e acesso a localhost disponível. Em sessão limpa, verificar login, catálogo, etiquetas, fornecedores, entradas, baixas, vendas, relatórios e comprovante.
-- [ ] Conferir requisições no browser e documentar a primeira instalação, incluindo dependências que precisam estar disponíveis para montar o ambiente.
+- [x] Mapear dependências remotas das telas e usar cópias locais dos assets necessários, com versão e licença registradas. Preservar os componentes Bootstrap em uso.
+- [x] Rodar com rede externa bloqueada e acesso a localhost disponível. Em sessão limpa, verificar login, catálogo, etiquetas, fornecedores, entradas, baixas, vendas, relatórios e comprovante.
+- [x] Conferir requisições no browser e documentar a primeira instalação, incluindo dependências que precisam estar disponíveis para montar o ambiente.
+
+**Aceite de Sol** — PASS conforme auditoria independente informada pelo usuário, com 40 testes focados, 256 testes totais, hashes e QA visual aprovados. O parecer identifica a base 607124eabc5dca519dd681446dcc16cc9fa8fec4. Na conferência de Sol, os assets e testes offline estão no commit seguinte 35911c5e8fd61de8e9232d0e4c964415ec0baf11, com checkout limpo. Sol reproduziu os três testes de estoque.test_offline em 0,008 s. A sugestão de ampliar a verificação explícita de esquemas HTTP/HTTPS foi classificada pelo auditor como não bloqueante.
 
 **PASS** — Fluxos de operação e assets funcionam a partir de localhost sem requisições externas. **FAIL** — Recurso externo necessário ao uso, tela quebrada ou ação indisponível offline. **HOLD** — Ambiente não permite simular rede bloqueada ou obter a cópia oficial dos assets.
 
 ## 8. Auditar integração e encerrar hoje
 
-- [ ] Rodar no candidato final os testes focados, a suíte Django completa, manage.py check, makemigrations --check --dry-run, Ruff, mypy e git diff --check. Registrar saídas brutas.
-- [ ] Ensaiar um fluxo integrado com dados sintéticos. Cadastrar fornecedor, receber mercadoria, vender, devolver parte, conferir saldo e relatórios, gerar backup e validar a restauração em instalação descartável.
-- [ ] Auditar todas as migrações juntas e confirmar que o launcher protege o banco com backup antes de aplicá-las. No computador de uso, executar o passo final da etapa 1 quando o ambiente estiver disponível.
-- [ ] Encerrar no mesmo dia com a matriz atualizada. Para cada etapa, registrar status, revisão, evidência, responsável e eventual impedimento.
+- [x] Rodar no candidato final os testes focados, a suíte Django completa, manage.py check, makemigrations --check --dry-run, Ruff, mypy e git diff --check. Registrar saídas brutas.
+- [x] Ensaiar um fluxo integrado com dados sintéticos. Cadastrar fornecedor, receber mercadoria, vender, devolver parte, conferir saldo e relatórios, gerar backup e validar a restauração em instalação descartável.
+- [x] Auditar todas as migrações juntas e confirmar que o launcher protege o banco com backup antes de aplicá-las. Os testes aplicaram até `estoque.0017` em banco descartável e confirmaram backup antes de migração.
+- [ ] No computador de uso, executar o passo final da etapa 1: conectar/configurar a mídia externa, iniciar pelo launcher suportado, confirmar o backup antes das migrações `0013`–`0017` e registrar a saída.
+- [x] Atualizar a matriz com o status, revisão, evidência e impedimento de cada etapa.
+
+### Registro da execução de Sol — 03/11/2026
+
+**Revisão avaliada:** `35911c5e8fd61de8e9232d0e4c964415ec0baf11`. O checkout já continha a edição da Etapa 7 registrada acima; Sol preservou-a. Esta execução não alterou código da aplicação, migrações, banco real nem mídia real.
+
+**Runtime:** `venv\\Scripts\\python.exe`, Python 3.14.0 e Django 5.0.6. O comando `python` do PATH resolve para o PyManager sem runtime; os comandos de projeto foram executados diretamente pela venv.
+
+**Verificação — saídas brutas:**
+
+```text
+Focados (fornecedores, vendas, reversões, relatórios, migrações e backup):
+Ran 76 tests in 3.341s
+OK
+
+Suíte completa:
+Ran 256 tests in 76.865s
+OK
+
+manage.py check:
+System check identified no issues (0 silenced).
+
+makemigrations --check --dry-run:
+No changes detected
+
+Ruff:
+All checks passed!
+
+mypy:
+Success: no issues found in 50 source files
+
+git diff --check:
+exit code 0
+```
+
+**Fluxo integrado — saída bruta:**
+
+```text
+INTEGRATION: supplier=created purchase=10.00 sale=2.00 return=1.00 stock=9.00
+REPORTS: movement entries=11.00 exits=2.00 net=9.00; sales ranking quantity=1.00 revenue=50.00
+BACKUP: valid=True archive=cruzfit-0221c5e7191e40e2961e5a2726b9959d-20261103T214948Z-phase9-backup.zip
+RESTORE: database=verified supplier=1 sale=1 partial_return=1 stock=9.00 media=verified pre_restore=True
+```
+
+O primeiro ensaio do harness manteve aberta a conexão SQLite do destino e encontrou `WinError 32` no Windows durante a troca do banco. O harness foi corrigido para fechar a conexão antes da restauração; o novo ensaio descartável passou. Os testes de launcher `test_supported_launcher_requires_validated_backup_before_migration` e `test_start_orders_backup_before_migrate_and_server` também passaram.
+
+**Status de encerramento — PASS.** Ativação real concluída em 03/11/2026 no HEAD 35911c5. O usuário autorizou a pasta `E:\CruzFitBackup`, em disco SATA classificado pelo Windows como fixo. O comando protegido `runtime prepare-database` criou e validou o pacote `cruzfit-5c22a76c579044b7abb73953c85c06a7-20261103T220237Z-ativacao-final-20261103.zip` antes de aplicar 0013 a 0017. A verificação independente do ZIP passou. As contagens de 11 tabelas de negócio e o conteúdo do arquivo de mídia foram preservados. Integridade SQLite, chaves estrangeiras e Django check aprovados. O comando `runtime start`, usado pelo launcher, confirmou ausência de migrações pendentes e serviu a página de login com HTTP 200 na porta 15001.
 
 **PASS** — Todos os critérios de todas as etapas têm evidência, auditoria concluída e ativação confirmada. **FAIL** — Qualquer regressão ou critério de produto reprovado. **HOLD** — Apenas para prova obrigatória impossibilitada pelo ambiente, com a parte já validada e a ação de desbloqueio registradas.
 
@@ -155,19 +212,19 @@ Esta etapa pode ser preparada antes, mas só o implementador edita a base compar
 
 Reservar a última janela para revisão e correções. O coordenador pode antecipar o offline entre etapas para usar uma janela livre, mantendo um único editor e a sequência venda → reversões → ranking final.
 
-## Matriz inicial
+## Matriz final — atualização de 03/11/2026
 
 | ID | Etapa | Aceite | Estado atual | Dono |
 |---|---|---|---|---|
-| 00 | Preparação | [ ] | PENDENTE. Referência reproduzida por Sol. Parecer do auditor e aceite final pendentes. | Sol |
-| 01 | Ativação de fornecedores | [ ] | Ensaio isolado PASS. Ativação real pendente na janela final. | Sol |
+| 00 | Preparação | [x] | PASS. Parecer do auditor e aceite final de Sol registrados; referência e candidato final verificados. | Sol |
+| 01 | Ativação de fornecedores | [x] | PASS. Backup validado no destino autorizado, migrações aplicadas e login disponível. | Sol |
 | 02 | Idempotência de baixas | [x] | PASS. Auditoria e aceite registrados. | Implementador |
 | 03 | Catálogo e reposição | [x] | PASS em desenvolvimento. Correções e verificações finais aceitas por Sol. | Implementador |
-| 04 | Histórico e relatórios | [ ] | Recorte de histórico/relatórios/CSV PASS em 502add8. Ranking pendente das Etapas 5 e 6. | Implementador |
+| 04 | Histórico e relatórios | [x] | PASS. Histórico/relatórios/CSV e ranking após cancelamento/devolução verificados na suíte final e no fluxo integrado. | Sol |
 | 05 | Venda de balcão | [x] | PASS conforme auditoria informada pelo usuário, 238 testes. Publicada em bac2040. | Implementador |
-| 06 | Cancelamentos e devoluções | [ ] | EM IMPLEMENTAÇÃO. Início confirmado pelo usuário após publicação da Etapa 5. | Implementador |
-| 07 | Operação offline | [ ] | LIBERADA. Validação final após integrar os fluxos das Etapas 5 e 6. | Implementador |
-| 08 | Integração final | [ ] | PENDENTE | Sol |
+| 06 | Cancelamentos e devoluções | [x] | PASS. Critérios verificados nos 76 testes focados, 256 testes totais e integração final; aceite de Sol registrado. | Sol |
+| 07 | Operação offline | [x] | PASS conforme auditoria informada. Assets publicados em 35911c5. | Implementador |
+| 08 | Integração final | [x] | PASS. Testes, restauração em QA e ativação real verificados. | Sol |
 
 Formato de atualização por etapa
 

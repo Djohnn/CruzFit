@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'usuarios',
     'rolepermissions',
     'estoque',
+    'vendas',
 ]
 
 MIDDLEWARE = [

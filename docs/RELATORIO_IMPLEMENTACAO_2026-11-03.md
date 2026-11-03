@@ -698,3 +698,97 @@ Duration: 0.356s | EXIT_CODE=0
 ## Estado real após a Etapa 7
 
 Não houve alteração, migração, backup ou restauração do banco real. A mídia real e a pasta `backups/` permaneceram fora do ensaio. A verificação de rede, banco, mídia, capturas e `collectstatic` usou somente o ambiente descartável `qa-etapa7-20261103`. O checkout permanece sem commit/push/merge.
+
+## Reauditoria — rotas e publicação do módulo de vendas
+
+### Correções realizadas
+
+- `construct/urls.py:13` mantém o mount canônico `/vendas/` apontando para `vendas.urls`; `estoque/urls.py:20` mantém `/estoque/vendas/` como alias de compatibilidade.
+- `templates/base.html:36`, `vendas/views.py:50,143,177` e os seis templates em `vendas/templates/` usam nomes namespaced `vendas:*`, evitando que a navegação de uma montagem volte para a outra.
+- Os templates de vendas permanecem exclusivamente em `vendas/templates/`; o Django os encontra com `APP_DIRS=True`.
+- `estoque/test_sales_boundary.py:24-101` cobre `get_template('vendas.html')`, resolução de ambas as montagens, GET autenticado de lista/nova/detalhe/comprovante/cancelamento/devolução e os redirects canônicos.
+- `estoque/test_vendas.py` e `estoque/test_reversoes.py` foram ajustados para esperar o mount canônico nos redirects.
+- `LEIA-ME-EXECUCAO.txt` documenta a URL canônica e o procedimento para eliminar servidor stale.
+
+### Regressão reproduzida e confirmação
+
+O servidor antigo foi identificado por processo, comando e diretório:
+
+```text
+PID: 41644
+ExecutablePath: C:\Users\johnn\AppData\Local\Python\pythoncore-3.14-64\python.exe
+CommandLine: C:\desenvolvimento\Contruct\Project_construct\venv\Scripts\python.exe manage.py runserver 127.0.0.1:15001 --noreload
+```
+
+Depois de encerrá-lo, uma instância QA nova foi iniciada a partir de `C:\desenvolvimento\Contruct\Project_construct`, com banco descartável `C:\desenvolvimento\Contruct\qa-sales-runtime-20261103\qa.sqlite3`. Os dois mounts responderam `302` sem autenticação e `200` após login sintético; `/vendas/` renderizou `Vendas registradas` e o template foi carregado sem `TemplateDoesNotExist`.
+
+### Migração
+
+- `estoque.0018_remove_itemvendadevolucao_item_venda_and_more` remove somente o estado histórico de vendas do app `estoque`, preservando as tabelas físicas.
+- `vendas.0001_initial` recria o estado dos modelos no app `vendas` sobre as mesmas tabelas físicas e move os ContentTypes para `vendas`, preservando IDs, permissões e registros.
+- `estoque/test_sales_boundary.py:102-151` executa a transição para `estoque.0017`, verifica venda/item/devolução e permissões, e retorna o banco temporário ao estado mais recente.
+- Nenhuma migração foi aplicada ao banco real. A execução real de `0018` e `vendas.0001` continua exigindo backup externo e janela de ativação.
+
+### Verificação desta correção — output bruto
+
+```text
+RED
+Command: venv\Scripts\python.exe manage.py test estoque.test_sales_boundary.SalesRouteTests.test_sales_templates_use_canonical_sales_mount_for_follow_up_links -v 2
+Found 1 test(s).
+FAIL — Couldn't find 'href="/vendas/nova/"' in response
+EXIT_CODE=1
+
+GREEN
+Command: venv\Scripts\python.exe manage.py test estoque.test_sales_boundary estoque.test_vendas estoque.test_reversoes -v 2
+Found 34 test(s).
+Ran 34 tests in 3.346s
+OK
+EXIT_CODE=0
+```
+
+### Publicação e pendência de integração
+
+O código do módulo `vendas/`, a migração `estoque/0018` e o teste de fronteira estão presentes no checkout compartilhado, mas continuam não rastreados porque a revisão ainda não foi commitada. `git ls-tree HEAD vendas/` continua vazio por essa razão. Não criei commit, push ou publicação automática. Para tornar a entrega reproduzível no remoto, Sol deve revisar este diff, incluir os arquivos novos no commit conjunto das Etapas 5–7 e publicar a revisão aprovada.
+
+Estado: correção funcional PASS; publicação remota PENDENTE por ausência deliberada de commit/push.
+
+### Checks finais após a correção
+
+```text
+Command: venv\Scripts\python.exe manage.py test -v 2
+Found 262 test(s).
+Ran 262 tests in 91.878s
+OK
+EXIT_CODE=0
+
+Command: venv\Scripts\python.exe manage.py check
+System check identified no issues (0 silenced).
+EXIT_CODE=0
+
+Command: venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+No changes detected
+EXIT_CODE=0
+
+Command: venv\Scripts\ruff.exe check .
+All checks passed!
+EXIT_CODE=0
+
+Command: venv\Scripts\mypy.exe .
+Success: no issues found in 55 source files
+EXIT_CODE=0
+
+Command: git diff --check
+warning: LF will be replaced by CRLF for LEIA-ME-EXECUCAO.txt and docs/RELATORIO_IMPLEMENTACAO_2026-11-03.md
+DIFF_CHECK_EXIT=0
+```
+
+### Migrações no QA descartável
+
+```text
+Command: venv\Scripts\python.exe manage.py showmigrations estoque vendas
+estoque ... [X] 0018_remove_itemvendadevolucao_item_venda_and_more
+vendas ... [X] 0001_initial
+EXIT_CODE=0
+```
+
+Essas marcações são exclusivamente do banco `qa-sales-runtime-20261103`; o banco real continua sem alteração e não foi usado nos testes.

@@ -17,7 +17,7 @@
 {% block 'body' %}
 <main class="container receipt-page">
     <div class="receipt-actions no-print">
-        <a class="btn btn-outline-light" href="{% url 'venda_detalhe' venda.pk %}">Voltar</a>
+        <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' venda.pk %}">Voltar</a>
         <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir comprovante</button>
     </div>
     <article class="receipt-sheet" aria-labelledby="receipt-heading">
