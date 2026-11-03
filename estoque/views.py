@@ -3,9 +3,16 @@ from functools import wraps
 from itertools import zip_longest
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.db.models import BooleanField, Case, F, Value, When
-from django.http import HttpResponseForbidden, HttpResponseNotFound, JsonResponse
+from django.http import (
+    HttpResponse,
+    HttpResponseForbidden,
+    HttpResponseNotFound,
+    JsonResponse,
+)
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -19,9 +26,19 @@ from .models import (
     BaixaEstoque,
     Categoria,
     EntradaEstoque,
+    Fornecedor,
     ModeloEtiqueta,
     Produto,
     ProdutoCadastro,
+)
+from .relatorios import (
+    MovementFilters,
+    ReportFilterError,
+    movement_report,
+    paginate_movements,
+    parse_movement_filters,
+    report_csv,
+    stock_report,
 )
 from .services import (
     ProductOperationError,
@@ -327,6 +344,89 @@ def estoque(request):
         'estoque.html',
         {'produtos': produtos, 'reposicao': reposicao},
     )
+
+
+def _report_filter_context(filters: MovementFilters) -> dict[str, object]:
+    return {
+        'filtros': {
+            'data_inicio': filters.data_inicio.isoformat() if filters.data_inicio else '',
+            'data_fim': filters.data_fim.isoformat() if filters.data_fim else '',
+            'produto': str(filters.produto_id or ''),
+            'responsavel': str(filters.responsavel_id or ''),
+            'motivo': filters.motivo,
+            'fornecedor': str(filters.fornecedor_id or ''),
+            'tipo': filters.tipo,
+        },
+        'query_string': filters.as_query_string(),
+        'produtos_filtro': Produto.objects.order_by('nome', 'pk'),
+        'responsaveis_filtro': get_user_model().objects.order_by(
+            'first_name', 'username', 'pk'
+        ),
+        'fornecedores_filtro': Fornecedor.objects.order_by('nome', 'pk'),
+    }
+
+
+@login_required(login_url='login')
+@require_GET
+def movimentacoes(request):
+    try:
+        page_obj, filters = paginate_movements(request.GET)
+    except ReportFilterError as error:
+        messages.error(request, str(error))
+        filters = MovementFilters()
+        page_obj = Paginator([], 20).get_page(1)
+
+    context = {
+        **_report_filter_context(filters),
+        'page_obj': page_obj,
+        'movements': page_obj.object_list,
+    }
+    return render(request, 'movimentacoes.html', context)
+
+
+@login_required(login_url='login')
+@require_GET
+def relatorios(request):
+    report_type = request.GET.get('relatorio', 'saldo')
+    if report_type not in {'saldo', 'reposicao', 'movimentacoes'}:
+        messages.error(request, 'Selecione um relatório válido.')
+        report_type = 'saldo'
+    try:
+        filters = parse_movement_filters(request.GET)
+    except ReportFilterError as error:
+        messages.error(request, str(error))
+        filters = MovementFilters()
+
+    context = {
+        **_report_filter_context(filters),
+        'relatorio': report_type,
+        'saldo_report': stock_report(only_reorder=report_type == 'reposicao'),
+        'movement_report': (
+            movement_report(filters) if report_type == 'movimentacoes' else []
+        ),
+    }
+    return render(request, 'relatorios.html', context)
+
+
+@login_required(login_url='login')
+@require_GET
+def exportar_relatorio_csv(request):
+    report_type = request.GET.get('relatorio', 'saldo')
+    if report_type not in {'saldo', 'reposicao', 'movimentacoes'}:
+        return HttpResponse('Relatório inválido.', status=400)
+    try:
+        filters = parse_movement_filters(request.GET)
+    except ReportFilterError as error:
+        return HttpResponse(str(error), status=400)
+
+    response = HttpResponse(
+        report_csv(report_type, filters),
+        content_type='text/csv; charset=utf-8',
+    )
+    response['Content-Disposition'] = (
+        f'attachment; filename="cruz-fit-{report_type}.csv"'
+    )
+    return response
 
 
 @login_required(login_url='login')

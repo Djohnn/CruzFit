@@ -575,6 +575,116 @@
     font-weight: 800;
 }
 
+.report-page {
+    max-width: 1320px;
+}
+
+.report-heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.report-filters {
+    margin-bottom: 1.5rem;
+}
+
+.report-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: end;
+}
+
+.report-filter-grid .form-group {
+    margin-bottom: 0;
+}
+
+.report-filter-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.report-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-bottom: 1.5rem;
+}
+
+.report-table {
+    min-width: 980px;
+    margin-bottom: 0;
+}
+
+.report-table th,
+.report-table td {
+    border-color: rgba(232, 174, 54, 0.18);
+    vertical-align: top;
+}
+
+.report-table thead th {
+    color: var(--brand-gold-light);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.report-item-list {
+    min-width: 12rem;
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--brand-cream);
+}
+
+.report-item-list li + li {
+    margin-top: 0.25rem;
+}
+
+.report-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.7rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.report-badge-entrada,
+.report-badge-disponivel {
+    color: var(--brand-success);
+}
+
+.report-badge-baixa,
+.report-badge-sem-estoque {
+    color: var(--brand-danger);
+}
+
+.report-badge-reposicao-necessaria,
+.report-badge-inativo {
+    color: var(--brand-warning);
+}
+
+.report-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1.25rem;
+}
+
+@media (max-width: 991.98px) {
+    .report-filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 .modal-content {
     border: 1px solid var(--brand-border);
     border-radius: 16px;
@@ -668,6 +778,11 @@
 }
 
 @media (max-width: 767.98px) {
+    .report-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
     .section-heading-row {
         flex-direction: column;
     }

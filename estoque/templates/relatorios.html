@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Relatórios | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+<main class="container report-page">
+    <header class="page-heading report-heading">
+        <div>
+            <p class="eyebrow">Visão operacional</p>
+            <h1>{% if relatorio == 'reposicao' %}Relatório de reposição{% elif relatorio == 'movimentacoes' %}Relatório de movimentação{% else %}Relatório de saldo atual{% endif %}</h1>
+            <p>Leia a posição do estoque e exporte os mesmos dados para uma planilha.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'exportar_relatorio_csv' %}?relatorio={{ relatorio }}{% if query_string %}&amp;{{ query_string }}{% endif %}">Exportar CSV</a>
+    </header>
+
+    {% if messages %}
+        <div class="feedback-stack" aria-live="polite">
+        {% for message in messages %}
+            <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+        {% endfor %}
+        </div>
+    {% endif %}
+
+    <nav class="report-tabs" aria-label="Tipo de relatório">
+        <a class="btn {% if relatorio == 'saldo' %}btn-primary{% else %}btn-outline-light{% endif %}" href="?relatorio=saldo{% if query_string %}&amp;{{ query_string }}{% endif %}">Saldo atual</a>
+        <a class="btn {% if relatorio == 'reposicao' %}btn-warning{% else %}btn-outline-light{% endif %}" href="?relatorio=reposicao{% if query_string %}&amp;{{ query_string }}{% endif %}">Reposição</a>
+        <a class="btn {% if relatorio == 'movimentacoes' %}btn-primary{% else %}btn-outline-light{% endif %}" href="?relatorio=movimentacoes{% if query_string %}&amp;{{ query_string }}{% endif %}">Movimentação</a>
+    </nav>
+
+    {% if relatorio == 'movimentacoes' %}
+    <section class="surface-section report-filters" aria-labelledby="report-filter-heading">
+        <div class="section-heading-row">
+            <div>
+                <h2 id="report-filter-heading">Período e origem</h2>
+                <p class="section-help">A apuração considera as entradas e saídas registradas no período.</p>
+            </div>
+        </div>
+        <form method="get" class="report-filter-grid">
+            <input type="hidden" name="relatorio" value="movimentacoes">
+            <div class="form-group">
+                <label for="report-start">Data inicial</label>
+                <input id="report-start" class="form-control" type="date" name="data_inicio" value="{{ filtros.data_inicio }}">
+            </div>
+            <div class="form-group">
+                <label for="report-end">Data final</label>
+                <input id="report-end" class="form-control" type="date" name="data_fim" value="{{ filtros.data_fim }}">
+            </div>
+            <div class="form-group">
+                <label for="report-product">Produto</label>
+                <select id="report-product" class="form-control" name="produto">
+                    <option value="">Todos os produtos</option>
+                    {% for produto in produtos_filtro %}
+                        <option value="{{ produto.pk }}" {% if filtros.produto == produto.pk|stringformat:'s' %}selected{% endif %}>{{ produto.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="report-type">Tipo</label>
+                <select id="report-type" class="form-control" name="tipo">
+                    <option value="">Entradas e saídas</option>
+                    <option value="entrada" {% if filtros.tipo == 'entrada' %}selected{% endif %}>Entradas</option>
+                    <option value="baixa" {% if filtros.tipo == 'baixa' %}selected{% endif %}>Saídas</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="report-reason">Motivo</label>
+                <select id="report-reason" class="form-control" name="motivo">
+                    <option value="">Todos os motivos</option>
+                    <option value="COMPRA" {% if filtros.motivo == 'COMPRA' %}selected{% endif %}>Compra</option>
+                    <option value="DEVOLUCAO" {% if filtros.motivo == 'DEVOLUCAO' %}selected{% endif %}>Devolução</option>
+                    <option value="AJUSTE" {% if filtros.motivo == 'AJUSTE' %}selected{% endif %}>Ajuste</option>
+                    <option value="VENDA" {% if filtros.motivo == 'VENDA' %}selected{% endif %}>Venda</option>
+                    <option value="PERDA" {% if filtros.motivo == 'PERDA' %}selected{% endif %}>Perda</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="report-supplier">Fornecedor</label>
+                <select id="report-supplier" class="form-control" name="fornecedor">
+                    <option value="">Todos os fornecedores</option>
+                    {% for fornecedor in fornecedores_filtro %}
+                        <option value="{{ fornecedor.pk }}" {% if filtros.fornecedor == fornecedor.pk|stringformat:'s' %}selected{% endif %}>{{ fornecedor.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="report-filter-actions">
+                <button class="btn btn-primary" type="submit">Aplicar filtros</button>
+                <a class="btn btn-outline-light" href="{% url 'relatorios' %}?relatorio=movimentacoes">Limpar</a>
+            </div>
+        </form>
+    </section>
+    {% endif %}
+
+    {% if relatorio == 'movimentacoes' %}
+    <section class="surface-section" aria-labelledby="movement-report-heading">
+        <div class="section-heading-row"><div><h2 id="movement-report-heading">Movimentação por produto</h2><p class="section-help">Entradas e saídas são totalizadas uma vez por item.</p></div></div>
+        {% if movement_report %}
+        <div class="table-responsive"><table class="table table-dark report-table"><thead><tr><th>Produto</th><th>Entradas</th><th>Saídas</th><th>Saldo movimentado</th></tr></thead><tbody>{% for row in movement_report %}<tr><th scope="row">{{ row.produto }}</th><td>{{ row.entradas }}</td><td>{{ row.saidas }}</td><td>{{ row.quantidade }}</td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state" role="status"><strong>Nenhuma movimentação no período.</strong><span>Escolha outro intervalo ou remova os filtros.</span></div>{% endif %}
+    </section>
+    {% else %}
+    <section class="surface-section" aria-labelledby="stock-report-heading">
+        <div class="section-heading-row"><div><h2 id="stock-report-heading">{{ saldo_report|length }} produto{{ saldo_report|length|pluralize }}</h2><p class="section-help">{% if relatorio == 'reposicao' %}Produtos ativos no limite ou abaixo do estoque mínimo.{% else %}Posição atual, incluindo produtos inativos para preservar a consulta histórica.{% endif %}</p></div></div>
+        {% if saldo_report %}
+        <div class="table-responsive"><table class="table table-dark report-table"><thead><tr><th>Produto</th><th>Código de barras</th><th>Saldo</th><th>Estoque mínimo</th><th>Situação</th></tr></thead><tbody>{% for row in saldo_report %}<tr><th scope="row">{{ row.produto }}</th><td>{{ row.codigo_barras|default:'—' }}</td><td>{{ row.saldo|floatformat:2 }}</td><td>{{ row.estoque_minimo|default:'—' }}</td><td><span class="report-badge report-badge-{{ row.situacao|slugify }}">{{ row.situacao }}</span></td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state" role="status"><strong>Nenhum produto encontrado.</strong><span>Cadastre produtos ou confira os filtros de reposição.</span></div>{% endif %}
+    </section>
+    {% endif %}
+</main>
+{% endblock %}

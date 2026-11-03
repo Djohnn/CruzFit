@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Movimentações | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+<main class="container report-page">
+    <header class="page-heading report-heading">
+        <div>
+            <p class="eyebrow">Rastreabilidade do estoque</p>
+            <h1>Histórico de movimentações</h1>
+            <p>Consulte entradas e saídas antigas com origem, itens, responsável e motivo preservados.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'exportar_relatorio_csv' %}?relatorio=movimentacoes{% if query_string %}&amp;{{ query_string }}{% endif %}">Exportar CSV</a>
+    </header>
+
+    {% if messages %}
+        <div class="feedback-stack" aria-live="polite">
+        {% for message in messages %}
+            <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+        {% endfor %}
+        </div>
+    {% endif %}
+
+    <section class="surface-section report-filters" aria-labelledby="movement-filter-heading">
+        <div class="section-heading-row">
+            <div>
+                <h2 id="movement-filter-heading">Filtrar histórico</h2>
+                <p class="section-help">Os filtros permanecem ativos ao trocar de página ou exportar.</p>
+            </div>
+        </div>
+        <form method="get" class="report-filter-grid">
+            <div class="form-group">
+                <label for="movement-start">Data inicial</label>
+                <input id="movement-start" class="form-control" type="date" name="data_inicio" value="{{ filtros.data_inicio }}">
+            </div>
+            <div class="form-group">
+                <label for="movement-end">Data final</label>
+                <input id="movement-end" class="form-control" type="date" name="data_fim" value="{{ filtros.data_fim }}">
+            </div>
+            <div class="form-group">
+                <label for="movement-product">Produto</label>
+                <select id="movement-product" class="form-control" name="produto">
+                    <option value="">Todos os produtos</option>
+                    {% for produto in produtos_filtro %}
+                        <option value="{{ produto.pk }}" {% if filtros.produto == produto.pk|stringformat:'s' %}selected{% endif %}>{{ produto.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="movement-type">Tipo</label>
+                <select id="movement-type" class="form-control" name="tipo">
+                    <option value="">Entradas e saídas</option>
+                    <option value="entrada" {% if filtros.tipo == 'entrada' %}selected{% endif %}>Entradas</option>
+                    <option value="baixa" {% if filtros.tipo == 'baixa' %}selected{% endif %}>Saídas</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="movement-reason">Motivo</label>
+                <select id="movement-reason" class="form-control" name="motivo">
+                    <option value="">Todos os motivos</option>
+                    <option value="COMPRA" {% if filtros.motivo == 'COMPRA' %}selected{% endif %}>Compra</option>
+                    <option value="DEVOLUCAO" {% if filtros.motivo == 'DEVOLUCAO' %}selected{% endif %}>Devolução</option>
+                    <option value="AJUSTE" {% if filtros.motivo == 'AJUSTE' %}selected{% endif %}>Ajuste</option>
+                    <option value="VENDA" {% if filtros.motivo == 'VENDA' %}selected{% endif %}>Venda</option>
+                    <option value="PERDA" {% if filtros.motivo == 'PERDA' %}selected{% endif %}>Perda</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="movement-responsible">Responsável</label>
+                <select id="movement-responsible" class="form-control" name="responsavel">
+                    <option value="">Todos os responsáveis</option>
+                    {% for responsavel in responsaveis_filtro %}
+                        <option value="{{ responsavel.pk }}" {% if filtros.responsavel == responsavel.pk|stringformat:'s' %}selected{% endif %}>{{ responsavel.get_full_name|default:responsavel.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="movement-supplier">Fornecedor</label>
+                <select id="movement-supplier" class="form-control" name="fornecedor">
+                    <option value="">Todos os fornecedores</option>
+                    {% for fornecedor in fornecedores_filtro %}
+                        <option value="{{ fornecedor.pk }}" {% if filtros.fornecedor == fornecedor.pk|stringformat:'s' %}selected{% endif %}>{{ fornecedor.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="report-filter-actions">
+                <button class="btn btn-primary" type="submit">Aplicar filtros</button>
+                <a class="btn btn-outline-light" href="{% url 'movimentacoes' %}">Limpar</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="surface-section" aria-labelledby="movement-results-heading">
+        <div class="section-heading-row">
+            <div>
+                <h2 id="movement-results-heading">{{ page_obj.paginator.count }} movimentaç{% if page_obj.paginator.count == 1 %}ão{% else %}ões{% endif %}</h2>
+                <p class="section-help">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</p>
+            </div>
+        </div>
+        {% if movements %}
+            <div class="table-responsive">
+                <table class="table table-dark report-table">
+                    <thead>
+                        <tr>
+                            <th>Referência</th>
+                            <th>Data</th>
+                            <th>Tipo</th>
+                            <th>Itens</th>
+                            <th>Motivo</th>
+                            <th>Responsável</th>
+                            <th>Fornecedor</th>
+                            <th>Observação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for movement in movements %}
+                        <tr>
+                            <th scope="row">{{ movement.referencia }}</th>
+                            <td>{{ movement.data|date:"d/m/Y H:i" }}</td>
+                            <td><span class="report-badge report-badge-{{ movement.tipo }}">{{ movement.tipo_label }}</span></td>
+                            <td>
+                                <ul class="report-item-list">
+                                {% for item in movement.itens %}
+                                    <li>{{ item.produto }} · {{ item.quantidade|floatformat:2 }}</li>
+                                {% endfor %}
+                                </ul>
+                            </td>
+                            <td>{{ movement.motivo_label }}</td>
+                            <td>{{ movement.responsavel }}</td>
+                            <td>{{ movement.fornecedor }}</td>
+                            <td>{{ movement.observacao|default:'—' }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if page_obj.has_other_pages %}
+                <nav class="report-pagination" aria-label="Paginação do histórico">
+                    {% if page_obj.has_previous %}<a class="btn btn-outline-light" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
+                    <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}<a class="btn btn-outline-light" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Próxima</a>{% endif %}
+                </nav>
+            {% endif %}
+        {% else %}
+            <div class="empty-state" role="status">
+                <strong>Nenhuma movimentação encontrada.</strong>
+                <span>Amplie o período ou limpe os filtros para consultar o histórico completo.</span>
+            </div>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}

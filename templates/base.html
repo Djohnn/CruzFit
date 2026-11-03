@@ -33,6 +33,8 @@
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'consulta_produto' %}active{% endif %}" href="{% url 'consulta_produto' %}" {% if request.resolver_match.url_name == 'consulta_produto' %}aria-current="page"{% endif %}>Consulta</a>
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'registrar_entrada' %}active{% endif %}" href="{% url 'registrar_entrada' %}" {% if request.resolver_match.url_name == 'registrar_entrada' %}aria-current="page"{% endif %}>Entradas</a>
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'registrar_baixa' %}active{% endif %}" href="{% url 'registrar_baixa' %}" {% if request.resolver_match.url_name == 'registrar_baixa' %}aria-current="page"{% endif %}>Baixas</a>
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'movimentacoes' %}active{% endif %}" href="{% url 'movimentacoes' %}" {% if request.resolver_match.url_name == 'movimentacoes' %}aria-current="page"{% endif %}>Histórico</a>
+            <a class="inventory-nav-link {% if request.resolver_match.url_name == 'relatorios' %}active{% endif %}" href="{% url 'relatorios' %}" {% if request.resolver_match.url_name == 'relatorios' %}aria-current="page"{% endif %}>Relatórios</a>
           </div>
           <div class="navbar-account">
             <span>{{ request.user.first_name|default:request.user.username }}</span>
