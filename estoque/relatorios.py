@@ -13,13 +13,14 @@ from typing import TypedDict
 from urllib.parse import urlencode
 
 from django.core.paginator import Page, Paginator
-from django.db.models import F, Prefetch, QuerySet
+from django.db.models import F, Prefetch, QuerySet, Sum
 
 from .models import (
     BaixaEstoque,
     EntradaEstoque,
     ItemBaixaEstoque,
     ItemEntradaEstoque,
+    ItemVenda,
     Produto,
 )
 
@@ -69,6 +70,13 @@ class MovementReportRow(TypedDict):
     entradas: str
     saidas: str
     quantidade: str
+
+
+class SalesRankingRow(TypedDict):
+    produto_id: int
+    produto: str
+    quantidade: Decimal
+    faturamento: Decimal
 
 
 @dataclass(frozen=True)
@@ -415,6 +423,8 @@ def stock_csv(*, only_reorder: bool) -> str:
 def report_csv(report_type: str, filters: MovementFilters) -> str:
     if report_type == "movimentacoes":
         return movement_csv(filters)
+    if report_type == "ranking":
+        return ranking_csv()
     if report_type == "reposicao":
         return stock_csv(only_reorder=True)
     return stock_csv(only_reorder=False)
@@ -422,3 +432,43 @@ def report_csv(report_type: str, filters: MovementFilters) -> str:
 
 def stock_report(*, only_reorder: bool) -> list[StockReportRow]:
     return _stock_rows(only_reorder=only_reorder)
+
+
+def sales_ranking() -> list[SalesRankingRow]:
+    """Agrupa somente itens de vendas confirmadas, sem inventar preço legado."""
+    ranking: list[SalesRankingRow] = []
+    rows = ItemVenda.objects.values(
+        "produto_id",
+        "produto__nome",
+    ).annotate(
+        quantidade_total=Sum("quantidade"),
+        faturamento_total=Sum("total"),
+    ).order_by(
+        "-quantidade_total",
+        "produto__nome",
+        "produto_id",
+    )
+    for row in rows:
+        ranking.append(
+            {
+                "produto_id": row["produto_id"],
+                "produto": row["produto__nome"],
+                "quantidade": row["quantidade_total"] or ZERO,
+                "faturamento": row["faturamento_total"] or ZERO,
+            }
+        )
+    return ranking
+
+
+def ranking_csv() -> str:
+    return _csv_text(
+        ["Produto", "Quantidade vendida", "Faturamento"],
+        [
+            [
+                row["produto"],
+                format_decimal(row["quantidade"]),
+                format_decimal(row["faturamento"]),
+            ]
+            for row in sales_ranking()
+        ],
+    )

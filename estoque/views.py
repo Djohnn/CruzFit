@@ -30,6 +30,7 @@ from .models import (
     ModeloEtiqueta,
     Produto,
     ProdutoCadastro,
+    Venda,
 )
 from .relatorios import (
     MovementFilters,
@@ -38,10 +39,12 @@ from .relatorios import (
     paginate_movements,
     parse_movement_filters,
     report_csv,
+    sales_ranking,
     stock_report,
 )
 from .services import (
     ProductOperationError,
+    SaleOperationError,
     StockOperationError,
 )
 from .services import (
@@ -59,6 +62,7 @@ from .services import (
 from .services import (
     registrar_entrada as registrar_entrada_service,
 )
+from .services import registrar_venda as registrar_venda_service
 
 MAX_PRODUCT_IMAGE_COUNT = 5
 MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024
@@ -388,7 +392,7 @@ def movimentacoes(request):
 @require_GET
 def relatorios(request):
     report_type = request.GET.get('relatorio', 'saldo')
-    if report_type not in {'saldo', 'reposicao', 'movimentacoes'}:
+    if report_type not in {'saldo', 'reposicao', 'movimentacoes', 'ranking'}:
         messages.error(request, 'Selecione um relatório válido.')
         report_type = 'saldo'
     try:
@@ -404,6 +408,7 @@ def relatorios(request):
         'movement_report': (
             movement_report(filters) if report_type == 'movimentacoes' else []
         ),
+        'ranking_report': sales_ranking() if report_type == 'ranking' else [],
     }
     return render(request, 'relatorios.html', context)
 
@@ -412,7 +417,7 @@ def relatorios(request):
 @require_GET
 def exportar_relatorio_csv(request):
     report_type = request.GET.get('relatorio', 'saldo')
-    if report_type not in {'saldo', 'reposicao', 'movimentacoes'}:
+    if report_type not in {'saldo', 'reposicao', 'movimentacoes', 'ranking'}:
         return HttpResponse('Relatório inválido.', status=400)
     try:
         filters = parse_movement_filters(request.GET)
@@ -427,6 +432,98 @@ def exportar_relatorio_csv(request):
         f'attachment; filename="cruz-fit-{report_type}.csv"'
     )
     return response
+
+
+@login_required(login_url='login')
+@require_http_methods(['GET', 'POST'])
+def registrar_venda(request):
+    if request.method == 'POST':
+        try:
+            result = registrar_venda_service(
+                actor=request.user,
+                product_ids=request.POST.getlist('produto'),
+                quantities=request.POST.getlist('quantidade'),
+                discount=request.POST.get('desconto') or '0',
+                payment_method=request.POST.get('forma_pagamento') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except (SaleOperationError, StockOperationError) as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(
+                request,
+                'Venda registrada com sucesso.'
+                if result.created
+                else 'Essa venda já foi registrada.',
+            )
+            return redirect('venda_detalhe', pk=result.sale.pk)
+
+    posted = request.POST if request.method == 'POST' else request.GET
+    linhas = [
+        {'produto': produto, 'quantidade': quantidade}
+        for produto, quantidade in zip_longest(
+            request.POST.getlist('produto'),
+            request.POST.getlist('quantidade'),
+            fillvalue='',
+        )
+    ] if request.method == 'POST' else [{'produto': '', 'quantidade': '1'}]
+    produtos = list(Produto.objects.filter(ativo=True).order_by('nome', 'pk'))
+    catalogo = [
+        {
+            'id': produto.pk,
+            'nome': produto.nome,
+            'codigo_barras': produto.codigo_barras or '',
+            'preco': str(produto.preco_venda),
+            'estoque': str(produto.quantidade),
+        }
+        for produto in produtos
+    ]
+    return render(
+        request,
+        'registrar_venda.html',
+        {
+            'produtos': produtos,
+            'catalogo': catalogo,
+            'linhas': linhas or [{'produto': '', 'quantidade': '1'}],
+            'desconto': posted.get('desconto', '0'),
+            'forma_pagamento': posted.get('forma_pagamento', ''),
+            'formas_pagamento': Venda.FORMA_PAGAMENTO_CHOICES,
+            'chave_idempotencia': posted.get('chave_idempotencia') or uuid.uuid4().hex,
+        },
+    )
+
+
+@login_required(login_url='login')
+@require_GET
+def vendas(request):
+    vendas_qs = Venda.objects.select_related('responsavel', 'baixa').prefetch_related(
+        'itens__produto',
+    )
+    return render(request, 'vendas.html', {'vendas': vendas_qs[:100]})
+
+
+@login_required(login_url='login')
+@require_GET
+def venda_detalhe(request, pk):
+    try:
+        venda = Venda.objects.select_related(
+            'responsavel', 'baixa'
+        ).prefetch_related('itens__produto').get(pk=pk)
+    except Venda.DoesNotExist:
+        return HttpResponseNotFound('Venda não encontrada.')
+    return render(request, 'venda_detalhe.html', {'venda': venda})
+
+
+@login_required(login_url='login')
+@require_GET
+def venda_comprovante(request, pk):
+    try:
+        venda = Venda.objects.select_related(
+            'responsavel', 'baixa'
+        ).prefetch_related('itens__produto').get(pk=pk)
+    except Venda.DoesNotExist:
+        return HttpResponseNotFound('Venda não encontrada.')
+    return render(request, 'venda_comprovante.html', {'venda': venda})
 
 
 @login_required(login_url='login')

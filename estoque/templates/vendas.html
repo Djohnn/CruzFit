@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Vendas | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+<main class="container sale-page">
+    <header class="page-heading sale-page-heading">
+        <div>
+            <p class="eyebrow">Operação local</p>
+            <h1>Vendas registradas</h1>
+            <p>Consulte os comprovantes e os valores praticados em cada venda.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'registrar_venda' %}">Nova venda</a>
+    </header>
+
+    {% if messages %}
+        <div class="feedback-stack" aria-live="polite">
+        {% for message in messages %}
+            <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
+        {% endfor %}
+        </div>
+    {% endif %}
+
+    <section class="surface-section" aria-labelledby="sales-list-heading">
+        <div class="section-heading-row">
+            <div>
+                <h2 id="sales-list-heading">Histórico de vendas</h2>
+                <p class="section-help">Cada venda mantém seus itens, preços, desconto, pagamento e baixa vinculada.</p>
+            </div>
+        </div>
+        {% if vendas %}
+        <div class="table-responsive">
+            <table class="table table-dark report-table sales-table">
+                <thead>
+                    <tr><th>Venda</th><th>Data</th><th>Itens</th><th>Pagamento</th><th>Total</th><th>Responsável</th><th>Ações</th></tr>
+                </thead>
+                <tbody>
+                {% for venda in vendas %}
+                    <tr>
+                        <th scope="row"><a href="{% url 'venda_detalhe' venda.pk %}">Venda #{{ venda.pk }}</a></th>
+                        <td>{{ venda.criada_em|date:"d/m/Y H:i" }}</td>
+                        <td>{% for item in venda.itens.all %}{{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+                        <td>{{ venda.get_forma_pagamento_display }}</td>
+                        <td>R$ {{ venda.total|floatformat:2 }}</td>
+                        <td>{{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</td>
+                        <td><a class="btn btn-sm btn-outline-light" href="{% url 'venda_comprovante' venda.pk %}">Comprovante</a></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            <div class="empty-state" role="status">
+                <strong>Nenhuma venda registrada.</strong>
+                <span>As vendas confirmadas aparecerão aqui com seus comprovantes.</span>
+            </div>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}

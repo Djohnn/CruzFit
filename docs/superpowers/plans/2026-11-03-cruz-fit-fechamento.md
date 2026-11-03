@@ -88,14 +88,16 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 
 **Liberação de Sol** — Implementação autorizada pelo usuário após a publicação das Etapas 2 e 3 em a6c5a13863758c17a14e2490454b9c9ff990f972. Executar a consulta, os relatórios e o CSV primeiro. Entregar esse recorte congelado ao auditor. O ranking integra a venda após a Etapa 5 e terá seu ajuste de devoluções auditado com a Etapa 6. Os itens dependentes permanecem abertos até sua comprovação.
 
-- [ ] Criar consulta dedicada de entradas e saídas, paginada, com intervalo de datas e filtros por produto, responsável, motivo e fornecedor quando aplicável.
-- [ ] Mostrar referência da operação, itens, quantidades e origem disponível. Preservar identificação de movimentações antigas e manter filtros na paginação.
-- [ ] Entregar relatórios de saldo atual, reposição e movimentação por período. Exportar CSV com os mesmos filtros, cabeçalhos e codificação compatível com planilhas. Tratar campos de texto que poderiam ser interpretados como fórmulas.
+- [x] Criar consulta dedicada de entradas e saídas, paginada, com intervalo de datas e filtros por produto, responsável, motivo e fornecedor quando aplicável.
+- [x] Mostrar referência da operação, itens, quantidades e origem disponível. Preservar identificação de movimentações antigas e manter filtros na paginação.
+- [x] Entregar relatórios de saldo atual, reposição e movimentação por período. Exportar CSV com os mesmos filtros, cabeçalhos e codificação compatível com planilhas. Tratar campos de texto que poderiam ser interpretados como fórmulas.
 - [ ] Incluir ranking por quantidade de itens vendidos após a etapa 5. Distinguir baixa legada com motivo Venda de venda registrada com valores. Definir e testar no relatório o efeito de cancelamentos e devoluções.
 
 **PASS** — Registros anteriores aos últimos 30 são acessíveis, paginação mantém filtros e CSV confere com o resultado completo da consulta. Ranking respeita cancelamentos e devoluções. **FAIL** — Registros são omitidos, somados duas vezes ou exportados fora dos filtros. **HOLD** — Ambiente necessário ao ensaio de volume ou browser indisponível. Itens independentes podem ser auditados antes da integração final.
 
 ## 5. Entregar venda de balcão local
+
+**Aceite do recorte anterior** — Sol aceita histórico, filtros, relatórios e CSV da Etapa 4 conforme reauditoria independente informada pelo usuário, com 9 testes focados e 225 na suíte completa. Checkout limpo conferido em 502add827f1528bbdcdab87e1ac3b38d51cca734. O ranking permanece aberto na Etapa 4. A implementação da venda segue liberada.
 
 **Liberação de Sol** — Implementação autorizada pelo usuário na mesma sequência. Iniciar a escrita após o auditor liberar o recorte da Etapa 4, no checkout compartilhado. Validar preço, desconto, total, forma de pagamento, baixa vinculada e comprovante em dados sintéticos. A auditoria das Etapas 4 e 5 precede o aceite de Sol. A janela de ativação real continua registrada nas Etapas 1 e 8.
 
@@ -109,6 +111,8 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 
 ## 6. Vincular cancelamentos e devoluções às operações originais
 
+**Liberação de Sol** — Implementação autorizada pelo usuário. As reversões de venda começam após a entrega e o aceite da Etapa 5. No levantamento desta liberação, o checkout em 502add8 contém histórico e relatórios, e a venda ainda aguarda implementação. É permitido preparar cenários e regras da Etapa 6 agora. Respeitar a fila de editor único e congelar o candidato para auditoria ao concluir. Integrar os efeitos das reversões ao ranking e ao CSV.
+
 - [ ] Criar cancelamento integral da venda e devolução parcial de itens vendidos em modelos próprios. Gerente informa motivo. Registrar evento, autor, data e chave de operação.
 - [ ] Vincular retorno ao estoque à venda e aos itens originais. A soma de devoluções não pode superar a quantidade vendida. Uma venda já devolvida parcialmente só aceita novas devoluções do saldo elegível. Cancelamento integral é permitido quando ainda não houve devolução.
 - [ ] Criar correção integral de baixa avulsa com entrada de compensação e devolução ao fornecedor vinculada à entrada de compra, com saída explícita. Validar quantidade ainda elegível e saldo físico.
@@ -118,6 +122,8 @@ Dependência da ativação real: etapa 8. A prova em ambiente descartável come�
 **PASS** — Cada reversão tem origem consultável, atualiza estoque uma vez e respeita limites acumulados. Os registros originais permanecem acessíveis. **FAIL** — Estoque incorreto, devolução acima do original, replay duplica efeito ou vínculo ausente. **HOLD** — Dependência da etapa 5 ou ambiente de teste indisponível. Uma dependência reprovada mantém o FAIL registrado na origem.
 
 ## 7. Verificar o uso offline
+
+**Liberação de Sol** — Implementação autorizada pelo usuário. A preparação e a hospedagem local dos assets podem entrar na próxima janela livre do implementador. A validação final offline inclui vendas, reversões, relatórios e comprovantes após sua integração. Registrar versões/licenças, requisições observadas e provas desktop/mobile em sessão limpa com rede externa bloqueada.
 
 Esta etapa pode ser preparada antes, mas só o implementador edita a base compartilhada.
 
@@ -155,10 +161,10 @@ Reservar a última janela para revisão e correções. O coordenador pode anteci
 | 01 | Ativação de fornecedores | [ ] | Ensaio isolado PASS. Ativação real pendente na janela final. | Sol |
 | 02 | Idempotência de baixas | [x] | PASS. Auditoria e aceite registrados. | Implementador |
 | 03 | Catálogo e reposição | [x] | PASS em desenvolvimento. Correções e verificações finais aceitas por Sol. | Implementador |
-| 04 | Histórico e relatórios | [ ] | LIBERADA. Ranking integra após venda e reversões. | Implementador |
+| 04 | Histórico e relatórios | [ ] | Recorte de histórico/relatórios/CSV PASS em 502add8. Ranking pendente das Etapas 5 e 6. | Implementador |
 | 05 | Venda de balcão | [ ] | LIBERADA na sequência da auditoria do recorte da Etapa 4. | Implementador |
-| 06 | Cancelamentos e devoluções | [ ] | PENDENTE | Implementador |
-| 07 | Operação offline | [ ] | PENDENTE | Implementador |
+| 06 | Cancelamentos e devoluções | [ ] | LIBERADA. Reversões de venda dependem do aceite da Etapa 5. | Implementador |
+| 07 | Operação offline | [ ] | LIBERADA. Validação final após integrar os fluxos das Etapas 5 e 6. | Implementador |
 | 08 | Integração final | [ ] | PENDENTE | Sol |
 
 Formato de atualização por etapa

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Comprovante da venda #{{ venda.pk }} | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+    <style>
+        @media print {
+            .navbar, .no-print { display: none !important; }
+            .receipt-page { max-width: 82mm; margin: 0 auto; }
+            .receipt-sheet { border: 0; box-shadow: none; padding: 0; }
+        }
+    </style>
+{% endblock %}
+
+{% block 'body' %}
+<main class="container receipt-page">
+    <div class="receipt-actions no-print">
+        <a class="btn btn-outline-light" href="{% url 'venda_detalhe' venda.pk %}">Voltar</a>
+        <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir comprovante</button>
+    </div>
+    <article class="receipt-sheet" aria-labelledby="receipt-heading">
+        <header class="receipt-header">
+            <p class="eyebrow">Cruz Fit</p>
+            <h1 id="receipt-heading">Comprovante de venda</h1>
+            <p>Venda #{{ venda.pk }} · {{ venda.criada_em|date:"d/m/Y H:i" }}</p>
+        </header>
+        <table class="receipt-table">
+            <thead><tr><th>Item</th><th>Qtd.</th><th>Total</th></tr></thead>
+            <tbody>
+            {% for item in venda.itens.all %}
+                <tr><td>{{ item.produto.nome }}<small>R$ {{ item.preco_unitario|floatformat:2 }} un.</small></td><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <dl class="receipt-totals">
+            <div><dt>Subtotal</dt><dd>R$ {{ venda.subtotal|floatformat:2 }}</dd></div>
+            <div><dt>Desconto</dt><dd>R$ {{ venda.desconto|floatformat:2 }}</dd></div>
+            <div class="receipt-total"><dt>Total</dt><dd>R$ {{ venda.total|floatformat:2 }}</dd></div>
+            <div><dt>Pagamento</dt><dd>{{ venda.get_forma_pagamento_display }}</dd></div>
+        </dl>
+        <footer class="receipt-footer">Responsável: {{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</footer>
+    </article>
+</main>
+{% endblock %}

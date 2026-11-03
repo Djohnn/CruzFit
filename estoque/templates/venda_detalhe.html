@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Venda #{{ venda.pk }} | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+<main class="container sale-page">
+    <header class="page-heading sale-page-heading">
+        <div>
+            <p class="eyebrow">Venda confirmada</p>
+            <h1>Venda #{{ venda.pk }}</h1>
+            <p>{{ venda.criada_em|date:"d/m/Y H:i" }} · {{ venda.get_forma_pagamento_display }} · baixa #{{ venda.baixa_id }}</p>
+        </div>
+        <div class="sale-actions-inline">
+            <a class="btn btn-primary" href="{% url 'venda_comprovante' venda.pk %}">Abrir comprovante</a>
+            <a class="btn btn-outline-light" href="{% url 'vendas' %}">Voltar às vendas</a>
+        </div>
+    </header>
+
+    <section class="surface-section" aria-labelledby="sale-detail-heading">
+        <div class="section-heading-row">
+            <div>
+                <h2 id="sale-detail-heading">Itens e valores</h2>
+                <p class="section-help">Os preços abaixo são o retrato do momento da venda.</p>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-dark report-table sales-table">
+                <thead><tr><th>Produto</th><th>Quantidade</th><th>Preço unitário</th><th>Total</th></tr></thead>
+                <tbody>
+                {% for item in venda.itens.all %}
+                    <tr><th scope="row">{{ item.produto.nome }}</th><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <dl class="sale-totals">
+            <div><dt>Subtotal</dt><dd>R$ {{ venda.subtotal|floatformat:2 }}</dd></div>
+            <div><dt>Desconto</dt><dd>R$ {{ venda.desconto|floatformat:2 }}</dd></div>
+            <div class="sale-total"><dt>Total</dt><dd>R$ {{ venda.total|floatformat:2 }}</dd></div>
+        </dl>
+        <p class="section-help sale-responsible">Responsável: {{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</p>
+    </section>
+</main>
+{% endblock %}

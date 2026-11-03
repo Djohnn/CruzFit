@@ -12,7 +12,7 @@
     <header class="page-heading report-heading">
         <div>
             <p class="eyebrow">Visão operacional</p>
-            <h1>{% if relatorio == 'reposicao' %}Relatório de reposição{% elif relatorio == 'movimentacoes' %}Relatório de movimentação{% else %}Relatório de saldo atual{% endif %}</h1>
+            <h1>{% if relatorio == 'reposicao' %}Relatório de reposição{% elif relatorio == 'movimentacoes' %}Relatório de movimentação{% elif relatorio == 'ranking' %}Ranking de vendas{% else %}Relatório de saldo atual{% endif %}</h1>
             <p>Leia a posição do estoque e exporte os mesmos dados para uma planilha.</p>
         </div>
         <a class="btn btn-primary" href="{% url 'exportar_relatorio_csv' %}?relatorio={{ relatorio }}{% if query_string %}&amp;{{ query_string }}{% endif %}">Exportar CSV</a>
@@ -30,6 +30,7 @@
         <a class="btn {% if relatorio == 'saldo' %}btn-primary{% else %}btn-outline-light{% endif %}" href="?relatorio=saldo{% if query_string %}&amp;{{ query_string }}{% endif %}">Saldo atual</a>
         <a class="btn {% if relatorio == 'reposicao' %}btn-warning{% else %}btn-outline-light{% endif %}" href="?relatorio=reposicao{% if query_string %}&amp;{{ query_string }}{% endif %}">Reposição</a>
         <a class="btn {% if relatorio == 'movimentacoes' %}btn-primary{% else %}btn-outline-light{% endif %}" href="?relatorio=movimentacoes{% if query_string %}&amp;{{ query_string }}{% endif %}">Movimentação</a>
+        <a class="btn {% if relatorio == 'ranking' %}btn-primary{% else %}btn-outline-light{% endif %}" href="?relatorio=ranking">Ranking de vendas</a>
     </nav>
 
     {% if relatorio == 'movimentacoes' %}
@@ -101,6 +102,13 @@
         {% if movement_report %}
         <div class="table-responsive"><table class="table table-dark report-table"><thead><tr><th>Produto</th><th>Entradas</th><th>Saídas</th><th>Saldo movimentado</th></tr></thead><tbody>{% for row in movement_report %}<tr><th scope="row">{{ row.produto }}</th><td>{{ row.entradas }}</td><td>{{ row.saidas }}</td><td>{{ row.quantidade }}</td></tr>{% endfor %}</tbody></table></div>
         {% else %}<div class="empty-state" role="status"><strong>Nenhuma movimentação no período.</strong><span>Escolha outro intervalo ou remova os filtros.</span></div>{% endif %}
+    </section>
+    {% elif relatorio == 'ranking' %}
+    <section class="surface-section" aria-labelledby="sales-ranking-heading">
+        <div class="section-heading-row"><div><h2 id="sales-ranking-heading">Produtos mais vendidos</h2><p class="section-help">O ranking considera somente itens de vendas confirmadas, com a quantidade e o faturamento registrados.</p></div></div>
+        {% if ranking_report %}
+        <div class="table-responsive"><table class="table table-dark report-table sales-table"><thead><tr><th>Posição</th><th>Produto</th><th>Quantidade vendida</th><th>Faturamento</th></tr></thead><tbody>{% for row in ranking_report %}<tr><th scope="row">{{ forloop.counter }}</th><td>{{ row.produto }}</td><td>{{ row.quantidade|floatformat:2 }}</td><td>R$ {{ row.faturamento|floatformat:2 }}</td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state" role="status"><strong>Nenhuma venda confirmada.</strong><span>O ranking será preenchido após a primeira venda local.</span></div>{% endif %}
     </section>
     {% else %}
     <section class="surface-section" aria-labelledby="stock-report-heading">

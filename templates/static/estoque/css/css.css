@@ -679,6 +679,239 @@
     margin-top: 1.25rem;
 }
 
+.sale-page {
+    max-width: 1240px;
+}
+
+.sale-page-heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.sale-section-heading {
+    align-items: flex-start;
+}
+
+.sale-line-items {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.sale-line-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) 130px 150px auto;
+    gap: 0.75rem;
+    align-items: end;
+    padding: 1rem;
+    border: 1px solid rgba(232, 173, 53, 0.18);
+    border-radius: 10px;
+    background: rgba(18, 16, 12, 0.8);
+}
+
+.sale-product-field {
+    position: relative;
+    min-width: 0;
+}
+
+.sale-product-query {
+    min-height: 44px;
+}
+
+.sale-search-results {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    left: 0;
+    display: grid;
+    gap: 0.25rem;
+    max-height: 16rem;
+    overflow-y: auto;
+    padding: 0.35rem;
+    border: 1px solid var(--brand-gold-deep);
+    border-radius: 10px;
+    background: var(--brand-surface);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.36);
+}
+
+.sale-search-option {
+    min-height: 44px;
+    padding: 0.65rem 0.75rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--brand-cream);
+    text-align: left;
+}
+
+.sale-search-option:hover,
+.sale-search-option:focus-visible {
+    background: rgba(232, 173, 54, 0.14);
+    color: var(--brand-cream);
+    outline: 2px solid var(--brand-gold-light);
+    outline-offset: -2px;
+}
+
+.sale-selected-product,
+.sale-field-label {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--brand-muted);
+    font-size: 0.82rem;
+}
+
+.sale-price-field strong {
+    display: block;
+    min-height: 44px;
+    padding: 0.65rem 0;
+    color: var(--brand-cream);
+}
+
+.sale-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.sale-fields .form-group {
+    margin-bottom: 0;
+}
+
+.sale-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin: 1.25rem 0;
+    padding: 1rem;
+    border-left: 2px solid var(--brand-gold);
+    background: rgba(232, 173, 54, 0.08);
+    color: var(--brand-muted);
+}
+
+.sale-summary strong {
+    color: var(--brand-cream);
+}
+
+.sale-summary .sale-total strong,
+.sale-totals .sale-total dd,
+.receipt-total dd {
+    color: var(--brand-gold-light);
+    font-size: 1.15rem;
+}
+
+.sale-actions,
+.sale-actions-inline,
+.receipt-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.sales-table a {
+    color: var(--brand-gold-light);
+}
+
+.sale-totals,
+.receipt-totals {
+    display: grid;
+    gap: 0.55rem;
+    max-width: 24rem;
+    margin: 1.5rem 0 0 auto;
+}
+
+.sale-totals div,
+.receipt-totals div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--brand-muted);
+}
+
+.sale-totals dt,
+.sale-totals dd,
+.receipt-totals dt,
+.receipt-totals dd {
+    margin: 0;
+}
+
+.sale-totals dd,
+.receipt-totals dd {
+    color: var(--brand-cream);
+    font-weight: 800;
+}
+
+.sale-responsible {
+    margin-bottom: 0;
+}
+
+.receipt-page {
+    max-width: 720px;
+}
+
+.receipt-actions {
+    margin-bottom: 1rem;
+}
+
+.receipt-sheet {
+    padding: 2rem;
+    border: 1px solid var(--brand-border);
+    border-radius: 14px;
+    background: var(--brand-surface);
+    color: var(--brand-cream);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+}
+
+.receipt-header {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--brand-border);
+    text-align: center;
+}
+
+.receipt-header h1 {
+    margin-bottom: 0.5rem;
+}
+
+.receipt-header p:last-child,
+.receipt-footer {
+    margin-bottom: 0;
+    color: var(--brand-muted);
+}
+
+.receipt-table {
+    width: 100%;
+    margin: 1.25rem 0;
+    border-collapse: collapse;
+}
+
+.receipt-table th,
+.receipt-table td {
+    padding: 0.65rem 0.35rem;
+    border-bottom: 1px solid rgba(232, 174, 54, 0.18);
+    text-align: right;
+    vertical-align: top;
+}
+
+.receipt-table th:first-child,
+.receipt-table td:first-child {
+    text-align: left;
+}
+
+.receipt-table small {
+    display: block;
+    color: var(--brand-muted);
+}
+
+.receipt-footer {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--brand-border);
+    text-align: center;
+}
+
 @media (max-width: 991.98px) {
     .report-filter-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -833,5 +1066,37 @@
     .inflow-summary {
         flex-direction: column;
         gap: 0.25rem;
+    }
+
+    .sale-page-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .sale-line-item {
+        grid-template-columns: 1fr;
+    }
+
+    .sale-remove-button {
+        margin-top: 0;
+    }
+
+    .sale-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .sale-summary {
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .sale-actions,
+    .sale-actions-inline,
+    .receipt-actions {
+        justify-content: flex-start;
+    }
+
+    .receipt-sheet {
+        padding: 1rem;
     }
 }

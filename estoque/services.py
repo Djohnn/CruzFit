@@ -26,10 +26,12 @@ from .models import (
     Imagem,
     ItemBaixaEstoque,
     ItemEntradaEstoque,
+    ItemVenda,
     Produto,
     ProdutoAlteracao,
     ProdutoCadastro,
     ProdutoInativacao,
+    Venda,
 )
 
 TWO_PLACES = Decimal('0.01')
@@ -39,6 +41,10 @@ class StockOperationError(ValueError):
     """Erro de validação de uma movimentação de estoque."""
 
 
+class SaleOperationError(ValueError):
+    """Erro de validação ou conflito em uma venda local."""
+
+
 class ProductOperationError(ValidationError):
     """Erro de validação de uma alteração de cadastro de produto."""
 
@@ -46,6 +52,12 @@ class ProductOperationError(ValidationError):
 @dataclass(frozen=True)
 class MovementResult:
     movement: BaixaEstoque | EntradaEstoque
+    created: bool
+
+
+@dataclass(frozen=True)
+class SaleResult:
+    sale: Venda
     created: bool
 
 
@@ -521,6 +533,49 @@ def _locked_products(lines: list[tuple[int, Decimal]]) -> dict[int, Produto]:
     return products
 
 
+def _parse_sale_money(value: object, field_name: str) -> Decimal:
+    if value in (None, ''):
+        return Decimal('0.00')
+    try:
+        parsed = Decimal(str(value).strip().replace(',', '.'))
+        normalized = parsed.quantize(TWO_PLACES)
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise SaleOperationError(f'Informe um valor válido para {field_name}.') from error
+    if (
+        not parsed.is_finite()
+        or parsed < 0
+        or parsed != normalized
+    ):
+        raise SaleOperationError(
+            f'Informe um valor não negativo para {field_name} com até duas casas decimais.'
+        )
+    return normalized
+
+
+def _sale_signature(
+    actor_id: int,
+    payment_method: str,
+    discount: Decimal,
+    lines: list[tuple[int, Decimal]],
+) -> str:
+    payload = [
+        actor_id,
+        payment_method,
+        str(discount),
+        [[product_id, str(quantity)] for product_id, quantity in sorted(lines)],
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    ).hexdigest()
+
+
+def _check_sale_replay(sale: Venda, actor_id: int, signature: str) -> None:
+    if sale.responsavel_id != actor_id or sale.assinatura != signature:
+        raise SaleOperationError(
+            'Essa chave de venda já foi usada com outros dados. Abra uma nova venda.',
+        )
+
+
 def registrar_entrada(
     *,
     actor,
@@ -649,3 +704,87 @@ def registrar_baixa(
                 quantidade=quantity,
             )
     return MovementResult(movement, created=True)
+
+
+def registrar_venda(
+    *,
+    actor,
+    product_ids: Sequence[str] | Iterable[str],
+    quantities: Sequence[str] | Iterable[str],
+    discount: object = '0',
+    payment_method: str,
+    idempotency_key: str | None,
+) -> SaleResult:
+    _require_authenticated(actor)
+    try:
+        key = _parse_idempotency_key(idempotency_key)
+    except StockOperationError as error:
+        raise SaleOperationError(str(error)) from error
+
+    lines = _parse_lines(product_ids, quantities)
+    payment = (payment_method or '').strip().upper()
+    if payment not in dict(Venda.FORMA_PAGAMENTO_CHOICES):
+        raise SaleOperationError('Selecione uma forma de pagamento válida.')
+    parsed_discount = _parse_sale_money(discount, 'desconto')
+    signature = _sale_signature(actor.pk, payment, parsed_discount, lines)
+
+    with transaction.atomic():
+        existing = Venda.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            _check_sale_replay(existing, actor.pk, signature)
+            return SaleResult(existing, created=False)
+
+        products = _locked_products(lines)
+        item_totals = [
+            (product_id, quantity, (products[product_id].preco_venda * quantity).quantize(TWO_PLACES))
+            for product_id, quantity in lines
+        ]
+        subtotal = sum(
+            (item_total for _, _, item_total in item_totals),
+            Decimal('0.00'),
+        ).quantize(TWO_PLACES)
+        if parsed_discount > subtotal:
+            raise SaleOperationError('O desconto não pode superar o subtotal da venda.')
+
+        for product_id, quantity in lines:
+            product = products[product_id]
+            if quantity > product.quantidade:
+                raise SaleOperationError(f'Estoque insuficiente para {product.nome}.')
+
+        movement = BaixaEstoque.objects.create(
+            motivo='VENDA',
+            observacao='Venda local',
+            responsavel=actor,
+        )
+        sale = Venda.objects.create(
+            responsavel=actor,
+            baixa=movement,
+            forma_pagamento=payment,
+            subtotal=subtotal,
+            desconto=parsed_discount,
+            total=(subtotal - parsed_discount).quantize(TWO_PLACES),
+            chave_idempotencia=key,
+            assinatura=signature,
+        )
+        movement.observacao = f'Venda #{sale.pk}'
+        movement.save(update_fields=('observacao',))
+
+        for product_id, quantity, item_total in item_totals:
+            product = products[product_id]
+            product.quantidade -= quantity
+            product.save(update_fields=('quantidade',))
+            ItemBaixaEstoque.objects.create(
+                baixa=movement,
+                produto=product,
+                quantidade=quantity,
+            )
+            ItemVenda.objects.create(
+                venda=sale,
+                produto=product,
+                quantidade=quantity,
+                preco_unitario=product.preco_venda,
+                total=item_total,
+            )
+    return SaleResult(sale, created=True)
