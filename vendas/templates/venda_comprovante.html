@@ -7,9 +7,110 @@
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
     <style>
         @media print {
+            @page {
+                size: 80mm auto;
+                margin: 0;
+            }
+
+            html,
+            body {
+                width: 80mm;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                height: auto !important;
+                margin: 0;
+                padding: 0;
+                background: #fff !important;
+            }
+
             .navbar, .no-print { display: none !important; }
-            .receipt-page { max-width: 82mm; margin: 0 auto; }
-            .receipt-sheet { border: 0; box-shadow: none; padding: 0; }
+
+            .receipt-page,
+            .container.receipt-page {
+                width: 80mm !important;
+                max-width: 80mm !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                height: auto !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            .receipt-sheet {
+                width: 100%;
+                border: 0;
+                border-radius: 0;
+                box-shadow: none;
+                min-height: 0 !important;
+                height: auto !important;
+                margin: 0 !important;
+                padding: 4mm 3mm;
+                background: #fff !important;
+                color: #000 !important;
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            .receipt-sheet,
+            .receipt-sheet * {
+                font-weight: 700 !important;
+            }
+
+            .receipt-header .eyebrow {
+                margin: 0 0 1mm;
+                color: #000 !important;
+                font-size: 12px !important;
+                font-weight: 900 !important;
+                letter-spacing: 0.08em;
+            }
+
+            .receipt-header {
+                border-bottom-color: #000;
+            }
+
+            .receipt-header h1 {
+                font-size: 14px;
+            }
+
+            .receipt-header p,
+            .receipt-table,
+            .receipt-totals,
+            .receipt-footer {
+                font-size: 12px;
+            }
+
+            .receipt-table {
+                margin: 3mm 0;
+            }
+
+            .receipt-table th,
+            .receipt-table td {
+                padding: 1.5mm 0;
+                border-bottom: 1px dashed #000;
+                color: #000;
+            }
+
+            .receipt-table small,
+            .receipt-totals div,
+            .receipt-footer {
+                color: #000;
+            }
+
+            .receipt-totals {
+                max-width: none;
+                margin: 3mm 0 0;
+            }
+
+            .receipt-totals dd,
+            .receipt-total dd {
+                color: #000;
+            }
+
+            .receipt-footer {
+                margin-top: 4mm;
+                padding-top: 3mm;
+                border-top-color: #000;
+            }
         }
     </style>
 {% endblock %}

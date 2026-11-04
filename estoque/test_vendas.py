@@ -291,6 +291,42 @@ class SaleContractTests(TestCase):
         self.assertContains(receipt, self.product.nome)
         self.assertContains(receipt, "window.print")
 
+    def test_receipt_print_contract_targets_80mm_thermal_paper(self):
+        """Given comprovante aberto; When imprimir; Then neutralizar layout A3 do Bootstrap."""
+        sale = registrar_venda(
+            actor=self.actor,
+            product_ids=[str(self.product.pk)],
+            quantities=["1.00"],
+            discount="0.00",
+            payment_method="PIX",
+            idempotency_key="venda-impressao-termica",
+        ).sale
+
+        receipt = self.client.get(
+            reverse("venda_comprovante", kwargs={"pk": sale.pk})
+        )
+
+        self.assertRegex(
+            receipt.content.decode(),
+            r"@page\s*\{\s*size:\s*80mm auto;\s*margin:\s*0;\s*\}",
+        )
+        self.assertRegex(
+            receipt.content.decode(),
+            r"html,\s*body\s*\{[^}]*width:\s*80mm[^}]*min-width:\s*0[^}]*min-height:\s*0",
+        )
+        self.assertRegex(
+            receipt.content.decode(),
+            r"\.receipt-page[\s\S]*?width:\s*80mm[\s\S]*?min-width:\s*0[^}]*min-height:\s*0",
+        )
+        self.assertRegex(
+            receipt.content.decode(),
+            r"\.receipt-sheet,\s*\.receipt-sheet \*\s*\{[^}]*font-weight:\s*700 !important",
+        )
+        self.assertRegex(
+            receipt.content.decode(),
+            r"\.receipt-header \.eyebrow\s*\{[^}]*font-weight:\s*900 !important",
+        )
+
     def test_sale_http_insufficient_stock_keeps_page_and_data_unchanged(self):
         """Given saldo insuficiente; When enviar; Then explicar sem venda parcial."""
         response = self.client.post(
