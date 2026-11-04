@@ -42,7 +42,7 @@ if not exist "%~dp0.backup\config.json" (
 )
 
 echo Preparando o banco de dados com backup validado...
-"%PYTHON_EXE%" -m construct.backup.cli runtime prepare-database --reason "Instalacao inicial" --operation-id "install-%RANDOM%-%RANDOM%"
+"%PYTHON_EXE%" -m cruzfit.backup.cli runtime prepare-database --reason "Instalacao inicial" --operation-id "install-%RANDOM%-%RANDOM%"
 if errorlevel 1 goto failure
 
 echo.

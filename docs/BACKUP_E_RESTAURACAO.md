@@ -59,7 +59,7 @@ segura: o ZIP contém o banco e credenciais armazenadas pelo Django.
 Para validar sem alterar os dados:
 
 ```text
-\.runtime\Scripts\python.exe -m construct.backup.cli verify --arquivo "D:\\Cruz Fit Backup\\pacote.zip"
+\.runtime\Scripts\python.exe -m cruzfit.backup.cli verify --arquivo "D:\\Cruz Fit Backup\\pacote.zip"
 ```
 
 Para restaurar, mantenha o sistema parado, execute

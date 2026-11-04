@@ -9,16 +9,16 @@ from contextlib import closing
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo
 
-from construct.backup.archive import ArchiveValidationLimits
-from construct.backup.contracts import ArchiveError, BackupOperationError, RestoreError
-from construct.backup.recovery import recover_pending
-from construct.backup.services import (
+from cruzfit.backup.archive import ArchiveValidationLimits
+from cruzfit.backup.contracts import ArchiveError, BackupOperationError, RestoreError
+from cruzfit.backup.recovery import recover_pending
+from cruzfit.backup.services import (
     create_backup,
     restore_backup,
     verify_backup,
 )
-from construct.backup.test_archive import ArchiveFixtureMixin
-from construct.backup.windows import get_volume_identity
+from cruzfit.backup.test_archive import ArchiveFixtureMixin
+from cruzfit.backup.windows import get_volume_identity
 
 
 class RecoveryTests(ArchiveFixtureMixin, unittest.TestCase):

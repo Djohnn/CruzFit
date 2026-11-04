@@ -25,6 +25,6 @@ class AppliedMigrationTests(TestCase):
     def test_supported_launcher_requires_validated_backup_before_migration(self):
         starter = open("INICIAR_CRUZ_FIT.bat", encoding="utf-8").read()
 
-        self.assertIn("construct.backup.cli runtime start", starter)
+        self.assertIn("cruzfit.backup.cli runtime start", starter)
         self.assertNotIn("manage.py migrate --noinput", starter)
         self.assertIn("backup validado", open("docs/LOCAL_DEVELOPMENT.md", encoding="utf-8").read())

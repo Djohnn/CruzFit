@@ -6,14 +6,14 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from construct.backup.config import (
+from cruzfit.backup.config import (
     BackupConfigurationError,
     configure_destination,
     load_config,
     validate_configured_destination,
 )
-from construct.backup.contracts import VolumeIdentity
-from construct.backup.services import create_backup, verify_backup
+from cruzfit.backup.contracts import VolumeIdentity
+from cruzfit.backup.services import create_backup, verify_backup
 
 
 class StaticVolumeProvider:

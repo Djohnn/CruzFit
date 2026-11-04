@@ -8,14 +8,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 
-from construct.backup.config import configure_destination
-from construct.backup.contracts import VolumeIdentity
-from construct.backup.services import (
+from cruzfit.backup.config import configure_destination
+from cruzfit.backup.contracts import VolumeIdentity
+from cruzfit.backup.services import (
     BackupOperationError,
     create_backup,
     verify_backup,
 )
-from construct.backup.windows import get_volume_identity
+from cruzfit.backup.windows import get_volume_identity
 
 
 class StaticVolumeProvider:

@@ -13,8 +13,8 @@ class CliTests(unittest.TestCase):
         starter = (root / "INICIAR_CRUZ_FIT.bat").read_text(encoding="utf-8")
         stopper = (root / "PARAR_CRUZ_FIT.bat").read_text(encoding="utf-8")
 
-        self.assertIn("construct.backup.cli runtime start", starter)
-        self.assertIn("construct.backup.cli runtime stop", stopper)
+        self.assertIn("cruzfit.backup.cli runtime start", starter)
+        self.assertIn("cruzfit.backup.cli runtime stop", stopper)
         self.assertNotIn("Get-NetTCPConnection", stopper)
         self.assertNotIn("Stop-Process", stopper)
 
@@ -31,7 +31,7 @@ class CliTests(unittest.TestCase):
 
     def test_restore_requires_exact_typed_confirmation(self):
         """Given confirmação diferente; When CLI restore; Then não chama serviço."""
-        from construct.backup import cli
+        from cruzfit.backup import cli
 
         with TemporaryDirectory() as directory:
             with patch.object(cli, "load_config"), patch.object(
@@ -56,7 +56,7 @@ class CliTests(unittest.TestCase):
 
     def test_cli_requires_reason_and_operation_id_for_create(self):
         """Given create sem metadados; When parsear; Then retornar erro sem serviço."""
-        from construct.backup import cli
+        from cruzfit.backup import cli
 
         with patch.object(cli, "create_backup") as create:
             result = cli.main(["create"], project_root=Path.cwd())
@@ -66,7 +66,7 @@ class CliTests(unittest.TestCase):
 
     def test_manual_backup_and_restore_refuse_active_cruz_fit_process(self):
         """Given servidor ativo; When backup/restaurar; Then recusar sem tocar serviço."""
-        from construct.backup import cli
+        from cruzfit.backup import cli
 
         with TemporaryDirectory() as directory:
             root = Path(directory)

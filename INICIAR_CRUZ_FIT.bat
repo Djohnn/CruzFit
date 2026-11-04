@@ -19,7 +19,7 @@ if not exist "%~dp0.backup\config.json" (
 )
 
 echo Fazendo backup, aplicando migracoes e iniciando o servidor Cruz Fit...
-start "Cruz Fit - supervisor" /min "%PYTHON_EXE%" -m construct.backup.cli runtime start --reason "Abertura do sistema" --operation-id "start-%RANDOM%-%RANDOM%"
+start "Cruz Fit - supervisor" /min "%PYTHON_EXE%" -m cruzfit.backup.cli runtime start --reason "Abertura do sistema" --operation-id "start-%RANDOM%-%RANDOM%"
 
 echo Aguardando o sistema ficar pronto...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$url='http://127.0.0.1:15001/auth/login/'; for($i=0; $i -lt 60; $i++){ try { $r=Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 1; if($r.StatusCode -eq 200){ exit 0 } } catch {} ; Start-Sleep -Milliseconds 500 }; exit 1"

@@ -11,7 +11,7 @@ if not exist "%PYTHON_EXE%" (
     exit /b 1
 )
 
-"%PYTHON_EXE%" -m construct.backup.cli runtime stop
+"%PYTHON_EXE%" -m cruzfit.backup.cli runtime stop
 if errorlevel 1 exit /b 1
 
 echo Servidor Cruz Fit encerrado.

@@ -11,13 +11,13 @@ from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from construct.backup.contracts import BackupConfig, VolumeIdentity
-from construct.backup.runtime import (
+from cruzfit.backup.contracts import BackupConfig, VolumeIdentity
+from cruzfit.backup.runtime import (
     RuntimeOperationError,
     runtime_start,
     runtime_stop,
 )
-from construct.backup.windows import OperationLock
+from cruzfit.backup.windows import OperationLock
 
 
 def _equip_fake_process(process, command):
@@ -529,7 +529,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_readiness_failure_is_written_to_persistent_supervisor_log(self):
         """Given readiness falsa; When iniciar; Then registrar diagnóstico persistente."""
-        from construct.backup.runtime import supervisor_log_path
+        from cruzfit.backup.runtime import supervisor_log_path
 
         process = FakeProcess(pid=903)
         inspector = FakeInspector(project_process=process)
@@ -552,7 +552,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_migration_failure_is_written_to_persistent_supervisor_log(self):
         """Given migrate falha; When iniciar; Then registrar falha no log."""
-        from construct.backup.runtime import supervisor_log_path
+        from cruzfit.backup.runtime import supervisor_log_path
 
         def fail_migration(*_args, **_kwargs):
             raise RuntimeError("falha sintética de migração")

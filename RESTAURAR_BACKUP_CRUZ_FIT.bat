@@ -15,6 +15,6 @@ set /p "BACKUP_FILE=Arquivo ZIP validado: "
 if not defined BACKUP_FILE exit /b 1
 set /p "RESTORE_REASON=Motivo da restauracao: "
 if not defined RESTORE_REASON set "RESTORE_REASON=Restauracao manual"
-"%PYTHON_EXE%" -m construct.backup.cli restore --arquivo "%BACKUP_FILE%" --reason "%RESTORE_REASON%" --operation-id "restore-%RANDOM%-%RANDOM%"
+"%PYTHON_EXE%" -m cruzfit.backup.cli restore --arquivo "%BACKUP_FILE%" --reason "%RESTORE_REASON%" --operation-id "restore-%RANDOM%-%RANDOM%"
 if errorlevel 1 echo Restauracao recusada ou revertida. Confirme que o sistema esta parado e consulte .backup\logs\supervisor.log.
 exit /b %errorlevel%

@@ -28,7 +28,7 @@ from .windows import WindowsProcessInspector
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m construct.backup.cli")
+    parser = argparse.ArgumentParser(prog="python -m cruzfit.backup.cli")
     commands = parser.add_subparsers(dest="command")
 
     configure = commands.add_parser("configure")
@@ -68,7 +68,7 @@ def _required_metadata(arguments: argparse.Namespace) -> tuple[str, str] | None:
 
 
 def _setup_django() -> None:
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "construct.settings")
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cruzfit.settings")
     import django
 
     django.setup()

@@ -20,5 +20,5 @@ if not defined BACKUP_DEST (
     exit /b 1
 )
 
-"%PYTHON_EXE%" -m construct.backup.cli configure --destino "%BACKUP_DEST%"
+"%PYTHON_EXE%" -m cruzfit.backup.cli configure --destino "%BACKUP_DEST%"
 exit /b %errorlevel%
