@@ -7,6 +7,8 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from caixa.models import RecebimentoVenda
+from caixa.services import abrir_sessao
 from vendas import services
 from vendas.models import ItemVenda, Venda
 from vendas.services import SaleOperationError, registrar_venda
@@ -38,6 +40,12 @@ class SaleContractTests(TestCase):
             preco_venda="39.90",
             codigo_barras="7891234567895",
         )
+        self.session = abrir_sessao(
+            actor=self.actor,
+            fundo_inicial="100.00",
+            motivo="Abertura para teste de vendas",
+            idempotency_key="sessao-teste-vendas",
+        ).sessao
 
     def test_sale_model_and_service_contract_exist(self):
         """Given catálogo local; When preparar venda; Then expor modelo e serviço próprios."""
@@ -259,6 +267,7 @@ class SaleContractTests(TestCase):
             reverse("vendas:venda_detalhe", kwargs={"pk": sale.pk}),
         )
         self.assertEqual(Venda.objects.count(), 1)
+        self.assertEqual(RecebimentoVenda.objects.count(), 1)
         self.assertEqual(BaixaEstoque.objects.filter(motivo="VENDA").count(), 1)
         self.product.refresh_from_db()
         self.other_product.refresh_from_db()
@@ -276,12 +285,14 @@ class SaleContractTests(TestCase):
             idempotency_key="venda-consulta",
         ).sale
 
-        listing = self.client.get(reverse("vendas"))
+        today = self.client.get(reverse("vendas"))
+        listing = self.client.get(reverse("vendas"), {"periodo": "historico"})
         detail = self.client.get(reverse("venda_detalhe", kwargs={"pk": sale.pk}))
         receipt = self.client.get(
             reverse("venda_comprovante", kwargs={"pk": sale.pk})
         )
         history = self.client.get(reverse("movimentacoes"))
+        self.assertNotContains(today, f"Venda #{sale.pk}")
         self.assertContains(listing, f"Venda #{sale.pk}")
         self.assertContains(detail, self.product.nome)
         self.assertContains(detail, "Cartão")

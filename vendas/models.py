@@ -6,10 +6,15 @@ from django.db import models
 
 
 class Venda(models.Model):
-    FORMA_PAGAMENTO_CHOICES = (
+    MEIOS_PAGAMENTO_CHOICES = (
         ('DINHEIRO', 'Dinheiro'),
         ('PIX', 'Pix'),
         ('CARTAO', 'Cartão'),
+    )
+    FORMA_PAGAMENTO_CHOICES = (
+        *MEIOS_PAGAMENTO_CHOICES,
+        ('MISTO', 'Misto'),
+        ('SEM_PAGAMENTO', 'Sem cobrança'),
     )
 
     criada_em = models.DateTimeField(auto_now_add=True)
@@ -26,7 +31,7 @@ class Venda(models.Model):
         related_name='venda',
     )
     forma_pagamento = models.CharField(
-        max_length=10,
+        max_length=16,
         choices=FORMA_PAGAMENTO_CHOICES,
     )
     subtotal = models.DecimalField(
@@ -73,6 +78,11 @@ class ItemVenda(models.Model):
         validators=[MinValueValidator(Decimal('0'))],
     )
     total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0'))],
+    )
+    total_liquido = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0'))],

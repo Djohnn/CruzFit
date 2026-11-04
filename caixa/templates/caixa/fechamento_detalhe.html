@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Fechamento da sessão #{{ fechamento.sessao_id }} | Cruz Fit{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
+
+{% block 'body' %}
+<main class="container cash-page">
+    <header class="page-heading cash-page-heading">
+        <div><h1>Fechamento da sessão #{{ fechamento.sessao_id }}</h1><p>{{ fechamento.fechada_em|date:"d/m/Y H:i" }} · {{ fechamento.responsavel.get_full_name|default:fechamento.responsavel.username }}</p></div>
+        <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
+    </header>
+
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+
+    <section class="surface-section close-receipt" aria-labelledby="close-receipt-heading">
+        <h2 id="close-receipt-heading">Conferência final</h2>
+        <dl class="cash-session-facts close-result-facts">
+            <div><dt>Dinheiro esperado</dt><dd>R$ {{ fechamento.dinheiro_esperado|floatformat:2 }}</dd></div>
+            <div><dt>Dinheiro contado</dt><dd>R$ {{ fechamento.dinheiro_contado|floatformat:2 }}</dd></div>
+            <div><dt>Diferença</dt><dd>R$ {{ fechamento.diferenca|floatformat:2 }}</dd></div>
+        </dl>
+        <div class="refund-allocation close-form-totals" aria-labelledby="close-snapshot-heading">
+            <h3 id="close-snapshot-heading">Snapshot líquido por forma</h3>
+            <ul>
+            {% for forma, valor in totais_por_forma %}
+                <li><span>{% if forma == 'DINHEIRO' %}Dinheiro{% elif forma == 'PIX' %}Pix{% else %}Cartão{% endif %}</span><strong>R$ {{ valor|floatformat:2 }}</strong></li>
+            {% endfor %}
+            </ul>
+        </div>
+        {% if fechamento.justificativa %}<p class="close-justification"><strong>Justificativa:</strong> {{ fechamento.justificativa }}</p>{% endif %}
+        <p class="section-help">Fechamento imutável · chave {{ fechamento.chave_idempotencia }}</p>
+    </section>
+</main>
+{% endblock %}

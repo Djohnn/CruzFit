@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import time
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -22,10 +23,12 @@ class ProcessSnapshot:
     pid: int
     executable_path: str = ""
     command_line: str = ""
+    parent_pid: int = 0
+    creation_time_filetime: int = 0
 
     @property
-    def project_root(self) -> str:
-        return self.command_line
+    def creation_time_epoch(self) -> float:
+        return self.creation_time_filetime / 10_000_000 - 11_644_473_600
 
 
 class WindowsProcessInspector:
@@ -36,8 +39,8 @@ class WindowsProcessInspector:
             return None
         script = (
             "$p=Get-CimInstance Win32_Process -Filter \"ProcessId = $env:CRUZ_FIT_PID\";"
-            "if($p){$p | Select-Object ProcessId,ExecutablePath,CommandLine | "
-            "ConvertTo-Json -Compress}"
+            "if($p){[pscustomobject]@{ProcessId=$p.ProcessId;ParentProcessId=$p.ParentProcessId;"
+            "ExecutablePath=$p.ExecutablePath;CommandLine=$p.CommandLine} | ConvertTo-Json -Compress}"
         )
         environment = os.environ.copy()
         environment["CRUZ_FIT_PID"] = str(pid)
@@ -52,13 +55,59 @@ class WindowsProcessInspector:
             return None
         try:
             value = json.loads(completed.stdout)
+            creation_time = self._creation_time_filetime(int(value["ProcessId"]))
+            if creation_time is None:
+                return None
             return ProcessSnapshot(
                 pid=int(value["ProcessId"]),
                 executable_path=str(value.get("ExecutablePath") or ""),
                 command_line=str(value.get("CommandLine") or ""),
+                parent_pid=int(value.get("ParentProcessId") or 0),
+                creation_time_filetime=creation_time,
             )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return None
+
+    @staticmethod
+    def _creation_time_filetime(pid: int, *, handle: int | None = None) -> int | None:
+        if os.name != "nt":
+            return None
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        owned_handle = handle is None
+        process_handle = handle
+        if process_handle is None:
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            process_handle = kernel32.OpenProcess(0x1000, False, pid)
+        if not process_handle:
+            return None
+        try:
+            creation = wintypes.FILETIME()
+            exit_time = wintypes.FILETIME()
+            kernel_time = wintypes.FILETIME()
+            user_time = wintypes.FILETIME()
+            kernel32.GetProcessTimes.argtypes = [
+                wintypes.HANDLE,
+                ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME),
+            ]
+            kernel32.GetProcessTimes.restype = wintypes.BOOL
+            if not kernel32.GetProcessTimes(
+                process_handle,
+                ctypes.byref(creation),
+                ctypes.byref(exit_time),
+                ctypes.byref(kernel_time),
+                ctypes.byref(user_time),
+            ):
+                return None
+            return (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+        finally:
+            if owned_handle:
+                kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+                kernel32.CloseHandle.restype = wintypes.BOOL
+                kernel32.CloseHandle(process_handle)
 
     def listeners_on_port(self, port: int) -> list[ProcessSnapshot]:
         if os.name != "nt":
@@ -86,16 +135,66 @@ class WindowsProcessInspector:
                 snapshots.append(snapshot)
         return snapshots
 
-    def is_alive(self, process: ProcessSnapshot) -> bool:
-        return self.process_for_pid(process.pid) is not None
-
-    def terminate(self, process: ProcessSnapshot) -> None:
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+    def children_of(self, pid: int) -> list[ProcessSnapshot]:
+        """Lista filhos diretos por identidade; não encerra a árvore do processo."""
+        if os.name != "nt":
+            return []
+        script = (
+            "$p=Get-CimInstance Win32_Process -Filter \"ParentProcessId = $env:CRUZ_FIT_PID\";"
+            "if($p){@($p | Select-Object -ExpandProperty ProcessId) -join [Environment]::NewLine}"
+        )
+        environment = os.environ.copy()
+        environment["CRUZ_FIT_PID"] = str(pid)
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
             capture_output=True,
             text=True,
             check=False,
+            env=environment,
         )
+        if completed.returncode != 0:
+            return []
+        children: list[ProcessSnapshot] = []
+        for line in completed.stdout.splitlines():
+            try:
+                snapshot = self.process_for_pid(int(line.strip()))
+            except ValueError:
+                snapshot = None
+            if snapshot:
+                children.append(snapshot)
+        return children
+
+    def is_alive(self, process: ProcessSnapshot) -> bool:
+        current = self.process_for_pid(process.pid)
+        return bool(
+            current
+            and current.creation_time_filetime == process.creation_time_filetime
+        )
+
+    def terminate(self, process: ProcessSnapshot) -> None:
+        if os.name != "nt":
+            raise OSError("Encerramento por identidade só está disponível no Windows")
+        if not process.creation_time_filetime:
+            raise OSError("Snapshot sem identidade de criação do processo")
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        handle = kernel32.OpenProcess(0x0001 | 0x1000, False, process.pid)
+        if not handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            current_creation = self._creation_time_filetime(process.pid, handle=handle)
+            if current_creation != process.creation_time_filetime:
+                raise ProcessLookupError("O PID agora identifica outro processo")
+            kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+            kernel32.TerminateProcess.restype = wintypes.BOOL
+            if not kernel32.TerminateProcess(handle, 0):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            kernel32.CloseHandle(handle)
 
     def wait_for_exit(
         self, process: ProcessSnapshot, *, timeout_seconds: float = 30

@@ -2,15 +2,38 @@
 
 {% block 'title' %}Início | Cruz Fit{% endblock %}
 
+{% block 'head' %}
+<style>
+    .home-page .home-actions-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+    }
+    .home-page .home-action-group-featured { grid-column: auto; }
+    .home-page .home-action-group-wide { grid-column: 1 / -1; }
+    .home-page .page-heading h1 {
+        font-size: clamp(2rem, 5vw, 3.5rem);
+        letter-spacing: -.035em;
+        overflow-wrap: anywhere;
+    }
+    .home-page a:focus-visible {
+        outline: 2px solid var(--brand-gold-light);
+        outline-offset: 3px;
+    }
+    @media (max-width: 767.98px) {
+        .home-page .home-actions-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+</style>
+{% endblock %}
+
 {% block 'body' %}
     <main class="container home-page">
         <header class="page-heading">
-            <p class="eyebrow">Painel de estoque</p>
             <h1>Olá, {{ request.user.first_name|default:request.user.username }}.</h1>
-            <p>Escolha uma ação para continuar no Cruz Fit.</p>
+            <p>Acesse o caixa ou escolha uma tarefa de estoque.</p>
         </header>
 
-        <nav class="home-actions-grid" aria-label="Ações principais do estoque">
+        <nav class="home-actions-grid" aria-label="Atalhos da página inicial">
             <section class="home-action-group home-action-group-featured" aria-labelledby="home-stock-heading">
                 <p class="home-action-group-label">Operação principal</p>
                 <a class="home-action-card home-action-card-featured" href="{% url 'estoque' %}">
@@ -31,6 +54,18 @@
                         <h2 id="home-products-heading">Cadastrar produto</h2>
                         <p>Adicione produtos, imagens, preços e quantidade inicial ao estoque.</p>
                         <span class="home-action-link">Abrir cadastro <span aria-hidden="true">→</span></span>
+                    </div>
+                </a>
+            </section>
+
+            <section class="home-action-group" aria-labelledby="home-cash-heading">
+                <p class="home-action-group-label">Vendas</p>
+                <a class="home-action-card" href="{% url 'caixa:painel' %}">
+                    <span class="home-action-icon" aria-hidden="true">R$</span>
+                    <div class="home-action-content">
+                        <h2 id="home-cash-heading">Caixa</h2>
+                        <p>Abra a sessão, acompanhe recebimentos e registre vendas do balcão.</p>
+                        <span class="home-action-link">Acessar caixa <span aria-hidden="true">→</span></span>
                     </div>
                 </a>
             </section>
@@ -70,6 +105,5 @@
             </section>
         </nav>
 
-        <p class="home-flow-note"><strong>Fluxo:</strong> login → início → cadastro, estoque, entradas, baixas ou consulta.</p>
     </main>
 {% endblock %}

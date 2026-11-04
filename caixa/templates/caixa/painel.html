@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Caixa | Cruz Fit{% endblock %}
+
+{% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
+
+{% block 'body' %}
+<main class="container cash-page">
+    <header class="page-heading cash-page-heading">
+        <div><h1>Caixa</h1><p>Controle a sessão atual e acompanhe os recebimentos do balcão.</p></div>
+        {% if sessao %}<a class="btn btn-primary" href="{% url 'vendas:registrar_venda' %}">Registrar venda</a>{% else %}<a class="btn btn-primary" href="{% url 'caixa:abrir' %}">Abrir sessão</a>{% endif %}
+    </header>
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% if sessao %}
+    <section class="surface-section cash-session" aria-labelledby="session-heading">
+        <div><h2 id="session-heading">Sessão #{{ sessao.pk }} aberta</h2><p>Responsável: {{ sessao.responsavel.get_full_name|default:sessao.responsavel.username }} · {{ sessao.aberta_em|date:"d/m/Y H:i" }}</p></div>
+        <dl class="cash-session-facts"><div><dt>Fundo inicial</dt><dd>R$ {{ sessao.fundo_inicial|floatformat:2 }}</dd></div><div><dt>Dinheiro esperado</dt><dd>R$ {{ saldo_dinheiro|floatformat:2 }}</dd></div><div><dt>Suprimentos</dt><dd>{{ suprimentos_count }}</dd></div><div><dt>Sangrias</dt><dd>{{ sangrias_count }}</dd></div></dl>
+    </section>
+    <nav class="cash-actions cash-session-actions" aria-label="Ações da sessão de caixa">
+        {% if is_manager %}<a class="btn btn-outline-light" href="{% url 'caixa:suprimento' %}">Registrar suprimento</a><a class="btn btn-outline-light" href="{% url 'caixa:sangria' %}">Registrar sangria</a><a class="btn btn-outline-danger" href="{% url 'caixa:fechar' %}">Conferir e fechar sessão</a>{% endif %}
+        <a class="btn btn-outline-light" href="{% url 'caixa:historico' %}?sessao={{ sessao.pk }}">Ver histórico da sessão</a>
+    </nav>
+    {% if pendencias_pendentes %}<p class="alert alert-warning" role="status">Há {{ pendencias_pendentes }} restituição(ões) pendente(s) originada(s) nesta sessão. Resolva-as antes do fechamento.</p>{% endif %}
+    <section class="surface-section" aria-labelledby="cash-activity-heading">
+        <div class="section-heading-row"><div><h2 id="cash-activity-heading">Recebimentos recentes</h2><p class="section-help">Cada linha representa um recebimento confirmado nesta sessão.</p></div></div>
+        {% if recebimentos %}<div class="table-responsive"><table class="table table-dark cash-table"><thead><tr><th>Venda</th><th>Forma</th><th>Total</th><th>Responsável</th><th>Horário</th></tr></thead><tbody>
+        {% for recebimento in recebimentos %}<tr><th scope="row"><a href="{% url 'vendas:venda_detalhe' recebimento.venda_id %}">Venda #{{ recebimento.venda_id }}</a></th><td>{% for pagamento in recebimento.pagamentos.all %}{{ pagamento.get_forma_display }}{% if not forloop.last %}, {% endif %}{% empty %}Sem cobrança{% endfor %}</td><td>R$ {{ recebimento.valor_total|floatformat:2 }}</td><td>{{ recebimento.responsavel.get_full_name|default:recebimento.responsavel.username }}</td><td>{{ recebimento.criada_em|date:"d/m/Y H:i" }}</td></tr>{% endfor %}
+        </tbody></table></div>{% else %}<p class="cash-empty-state">Nenhum recebimento foi registrado nesta sessão.</p>{% endif %}
+    </section>
+    {% else %}
+    <section class="surface-section cash-empty" aria-labelledby="cash-closed-heading"><h2 id="cash-closed-heading">Nenhuma sessão aberta</h2><p>Abra o caixa com o fundo físico contado para liberar o registro de vendas.</p><div class="cash-actions"><a class="btn btn-primary" href="{% url 'caixa:abrir' %}">Abrir sessão</a><a class="btn btn-outline-light" href="{% url 'caixa:historico' %}">Consultar sessões anteriores</a></div></section>
+    {% endif %}
+</main>
+{% endblock %}

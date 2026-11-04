@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'rolepermissions',
     'estoque',
     'vendas',
+    'caixa',
 ]
 
 MIDDLEWARE = [

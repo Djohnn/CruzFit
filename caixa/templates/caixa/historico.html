@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Histórico do Caixa | Cruz Fit{% endblock %}
+
+{% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
+
+{% block 'body' %}
+<main class="container cash-page">
+    <header class="page-heading cash-page-heading">
+        <div><h1>Histórico do Caixa</h1><p>Consulte recebimentos, suprimentos e sangrias por sessão.</p></div>
+        <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
+    </header>
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    <section class="surface-section" aria-labelledby="history-filter-heading">
+        <h2 id="history-filter-heading">Filtros</h2>
+        <form method="get" class="cash-history-filters">
+            <div class="form-group"><label for="history-session">Sessão</label><select id="history-session" name="sessao" class="form-control">{% for item in sessoes %}<option value="{{ item.pk }}" {% if sessao.pk == item.pk %}selected{% endif %}>Sessão #{{ item.pk }} · {{ item.aberta_em|date:"d/m/Y H:i" }}{% if item.aberta %} · aberta{% endif %}</option>{% empty %}<option value="">Sem sessões</option>{% endfor %}</select></div>
+            <div class="form-group"><label for="history-type">Tipo de operação</label><select id="history-type" name="tipo" class="form-control"><option value="" {% if not filtros.tipo %}selected{% endif %}>Todas</option><option value="RECEBIMENTO" {% if filtros.tipo == "RECEBIMENTO" %}selected{% endif %}>Recebimento</option><option value="SUPRIMENTO" {% if filtros.tipo == "SUPRIMENTO" %}selected{% endif %}>Suprimento</option><option value="SANGRIA" {% if filtros.tipo == "SANGRIA" %}selected{% endif %}>Sangria</option></select></div>
+            <div class="form-group"><label for="history-reason">Motivo contém</label><input id="history-reason" name="motivo" class="form-control" type="search" value="{{ filtros.motivo }}" maxlength="500"></div>
+            <div class="form-group"><label for="history-start">De</label><input id="history-start" name="data_inicio" class="form-control" type="date" value="{{ filtros.data_inicio|date:'Y-m-d' }}"></div>
+            <div class="form-group"><label for="history-end">Até</label><input id="history-end" name="data_fim" class="form-control" type="date" value="{{ filtros.data_fim|date:'Y-m-d' }}"></div>
+            <div class="cash-actions"><button class="btn btn-primary" type="submit">Aplicar filtros</button><a class="btn btn-outline-light" href="{% url 'caixa:historico' %}{% if sessao %}?sessao={{ sessao.pk }}{% endif %}">Limpar filtros</a></div>
+        </form>
+    </section>
+    <section class="surface-section" aria-labelledby="history-results-heading">
+        <div class="section-heading-row"><div><h2 id="history-results-heading">{% if sessao %}Sessão #{{ sessao.pk }}{% else %}Operações{% endif %}</h2><p class="section-help">{{ page_obj.paginator.count }} operação(ões) encontradas.</p></div></div>
+        {% if movimentos %}
+        <div class="table-responsive"><table class="table table-dark cash-table"><thead><tr><th>Operação</th><th>Valor</th><th>Motivo</th><th>Responsável</th><th>Data</th><th>Referência</th></tr></thead><tbody>
+        {% for movimento in movimentos %}<tr><th scope="row">{{ movimento.tipo|title }}</th><td>R$ {{ movimento.quantia|floatformat:2 }}</td><td>{{ movimento.motivo }}</td><td>{{ movimento.responsavel_nome }}</td><td>{{ movimento.criada_em|date:"d/m/Y H:i" }}</td><td>{% if movimento.link_id %}<a href="{% url 'vendas:venda_detalhe' movimento.link_id %}">{{ movimento.referencia }}</a>{% else %}{{ movimento.referencia }}{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+        {% if page_obj.paginator.num_pages > 1 %}<nav class="cash-pagination" aria-label="Paginação do histórico"><span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span><div>{% if page_obj.has_previous %}<a class="btn btn-outline-light" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}sessao={{ sessao.pk }}&amp;page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}{% if page_obj.has_next %}<a class="btn btn-outline-light" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}sessao={{ sessao.pk }}&amp;page={{ page_obj.next_page_number }}">Próxima</a>{% endif %}</div></nav>{% endif %}
+        {% else %}<p class="cash-empty-state">Nenhuma operação corresponde a esta sessão e aos filtros selecionados.</p>{% endif %}
+    </section>
+</main>
+{% endblock %}

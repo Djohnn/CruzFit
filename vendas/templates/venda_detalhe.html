@@ -5,13 +5,13 @@
 
 {% block 'head' %}
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+    <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
 {% endblock %}
 
 {% block 'body' %}
 <main class="container sale-page">
     <header class="page-heading sale-page-heading">
         <div>
-            <p class="eyebrow">Venda confirmada</p>
             <h1>Venda #{{ venda.pk }}</h1>
             <p>{{ venda.criada_em|date:"d/m/Y H:i" }} · {{ venda.get_forma_pagamento_display }} · baixa #{{ venda.baixa_id }}</p>
         </div>
@@ -38,10 +38,10 @@
         </div>
         <div class="table-responsive">
             <table class="table table-dark report-table sales-table">
-                <thead><tr><th>Produto</th><th>Quantidade</th><th>Preço unitário</th><th>Total</th></tr></thead>
+                <thead><tr><th>Produto</th><th>Quantidade</th><th>Preço unitário</th><th>Bruto</th><th>Líquido</th></tr></thead>
                 <tbody>
                 {% for item in venda.itens.all %}
-                    <tr><th scope="row">{{ item.produto.nome }}</th><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td></tr>
+                    <tr><th scope="row">{{ item.produto.nome }}</th><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td><td>R$ {{ item.total_liquido|floatformat:2 }}</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
@@ -52,6 +52,54 @@
             <div class="sale-total"><dt>Total</dt><dd>R$ {{ venda.total|floatformat:2 }}</dd></div>
         </dl>
         <p class="section-help sale-responsible">Responsável: {{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</p>
+        <p class="section-help"><strong>Cliente:</strong> Consumidor final</p>
+        {% if recebimento %}
+        <section class="cash-receipt-summary" aria-labelledby="cash-receipt-heading">
+            <h3 id="cash-receipt-heading">Recebimento da sessão #{{ recebimento.sessao_id }}</h3>
+            <ul>{% for pagamento in recebimento.pagamentos.all %}<li>{{ pagamento.get_forma_display }}: R$ {{ pagamento.valor_aplicado|floatformat:2 }}{% if pagamento.forma == 'DINHEIRO' %} · entregue R$ {{ pagamento.valor_entregue|floatformat:2 }} · troco R$ {{ pagamento.troco|floatformat:2 }}{% endif %}</li>{% empty %}<li>Sem cobrança</li>{% endfor %}</ul>
+        </section>
+        {% endif %}
     </section>
+
+    {% if cancelamento_pendente or devolucoes_pendentes %}
+    <section class="surface-section refund-history" aria-labelledby="refund-history-heading">
+        <div class="section-heading-row">
+            <div>
+                <h2 id="refund-history-heading">Restituições da venda</h2>
+                <p class="section-help">Cada restituição mantém o vínculo com o recebimento e com as formas originais.</p>
+            </div>
+        </div>
+        {% if cancelamento_pendente %}
+        <article class="refund-history-row">
+            <div>
+                <h3>Cancelamento #{{ cancelamento_pendente.cancelamento_id }}</h3>
+                <p>R$ {{ cancelamento_pendente.valor_total|floatformat:2 }} · sessão de origem #{{ cancelamento_pendente.sessao_origem_id }}</p>
+            </div>
+            {% if cancelamento_restituicao %}
+                <p class="refund-complete">Restituído na sessão #{{ cancelamento_restituicao.sessao_id }}</p>
+            {% elif is_manager %}
+                <a class="btn btn-primary" href="{% url 'caixa:restituir_cancelamento' cancelamento_pendente.pk %}">Registrar restituição</a>
+            {% else %}
+                <p class="refund-pending-status">Restituição pendente</p>
+            {% endif %}
+        </article>
+        {% endif %}
+        {% for row in devolucoes_pendentes %}
+        <article class="refund-history-row">
+            <div>
+                <h3>Devolução #{{ row.pendencia.devolucao_id }}</h3>
+                <p>R$ {{ row.pendencia.valor_total|floatformat:2 }} · sessão de origem #{{ row.pendencia.sessao_origem_id }}</p>
+            </div>
+            {% if row.restituicao %}
+                <p class="refund-complete">Restituído na sessão #{{ row.restituicao.sessao_id }}</p>
+            {% elif is_manager %}
+                <a class="btn btn-primary" href="{% url row.url_name row.pendencia.pk %}">Registrar restituição</a>
+            {% else %}
+                <p class="refund-pending-status">Restituição pendente</p>
+            {% endif %}
+        </article>
+        {% endfor %}
+    </section>
+    {% endif %}
 </main>
 {% endblock %}

@@ -12,11 +12,19 @@
     <header class="page-heading sale-page-heading">
         <div>
             <p class="eyebrow">Operação local</p>
-            <h1>Vendas registradas</h1>
+            <h1>{% if historico %}Histórico de vendas{% else %}Vendas do Caixa de hoje{% endif %}</h1>
             <p>Consulte os comprovantes e os valores praticados em cada venda.</p>
         </div>
         <a class="btn btn-primary" href="{% url 'vendas:registrar_venda' %}">Nova venda</a>
     </header>
+
+    <nav aria-label="Período das vendas">
+        {% if historico %}
+            <a class="btn btn-outline-light" href="{% url 'vendas:vendas' %}">Vendas de hoje</a>
+        {% else %}
+            <a class="btn btn-outline-light" href="{% url 'vendas:vendas' %}?periodo=historico">Ver histórico</a>
+        {% endif %}
+    </nav>
 
     {% if messages %}
         <div class="feedback-stack" aria-live="polite">
@@ -29,7 +37,7 @@
     <section class="surface-section" aria-labelledby="sales-list-heading">
         <div class="section-heading-row">
             <div>
-                <h2 id="sales-list-heading">Histórico de vendas</h2>
+                <h2 id="sales-list-heading">{% if historico %}Últimas vendas{% else %}Vendas de {{ hoje|date:"d/m/Y" }}{% endif %}</h2>
                 <p class="section-help">Cada venda mantém seus itens, preços, desconto, pagamento e baixa vinculada.</p>
             </div>
         </div>
@@ -48,7 +56,7 @@
                         <td>{{ venda.get_forma_pagamento_display }}</td>
                         <td>R$ {{ venda.total|floatformat:2 }}</td>
                         <td>{{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</td>
-                        <td><a class="btn btn-sm btn-outline-light" href="{% url 'vendas:venda_comprovante' venda.pk %}">Comprovante</a></td>
+                        <td><a class="btn btn-sm btn-outline-light" href="{% url 'vendas:venda_comprovante' venda.pk %}">Abrir comprovante</a></td>
                     </tr>
                 {% endfor %}
                 </tbody>
@@ -56,7 +64,7 @@
         </div>
         {% else %}
             <div class="empty-state" role="status">
-                <strong>Nenhuma venda registrada.</strong>
+                <strong>{% if historico %}Nenhuma venda registrada.{% else %}Nenhuma venda recebida no Caixa hoje.{% endif %}</strong>
                 <span>As vendas confirmadas aparecerão aqui com seus comprovantes.</span>
             </div>
         {% endif %}

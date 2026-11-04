@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
+import subprocess
+import sys
+import time
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -13,6 +18,41 @@ from construct.backup.runtime import (
     runtime_stop,
 )
 from construct.backup.windows import OperationLock
+
+
+def _equip_fake_process(process, command):
+    process.executable_path = str(Path(command[0]).resolve())
+    process.command_line = subprocess.list2cmdline(command)
+    process.parent_pid = os.getpid()
+    process.creation_time_filetime = int((time.time() + 11_644_473_600) * 10_000_000)
+    return process
+
+
+def _fake_launcher(process):
+    def launch(command, **_kwargs):
+        return _equip_fake_process(process, command)
+
+    return launch
+
+
+def _write_modern_runtime_state(project_root, process, command, installation_id):
+    state_path = Path(project_root) / ".backup" / "runtime.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({
+            "version": 2,
+            "installation_id": installation_id,
+            "pid": process.pid,
+            "project_root": str(Path(project_root).resolve()),
+            "command": list(command),
+            "executable_path": process.executable_path,
+            "command_line": process.command_line,
+            "parent_pid": process.parent_pid,
+            "creation_time_filetime": process.creation_time_filetime,
+        }),
+        encoding="utf-8",
+    )
+    return state_path
 
 
 class FakeProcess:
@@ -31,21 +71,28 @@ class FakeProcess:
 
 
 class FakeInspector:
-    def __init__(self, *, project_process=None, listeners=None):
+    def __init__(self, *, project_process=None, listeners=None, children=None):
         self.project_process = project_process
         self.listeners = listeners or []
+        self.children = children or []
         self.terminated = []
 
     def process_for_pid(self, pid):
         if self.project_process and self.project_process.pid == pid:
             return self.project_process
+        for process in self.children:
+            if process.pid == pid:
+                return process
         return None
 
     def listeners_on_port(self, _port):
         return list(self.listeners)
 
+    def children_of(self, pid):
+        return [child for child in self.children if child.parent_pid == pid]
+
     def is_alive(self, process):
-        return process is self.project_process and process.poll() is None
+        return process in [self.project_process, *self.children] and process.poll() is None
 
     def terminate(self, process):
         self.terminated.append(process)
@@ -101,6 +148,7 @@ class RuntimeTests(unittest.TestCase):
         """CT-BKP-08: Given banco existente; When iniciar; Then backup precede migrate/runserver."""
         events = []
         process = FakeProcess()
+        inspector = FakeInspector(project_process=process)
 
         def backup(**_kwargs):
             events.append("backup")
@@ -110,14 +158,14 @@ class RuntimeTests(unittest.TestCase):
 
         def launch(command, **_kwargs):
             events.append("runserver")
-            return process
+            return _equip_fake_process(process, command)
 
         runtime_start(
             project_root=self.project,
             config=self.config,
             operation_id="runtime-order-08",
             reason="abertura",
-            process_inspector=FakeInspector(),
+            process_inspector=inspector,
             backup_creator=backup,
             command_runner=command,
             process_launcher=launch,
@@ -181,6 +229,236 @@ class RuntimeTests(unittest.TestCase):
             runtime_stop(project_root=self.project, process_inspector=inspector)
         self.assertEqual(inspector.terminated, [])
 
+    def test_stop_recognizes_registered_process_with_relative_manage_py_command(self):
+        """Given runtime legado; When runserver argv é relativo; Then parar a própria instalação."""
+        command = [
+            sys.executable,
+            "manage.py",
+            "runserver",
+            "127.0.0.1:15001",
+            "--noreload",
+        ]
+        created_at = time.time() - 0.25
+        created_filetime = int((created_at + 11_644_473_600) * 10_000_000)
+
+        class ObservedProcess:
+            pid = 906
+            executable_path = str(Path(sys.executable).resolve())
+            command_line = subprocess.list2cmdline(command)
+            parent_pid = os.getpid()
+            creation_time_filetime = created_filetime
+            returncode = None
+
+            def poll(self):
+                return self.returncode
+
+        process = ObservedProcess()
+
+        class ObservedInspector:
+            terminated = []
+
+            def process_for_pid(self, pid):
+                return process if pid == process.pid else None
+
+            def listeners_on_port(self, _port):
+                return [process]
+
+            def is_alive(self, candidate):
+                return candidate is process and process.poll() is None
+
+            def terminate(self, candidate):
+                self.terminated.append(candidate)
+                candidate.returncode = 0
+
+            def wait_for_exit(self, candidate, *, timeout_seconds=30):
+                del timeout_seconds
+                return candidate.poll() is not None
+
+        inspector = ObservedInspector()
+        state_path = self.project / ".backup" / "runtime.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(
+            json.dumps({
+                "pid": process.pid,
+                "project_root": str(self.project.resolve()),
+                "command": command,
+            }),
+            encoding="utf-8",
+        )
+        os.utime(state_path, (created_at + 0.25, created_at + 0.25))
+
+        runtime_stop(project_root=self.project, process_inspector=inspector)
+
+        self.assertEqual(inspector.terminated, [process])
+        self.assertFalse(state_path.exists())
+
+    def test_stop_refuses_reused_pid_from_stale_relative_runtime_state(self):
+        """Given PID reciclado; When estado legado aponta a ele; Then preservar processo e estado."""
+        command = [sys.executable, "manage.py", "runserver", "127.0.0.1:15001", "--noreload"]
+        created_at = time.time()
+        created_filetime = int((created_at + 11_644_473_600) * 10_000_000)
+
+        class ReusedProcess:
+            pid = 907
+            executable_path = str(Path(sys.executable).resolve())
+            command_line = subprocess.list2cmdline(command)
+            parent_pid = os.getpid()
+            creation_time_filetime = created_filetime
+            returncode = None
+
+            def poll(self):
+                return self.returncode
+
+        process = ReusedProcess()
+        inspector = FakeInspector(project_process=process)
+        state_path = self.project / ".backup" / "runtime.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(
+            json.dumps({
+                "pid": process.pid,
+                "project_root": str(self.project.resolve()),
+                "command": command,
+            }),
+            encoding="utf-8",
+        )
+        os.utime(state_path, (created_at - 2, created_at - 2))
+
+        with self.assertRaises(RuntimeOperationError):
+            runtime_stop(project_root=self.project, process_inspector=inspector)
+
+        self.assertEqual(inspector.terminated, [])
+        self.assertTrue(state_path.exists())
+
+    def test_stop_refuses_state_bound_to_another_installation_path(self):
+        """Given estado copiado de outra raiz; When parar; Then não encerrar processo."""
+        command = [sys.executable, "manage.py", "runserver", "127.0.0.1:15001", "--noreload"]
+        created_at = time.time() - 1
+        created_filetime = int((created_at + 11_644_473_600) * 10_000_000)
+
+        class OtherInstallProcess:
+            pid = 908
+            executable_path = str(Path(sys.executable).resolve())
+            command_line = subprocess.list2cmdline(command)
+            parent_pid = os.getpid()
+            creation_time_filetime = created_filetime
+            returncode = None
+
+            def poll(self):
+                return self.returncode
+
+        process = OtherInstallProcess()
+        inspector = FakeInspector(project_process=process)
+        state_path = self.project / ".backup" / "runtime.json"
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(
+            json.dumps({
+                "pid": process.pid,
+                "project_root": str(self.project.parent / "Other Install"),
+                "command": command,
+            }),
+            encoding="utf-8",
+        )
+        os.utime(state_path, (created_at + 1, created_at + 1))
+
+        with self.assertRaises(RuntimeOperationError):
+            runtime_stop(project_root=self.project, process_inspector=inspector)
+
+        self.assertEqual(inspector.terminated, [])
+        self.assertTrue(state_path.exists())
+
+    def test_stop_refuses_modern_state_for_another_installation_id(self):
+        """Given ID divergente; When parar; Then não encerrar nem apagar o estado."""
+        command = [
+            sys.executable,
+            str((self.project / "manage.py").resolve()),
+            "runserver",
+            "127.0.0.1:15001",
+            "--noreload",
+        ]
+        process = _equip_fake_process(FakeProcess(pid=909), command)
+        inspector = FakeInspector(project_process=process)
+        state_path = _write_modern_runtime_state(
+            self.project,
+            process,
+            command,
+            installation_id="installation-b",
+        )
+
+        with self.assertRaises(RuntimeOperationError):
+            runtime_stop(
+                project_root=self.project,
+                process_inspector=inspector,
+                installation_id=self.config.installation_id,
+            )
+
+        self.assertEqual(inspector.terminated, [])
+        self.assertTrue(state_path.exists())
+
+    def test_stop_terminates_only_verified_listener_child_of_venv_launcher(self):
+        """Given shim do venv; When parar; Then encerrar filho servidor e lançador identificados."""
+        command = [
+            sys.executable,
+            str((self.project / "manage.py").resolve()),
+            "runserver",
+            "127.0.0.1:15001",
+            "--noreload",
+        ]
+        launcher = _equip_fake_process(FakeProcess(pid=911), command)
+        child = _equip_fake_process(FakeProcess(pid=912), command)
+        child.parent_pid = launcher.pid
+        child.creation_time_filetime = launcher.creation_time_filetime + 10_000
+        inspector = FakeInspector(
+            project_process=launcher,
+            listeners=[child],
+            children=[child],
+        )
+        state_path = _write_modern_runtime_state(
+            self.project,
+            launcher,
+            command,
+            installation_id=self.config.installation_id,
+        )
+
+        runtime_stop(
+            project_root=self.project,
+            process_inspector=inspector,
+            installation_id=self.config.installation_id,
+        )
+
+        self.assertEqual(inspector.terminated, [child, launcher])
+        self.assertFalse(state_path.exists())
+
+    def test_stop_preserves_os_error_as_cause_and_keeps_state(self):
+        """Given erro operacional ao encerrar; When parar; Then preservar diagnóstico e registro."""
+        command = [
+            sys.executable,
+            str((self.project / "manage.py").resolve()),
+            "runserver",
+            "127.0.0.1:15001",
+            "--noreload",
+        ]
+        process = _equip_fake_process(FakeProcess(pid=910), command)
+        state_path = _write_modern_runtime_state(
+            self.project,
+            process,
+            command,
+            installation_id=self.config.installation_id,
+        )
+
+        class FailingInspector(FakeInspector):
+            def terminate(self, _candidate):
+                raise OSError("falha operacional diferente de bloqueio")
+
+        with self.assertRaises(RuntimeOperationError) as raised:
+            runtime_stop(
+                project_root=self.project,
+                process_inspector=FailingInspector(project_process=process),
+                installation_id=self.config.installation_id,
+            )
+
+        self.assertIsInstance(raised.exception.__cause__, OSError)
+        self.assertTrue(state_path.exists())
+
     def test_readiness_failure_terminates_child_before_clearing_state(self):
         """Given readiness falsa; When iniciar; Then limpar filho antes do estado."""
         process = FakeProcess(pid=901)
@@ -206,7 +484,7 @@ class RuntimeTests(unittest.TestCase):
                 process_inspector=inspector,
                 backup_creator=lambda **_kwargs: None,
                 command_runner=lambda *_args, **_kwargs: None,
-                process_launcher=lambda *_args, **_kwargs: process,
+                process_launcher=_fake_launcher(process),
                 readiness_checker=lambda: False,
             )
 
@@ -239,7 +517,7 @@ class RuntimeTests(unittest.TestCase):
                 process_inspector=inspector,
                 backup_creator=lambda **_kwargs: None,
                 command_runner=lambda *_args, **_kwargs: None,
-                process_launcher=lambda *_args, **_kwargs: process,
+                process_launcher=_fake_launcher(process),
                 readiness_checker=lambda: False,
             )
 
@@ -264,7 +542,7 @@ class RuntimeTests(unittest.TestCase):
                 process_inspector=inspector,
                 backup_creator=lambda **_kwargs: None,
                 command_runner=lambda *_args, **_kwargs: None,
-                process_launcher=lambda *_args, **_kwargs: process,
+                process_launcher=_fake_launcher(process),
                 readiness_checker=lambda: False,
             )
 

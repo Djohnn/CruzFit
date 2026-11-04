@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Restituir venda #{{ pendencia.recebimento.venda_id }} | Cruz Fit{% endblock %}
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+<main class="container cash-page">
+    <header class="page-heading cash-page-heading">
+        <div>
+            <h1>Restituir venda #{{ pendencia.recebimento.venda_id }}</h1>
+            <p>O valor e as formas de pagamento vêm do recebimento original da sessão #{{ pendencia.sessao_origem_id }}.</p>
+        </div>
+        <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' pendencia.recebimento.venda_id %}">Voltar à venda</a>
+    </header>
+
+    {% if messages %}
+        <div class="feedback-stack" aria-live="polite">
+        {% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}
+        </div>
+    {% endif %}
+
+    <section class="surface-section cash-form-surface refund-surface" aria-labelledby="refund-heading">
+        <h2 id="refund-heading">{% if cancelamento %}Cancelamento{% else %}Devolução parcial{% endif %} #{{ pendencia.pk }}</h2>
+        <dl class="cash-session-facts">
+            <div><dt>Valor líquido a restituir</dt><dd>R$ {{ pendencia.valor_total|floatformat:2 }}</dd></div>
+            <div><dt>Motivo da origem</dt><dd>{{ pendencia.motivo }}</dd></div>
+            <div><dt>Gerente responsável</dt><dd>{{ pendencia.responsavel.get_full_name|default:pendencia.responsavel.username }}</dd></div>
+        </dl>
+
+        {% if preview_error %}<p class="alert alert-danger" role="alert">{{ preview_error }}</p>{% endif %}
+
+        {% if pagamentos %}
+        <div class="refund-allocation" aria-labelledby="refund-allocation-heading">
+            <h3 id="refund-allocation-heading">Devolução pelas formas originais</h3>
+            <ul>
+            {% for pagamento in pagamentos %}
+                <li><span>{{ pagamento.forma_display }}</span><strong>R$ {{ pagamento.valor|floatformat:2 }}</strong></li>
+            {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if ja_restituida %}
+            <div class="cash-refund-status" role="status">
+                <h3>Restituição concluída</h3>
+                <p>Registrada na sessão #{{ ja_restituida.sessao_id }} por {{ ja_restituida.responsavel.get_full_name|default:ja_restituida.responsavel.username }}.</p>
+                <p>Motivo: {{ ja_restituida.motivo }}</p>
+            </div>
+        {% elif sessao %}
+            <p class="section-help">Sessão atual #{{ sessao.pk }} · dinheiro físico esperado: <strong>R$ {{ saldo_dinheiro|floatformat:2 }}</strong></p>
+            <form method="post" class="operational-form refund-form" novalidate>
+                {% csrf_token %}
+                <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+                <input type="hidden" name="sessao_versao" value="{{ sessao_versao }}">
+                <div class="form-group">
+                    <label for="refund-reason">Motivo obrigatório</label>
+                    <textarea id="refund-reason" name="motivo" class="form-control" rows="3" maxlength="500" required aria-describedby="refund-reason-help">{{ motivo }}</textarea>
+                    <small id="refund-reason-help" class="section-help">Registre como a devolução foi realizada e mantenha o mesmo motivo em uma tentativa repetida.</small>
+                </div>
+                <label class="refund-confirmation" for="refund-manual-confirmation">
+                    <input id="refund-manual-confirmation" type="checkbox" name="confirmacao_manual" value="1" {% if confirmacao_manual %}checked{% endif %}>
+                    <span>Confirmo que entreguei o dinheiro e realizei manualmente a restituição de Pix ou cartão conforme as parcelas acima.</span>
+                </label>
+                <div class="cash-actions">
+                    <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' pendencia.recebimento.venda_id %}">Cancelar</a>
+                    <button class="btn btn-primary" type="submit" {% if preview_error %}disabled{% endif %}>Confirmar restituição</button>
+                </div>
+            </form>
+        {% else %}
+            <div class="cash-refund-status" role="alert">
+                <h3>Nenhuma sessão de caixa aberta</h3>
+                <p>Abra uma sessão para registrar esta restituição, inclusive quando a venda pertence a um turno anterior.</p>
+                <a class="btn btn-primary" href="{% url 'caixa:abrir' %}">Abrir sessão</a>
+            </div>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}

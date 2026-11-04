@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Abrir caixa | Cruz Fit{% endblock %}
+
+{% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
+
+{% block 'body' %}
+<main class="container cash-page">
+    <header class="page-heading">
+        <h1>Abrir sessão de caixa</h1>
+        <p>Informe o fundo físico inicial e o motivo. A abertura fica vinculada ao seu usuário.</p>
+    </header>
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    <section class="surface-section cash-form-surface" aria-labelledby="cash-open-heading">
+        <h2 id="cash-open-heading">Dados da abertura</h2>
+        <form method="post" class="operational-form" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia|default:'' }}">
+            <div class="form-group">
+                <label for="opening-fund">Fundo inicial (R$)</label>
+                <input id="opening-fund" name="fundo_inicial" class="form-control" type="number" min="0" step="0.01" inputmode="decimal" value="{{ fundo_inicial|default:'' }}" required aria-describedby="fund-help">
+                <small id="fund-help" class="section-help">Conte o dinheiro presente na gaveta antes da primeira venda.</small>
+            </div>
+            <div class="form-group">
+                <label for="opening-reason">Motivo da abertura</label>
+                <textarea id="opening-reason" name="motivo" class="form-control" rows="3" maxlength="500" required>{{ motivo|default:'' }}</textarea>
+            </div>
+            <div class="cash-actions">
+                <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
+                <button class="btn btn-primary" type="submit">Abrir caixa</button>
+            </div>
+        </form>
+    </section>
+</main>
+{% endblock %}

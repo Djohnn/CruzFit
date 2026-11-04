@@ -102,12 +102,13 @@ def main(
             if metadata is None:
                 return 2
             reason, operation_id = metadata
+            config = load_config(default_config_path(root))
             ensure_server_not_active(
                 project_root=root,
                 process_inspector=process_inspector or WindowsProcessInspector(),
                 port=port,
+                installation_id=config.installation_id,
             )
-            config = load_config(default_config_path(root))
             result = create_backup(
                 source_db=root / "db.sqlite3",
                 media_root=root / "media",
@@ -135,10 +136,12 @@ def main(
             if metadata is None:
                 return 2
             reason, operation_id = metadata
+            config = load_config(default_config_path(root))
             ensure_server_not_active(
                 project_root=root,
                 process_inspector=process_inspector or WindowsProcessInspector(),
                 port=port,
+                installation_id=config.installation_id,
             )
             confirmation = input_fn(
                 "Digite RESTAURAR para substituir os dados atuais: "
@@ -146,7 +149,6 @@ def main(
             if confirmation != "RESTAURAR":
                 print("Restauração cancelada; nada foi alterado", file=sys.stderr)
                 return 2
-            config = load_config(default_config_path(root))
             restored = restore_backup(
                 archive_path=Path(arguments.arquivo),
                 project_root=root,
@@ -161,7 +163,7 @@ def main(
         if arguments.command == "runtime":
             config = load_config(default_config_path(root))
             if arguments.runtime_command == "stop":
-                runtime_stop(project_root=root)
+                runtime_stop(project_root=root, installation_id=config.installation_id)
                 print("Servidor Cruz Fit encerrado")
                 return 0
             metadata = _required_metadata(arguments)

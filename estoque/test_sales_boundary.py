@@ -79,7 +79,9 @@ class SalesRouteTests(TestCase):
 
     def test_sales_templates_use_canonical_sales_mount_for_follow_up_links(self):
         """Given qualquer mount; Then links seguintes permanecem no app de vendas."""
-        response = self.client.get(reverse('vendas:vendas'))
+        response = self.client.get(
+            reverse('vendas:vendas'), {'periodo': 'historico'},
+        )
 
         self.assertContains(
             response,

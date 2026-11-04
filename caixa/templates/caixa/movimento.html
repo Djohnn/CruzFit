@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}{{ heading }} | Cruz Fit{% endblock %}
+
+{% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
+
+{% block 'body' %}
+<main class="container cash-page">
+    <header class="page-heading cash-page-heading">
+        <div><h1>{{ heading }}</h1><p>Registre a entrada ou retirada de dinheiro com motivo e autoria.</p></div>
+        <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
+    </header>
+    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% if sessao %}
+    <section class="surface-section cash-form-surface" aria-labelledby="movement-heading">
+        <h2 id="movement-heading">Sessão #{{ sessao.pk }} aberta</h2>
+        <p class="section-help">Dinheiro esperado agora: <strong>R$ {{ saldo_dinheiro|floatformat:2 }}</strong></p>
+        <form method="post" class="operational-form" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+            <div class="form-group">
+                <label for="movement-amount">Valor (R$)</label>
+                <input id="movement-amount" name="valor" class="form-control" type="number" min="0.01" step="0.01" inputmode="decimal" value="{{ valor }}" required aria-describedby="movement-amount-help">
+                <small id="movement-amount-help" class="section-help">Informe um valor positivo. Uma sangria não pode exceder o dinheiro físico esperado.</small>
+            </div>
+            <div class="form-group">
+                <label for="movement-reason">Motivo</label>
+                <textarea id="movement-reason" name="motivo" class="form-control" rows="3" maxlength="500" required>{{ motivo }}</textarea>
+            </div>
+            <div class="cash-actions">
+                <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Cancelar</a>
+                <button class="btn btn-primary" type="submit">{{ heading }}</button>
+            </div>
+        </form>
+    </section>
+    {% else %}
+    <section class="surface-section cash-empty" aria-labelledby="no-session-heading">
+        <h2 id="no-session-heading">Nenhuma sessão aberta</h2>
+        <p>Abra uma sessão antes de registrar movimentos de dinheiro.</p>
+        <a class="btn btn-primary" href="{% url 'caixa:abrir' %}">Abrir sessão</a>
+    </section>
+    {% endif %}
+</main>
+{% endblock %}

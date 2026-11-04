@@ -5,11 +5,139 @@
 
 {% block 'head' %}
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+    <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
     <style>
         @media print {
+            @page {
+                margin: 0;
+            }
+
+            html,
+            body {
+                display: block !important;
+                width: 100%;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                height: auto !important;
+                margin: 0;
+                padding: 0;
+                background: #fff !important;
+            }
+
             .navbar, .no-print { display: none !important; }
-            .receipt-page { max-width: 82mm; margin: 0 auto; }
-            .receipt-sheet { border: 0; box-shadow: none; padding: 0; }
+
+            .receipt-page,
+            .container.receipt-page {
+                width: 100% !important;
+                max-width: 48mm !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                height: auto !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            .receipt-sheet {
+                box-sizing: border-box;
+                width: 100%;
+                border: 0;
+                border-radius: 0;
+                box-shadow: none;
+                min-height: 0 !important;
+                height: auto !important;
+                margin: 0 !important;
+                padding: 2mm;
+                background: #fff !important;
+                color: #000 !important;
+            }
+
+            .receipt-sheet,
+            .receipt-sheet * {
+                color: #000 !important;
+                font-weight: 700 !important;
+            }
+
+            .receipt-header .eyebrow {
+                margin: 0 0 1mm;
+                color: #000 !important;
+                font-size: 12px !important;
+                font-weight: 900 !important;
+                letter-spacing: 0.08em;
+            }
+
+            .receipt-header {
+                padding-bottom: 1mm;
+                border-bottom-color: #000;
+            }
+
+            .receipt-header p {
+                margin: 0 0 1mm;
+            }
+
+            .receipt-header h1 {
+                font-size: 14px;
+            }
+
+            .receipt-header p,
+            .receipt-table,
+            .receipt-totals,
+            .receipt-footer {
+                font-size: 12px;
+            }
+
+            .receipt-table {
+                margin: 3mm 0;
+            }
+
+            .receipt-table th,
+            .receipt-table td {
+                padding: 1mm 0;
+                border-bottom: 1px dashed #000;
+                color: #000;
+            }
+
+            .receipt-table small,
+            .receipt-totals div,
+            .receipt-footer {
+                color: #000;
+            }
+
+            .receipt-totals {
+                max-width: none;
+                margin: 3mm 0 0;
+            }
+
+            .receipt-totals dd,
+            .receipt-total dd {
+                color: #000;
+            }
+
+            #receipt-payments-heading {
+                font-size: 14px;
+            }
+
+            .receipt-payments {
+                font-size: 12px;
+            }
+
+            .receipt-payments li {
+                border-bottom-color: #000;
+            }
+
+            .receipt-payment-values {
+                grid-template-columns: 1fr;
+            }
+
+            .receipt-payment-values dt {
+                color: #000;
+                font-size: inherit;
+            }
+
+            .receipt-footer {
+                margin-top: 4mm;
+                padding-top: 3mm;
+                border-top-color: #000;
+            }
         }
     </style>
 {% endblock %}
@@ -22,9 +150,12 @@
     </div>
     <article class="receipt-sheet" aria-labelledby="receipt-heading">
         <header class="receipt-header">
-            <p class="eyebrow">Cruz Fit</p>
+            <p class="eyebrow">CRUZFIT</p>
+            <p>CNPJ 69.631.373/0001-67</p>
+            <p>Avenida Noel Rosa QD 8 Lt 5<br>Residencial Ytapuã - Goiânia</p>
             <h1 id="receipt-heading">Comprovante de venda</h1>
             <p>Venda #{{ venda.pk }} · {{ venda.criada_em|date:"d/m/Y H:i" }}</p>
+            <p>Cliente: Consumidor final</p>
         </header>
         <table class="receipt-table">
             <thead><tr><th>Item</th><th>Qtd.</th><th>Total</th></tr></thead>
@@ -38,8 +169,11 @@
             <div><dt>Subtotal</dt><dd>R$ {{ venda.subtotal|floatformat:2 }}</dd></div>
             <div><dt>Desconto</dt><dd>R$ {{ venda.desconto|floatformat:2 }}</dd></div>
             <div class="receipt-total"><dt>Total</dt><dd>R$ {{ venda.total|floatformat:2 }}</dd></div>
-            <div><dt>Pagamento</dt><dd>{{ venda.get_forma_pagamento_display }}</dd></div>
+            {% if recebimento %}
+                <div><dt>Recebimento</dt><dd>R$ {{ recebimento.valor_total|floatformat:2 }}</dd></div>
+            {% else %}<div><dt>Pagamento</dt><dd>{{ venda.get_forma_pagamento_display }}</dd></div>{% endif %}
         </dl>
+        {% if recebimento %}<section aria-labelledby="receipt-payments-heading"><h2 id="receipt-payments-heading">Formas recebidas</h2><ul class="receipt-payments">{% for pagamento in recebimento.pagamentos.all %}<li><strong>{{ pagamento.get_forma_display }}</strong><dl class="receipt-payment-values"><div><dt>Aplicado</dt><dd>R$ {{ pagamento.valor_aplicado|floatformat:2 }}</dd></div>{% if pagamento.forma == 'DINHEIRO' %}<div><dt>Entregue</dt><dd>R$ {{ pagamento.valor_entregue|floatformat:2 }}</dd></div><div><dt>Troco</dt><dd>R$ {{ pagamento.troco|floatformat:2 }}</dd></div>{% endif %}</dl></li>{% empty %}<li>Sem cobrança</li>{% endfor %}</ul></section>{% endif %}
         <footer class="receipt-footer">Responsável: {{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</footer>
     </article>
 </main>
