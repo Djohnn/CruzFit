@@ -6,12 +6,14 @@
 {% block 'head' %}
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
     <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
+    <link rel="stylesheet" href="{% static 'vendas/css/checkout.css' %}">
+    <script src="{% static 'vendas/js/checkout.js' %}" defer></script>
 {% endblock %}
 
 {% block 'body' %}
-<main class="container sale-page cash-checkout">
+<main class="container sale-page cash-page cash-checkout">
     <header class="page-heading sale-page-heading">
-        <div><h1>Registrar venda</h1><p>Consumidor final · confira os itens, distribua o pagamento e confirme a baixa automática do estoque.</p></div>
+        <div><h1>Nova venda</h1><p>Consumidor final · adicione os produtos e escolha como receber.</p></div>
         <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
     </header>
     {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
@@ -30,188 +32,95 @@
             <input type="hidden" name="assinatura_revisao" value="{{ assinatura_revisao }}">
         {% endif %}
 
-        <section class="surface-section" aria-labelledby="sale-items-heading">
-            <div class="section-heading-row sale-section-heading"><div><h2 id="sale-items-heading">Itens da venda</h2><p class="section-help">Busque por nome ou código. O servidor confirma preço, desconto e disponibilidade ao revisar.</p></div><button id="add-sale-item" class="btn btn-outline-light" type="button">Adicionar produto</button></div>
+        <div class="checkout-layout">
+        <section class="surface-section checkout-cart" aria-labelledby="sale-items-heading">
+            <h2 id="sale-items-heading">Carrinho</h2>
+            <div class="checkout-search">
+                <label for="checkout-search">Buscar produto</label>
+                <input id="checkout-search" class="form-control" type="search" placeholder="Nome ou código de barras" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="checkout-results">
+                <div id="checkout-results" class="sale-search-results" role="listbox" hidden></div>
+                <p id="checkout-search-status" class="section-help" role="status">Pesquise e clique no produto para adicionar.</p>
+            </div>
+            <p id="checkout-empty" class="section-help" hidden>Seu carrinho está vazio.</p>
             <div id="sale-items" class="sale-line-items">
                 {% for linha in linhas %}
                 <div class="sale-line-item" data-sale-row>
                     <div class="sale-product-field" data-product-search>
                         <label for="sale-product-query-{{ forloop.counter }}">Produto</label>
-                        <input id="sale-product-query-{{ forloop.counter }}" class="form-control sale-product-query" type="search" autocomplete="off" placeholder="Nome ou código de barras" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sale-product-results-{{ forloop.counter }}" required>
+                        <input id="sale-product-query-{{ forloop.counter }}" class="form-control sale-product-query" type="text" readonly aria-label="Produto no carrinho">
                         <input type="hidden" name="produto" value="{{ linha.produto }}" data-product-value required>
                         <div id="sale-product-results-{{ forloop.counter }}" class="sale-search-results" role="listbox" hidden></div>
                         <small class="sale-selected-product" data-selected-product aria-live="polite"></small>
                     </div>
                     <div class="sale-quantity-field"><label for="sale-quantity-{{ forloop.counter }}">Quantidade</label><input id="sale-quantity-{{ forloop.counter }}" class="form-control" type="number" name="quantidade" min="0.01" step="0.01" value="{{ linha.quantidade|default:'1' }}" required></div>
-                    <div class="sale-price-field"><span class="sale-field-label">Preço unitário</span><strong data-unit-price>Validado ao revisar</strong></div>
+                    <div class="sale-price-field"><span class="sale-field-label">Unitário</span><strong data-unit-price></strong></div>
+                    <div class="sale-price-field"><span class="sale-field-label">Total</span><strong data-line-total></strong></div>
                     <button class="btn btn-outline-danger sale-remove-button" type="button" aria-label="Remover produto da venda">Remover</button>
                 </div>
                 {% endfor %}
             </div>
-            <div class="sale-fields"><div class="form-group"><label for="sale-discount">Desconto <span class="field-optional">(R$)</span></label><input id="sale-discount" class="form-control" type="number" name="desconto" min="0" step="0.01" inputmode="decimal" value="{{ desconto|default:'0' }}"><small class="section-help">O desconto será rateado no recebimento e não pode superar o subtotal.</small></div></div>
+            <div class="checkout-discount">
+                <div><label for="discount-mode">Desconto em</label><select id="discount-mode" name="discount_mode" class="form-control"><option value="reais">R$</option><option value="percentual" {% if request.POST.discount_mode == 'percentual' %}selected{% endif %}>%</option></select></div>
+                <div><label for="discount-input">Desconto</label><input id="discount-input" name="discount_input" class="form-control" type="number" min="0" step="0.01" value="{{ request.POST.discount_input|default:desconto|default:'0' }}" inputmode="decimal"></div>
+                <input id="sale-discount" type="hidden" name="desconto" value="{{ desconto|default:'0' }}">
+            </div>
+            <p class="section-help">O total e o valor a pagar são atualizados ao alterar o desconto.</p>
         </section>
 
-        <section class="surface-section cash-payment-section" aria-labelledby="cash-payments-heading">
-            <div class="section-heading-row"><div><h2 id="cash-payments-heading">Pagamento</h2><p class="section-help">Use uma, duas ou três formas. A soma aplicada precisa fechar exatamente o total líquido.</p></div><button id="add-payment" class="btn btn-outline-light" type="button">Adicionar forma</button></div>
+        <section class="surface-section cash-payment-section checkout-payment" aria-labelledby="cash-payments-heading">
+            <div class="section-heading-row"><div><h2 id="cash-payments-heading">Pagamento</h2><p class="section-help">Escolha como receber. Você pode combinar as formas de pagamento.</p></div><button id="add-payment" class="btn btn-outline-light" type="button">Adicionar forma</button></div>
+            <div class="checkout-methods" aria-label="Escolher forma de pagamento">
+                {% for value, label in formas_pagamento %}<button type="button" class="btn btn-outline-light" data-payment-method="{{ value }}">{{ label }}</button>{% endfor %}
+            </div>
             <div id="payment-lines" class="cash-payment-lines">
             {% for pagamento in pagamentos %}
                 <div class="cash-payment-row" data-payment-row>
                     <div class="form-group"><label for="payment-form-{{ forloop.counter }}">Forma de pagamento</label><select id="payment-form-{{ forloop.counter }}" class="form-control" name="forma_parcela"><option value="">Selecione</option>{% for value, label in formas_pagamento %}<option value="{{ value }}" {% if pagamento.forma == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-                    <div class="form-group"><label for="payment-applied-{{ forloop.counter }}">Valor aplicado (R$)</label><input id="payment-applied-{{ forloop.counter }}" class="form-control" type="number" name="valor_aplicado" min="0.01" step="0.01" inputmode="decimal" value="{{ pagamento.valor_aplicado }}"></div>
-                    <div class="form-group"><label for="payment-tendered-{{ forloop.counter }}">Valor entregue em dinheiro (R$)</label><input id="payment-tendered-{{ forloop.counter }}" class="form-control" type="number" name="valor_entregue" min="0" step="0.01" inputmode="decimal" value="{{ pagamento.valor_entregue }}" aria-describedby="cash-tender-help-{{ forloop.counter }}"><small id="cash-tender-help-{{ forloop.counter }}" class="section-help">Obrigatório para dinheiro; nas outras formas, igual ao aplicado.</small></div>
+                    <div class="form-group"><label for="payment-applied-{{ forloop.counter }}">Valor a pagar nesta forma (R$)</label><input id="payment-applied-{{ forloop.counter }}" class="form-control" type="number" name="valor_aplicado" min="0.01" step="0.01" inputmode="decimal" value="{{ pagamento.valor_aplicado }}"></div>
+                    <div class="form-group"><label for="payment-tendered-{{ forloop.counter }}">Valor recebido em dinheiro (R$)</label><input id="payment-tendered-{{ forloop.counter }}" class="form-control" type="number" name="valor_entregue" min="0" step="0.01" inputmode="decimal" value="{{ pagamento.valor_entregue }}" aria-describedby="cash-tender-help-{{ forloop.counter }}"><small id="cash-tender-help-{{ forloop.counter }}" class="section-help">Informe quanto o cliente entregou. O troco é calculado automaticamente.</small></div>
+                    <button type="button" class="btn btn-outline-light payment-remaining-button">Pagar restante</button>
                     <button class="btn btn-outline-danger payment-remove-button" type="button" aria-label="Remover forma de pagamento">Remover</button>
                 </div>
             {% endfor %}
             </div>
+        <section class="checkout-receipt" aria-labelledby="checkout-receipt-title">
+            <h2 id="checkout-receipt-title">Recebimento</h2>
+            <dl class="checkout-totals" aria-live="polite">
+                <div><dt>Subtotal</dt><dd data-summary="subtotal">R$ 0,00</dd></div>
+                <div><dt>Desconto</dt><dd data-summary="discount">R$ 0,00</dd></div>
+                <div class="checkout-grand-total"><dt>Total da venda</dt><dd data-summary="total">R$ 0,00</dd></div>
+                <div><dt>Pagamentos</dt><dd data-summary="paid">R$ 0,00</dd></div>
+                <div><dt>Falta pagar</dt><dd data-summary="remaining">R$ 0,00</dd></div>
+                <div><dt>Troco</dt><dd data-summary="change">R$ 0,00</dd></div>
+            </dl>
+            <p id="checkout-payment-status" role="status"></p>
         </section>
 
-        {% if preview and payment_preview %}
+        {% if previewed and preview and payment_preview %}
+        <dialog id="sale-confirm-dialog" class="checkout-review-dialog" aria-labelledby="sale-review-heading" aria-describedby="sale-review-description">
         <section class="surface-section cash-server-review" aria-labelledby="sale-review-heading" aria-live="polite">
-            <h2 id="sale-review-heading">Revisão do servidor</h2>
+            <h2 id="sale-review-heading">Confira a venda</h2>
+            <p id="sale-review-description">Confira os produtos e o pagamento antes de fechar a venda.</p>
             <p>Cliente: Consumidor final</p>
             <ul class="cash-review-items">{% for line in preview.lines %}<li><span>{{ line.product_name }} · {{ line.quantity }} × R$ {{ line.unit_price|floatformat:2 }}</span><strong>R$ {{ line.total|floatformat:2 }}</strong></li>{% endfor %}</ul>
             <dl class="cash-review-totals"><div><dt>Subtotal</dt><dd>R$ {{ preview.subtotal|floatformat:2 }}</dd></div><div><dt>Desconto</dt><dd>R$ {{ preview.discount|floatformat:2 }}</dd></div><div><dt>Total da venda</dt><dd>R$ {{ preview.total|floatformat:2 }}</dd></div></dl>
-            <h3>Parcelas</h3>
-            <ul class="cash-review-items">{% for pagamento in payment_preview.pagamentos %}<li><span>{{ pagamento.forma_label }} · aplicado R$ {{ pagamento.valor_aplicado|floatformat:2 }}{% if pagamento.forma == 'DINHEIRO' %} · entregue R$ {{ pagamento.valor_entregue|floatformat:2 }}{% endif %}</span><strong>{% if pagamento.forma == 'DINHEIRO' %}Troco R$ {{ pagamento.troco|floatformat:2 }}{% else %}Recebido R$ {{ pagamento.valor_aplicado|floatformat:2 }}{% endif %}</strong></li>{% empty %}<li>Sem cobrança para este total.</li>{% endfor %}</ul>
-            <dl class="cash-review-totals"><div><dt>Total aplicado</dt><dd>R$ {{ payment_preview.valor_aplicado|floatformat:2 }}</dd></div><div><dt>Restante</dt><dd>R$ {{ payment_preview.restante|floatformat:2 }}</dd></div><div><dt>Valor entregue</dt><dd>R$ {{ payment_preview.valor_entregue|floatformat:2 }}</dd></div><div><dt>Troco</dt><dd>R$ {{ payment_preview.troco|floatformat:2 }}</dd></div></dl>
+            <h3>Formas de pagamento</h3>
+            <ul class="cash-review-items">{% for pagamento in payment_preview.pagamentos %}<li><span>{{ pagamento.forma_label }} · pagamento R$ {{ pagamento.valor_aplicado|floatformat:2 }}{% if pagamento.forma == 'DINHEIRO' %} · recebido R$ {{ pagamento.valor_entregue|floatformat:2 }}{% endif %}</span><strong>{% if pagamento.forma == 'DINHEIRO' %}Troco R$ {{ pagamento.troco|floatformat:2 }}{% else %}Recebido R$ {{ pagamento.valor_aplicado|floatformat:2 }}{% endif %}</strong></li>{% empty %}<li>Sem cobrança para este total.</li>{% endfor %}</ul>
+            <p class="checkout-reviewed-change"><strong>Troco</strong> R$ {{ payment_preview.troco|floatformat:2 }}</p>
             <p class="section-help">Confirme para registrar venda, recebimento e baixa de estoque juntos.</p>
         </section>
+        <div class="cash-actions checkout-modal-actions">
+            <button id="return-to-sale-button" class="btn btn-outline-light" type="button" autofocus>Voltar</button>
+            <button id="confirm-sale-button" class="btn btn-primary" name="acao" value="confirmar" type="submit">Fechar venda</button>
+        </div>
+        </dialog>
         {% endif %}
 
-        <div class="cash-actions"><button id="review-sale-button" class="btn btn-outline-light" name="acao" value="revisar" type="submit">Revisar venda e recebimento</button>{% if previewed %}<button id="confirm-sale-button" class="btn btn-primary" name="acao" value="confirmar" type="submit">Confirmar venda</button>{% endif %}</div>
+        <div class="cash-actions"><button id="review-sale-button" class="btn btn-primary" name="acao" value="revisar" type="submit">Revisar venda</button></div>
+        </section>
+        </div>
     </form>
     {% endif %}
 </main>
 {{ catalogo|json_script:"sale-product-catalog" }}
-<script>
-window.addEventListener('DOMContentLoaded', function () {
-    const form = document.getElementById('sale-form');
-    if (!form) return;
-    const items = document.getElementById('sale-items');
-    const payments = document.getElementById('payment-lines');
-    const catalog = JSON.parse(document.getElementById('sale-product-catalog').textContent);
-    let rowIndex = items.querySelectorAll('[data-sale-row]').length;
-    let paymentIndex = payments.querySelectorAll('[data-payment-row]').length;
-    function productById(id) { return catalog.find(function (product) { return String(product.id) === String(id); }); }
-    function invalidateReview() {
-        const confirmed = form.querySelector('[name="revisao_confirmada"]');
-        if (confirmed) confirmed.value = '0';
-        const signature = form.querySelector('[name="assinatura_revisao"]');
-        if (signature) signature.value = '';
-        const confirm = document.getElementById('confirm-sale-button');
-        if (confirm) confirm.remove();
-    }
-    function closeResults(row) {
-        const query = row.querySelector('.sale-product-query');
-        const list = row.querySelector('.sale-search-results');
-        query.setAttribute('aria-expanded', 'false');
-        query.removeAttribute('aria-activedescendant');
-        list.hidden = true;
-    }
-    function choose(row, product, invalidate) {
-        row.querySelector('[data-product-value]').value = product.id;
-        row.querySelector('.sale-product-query').value = product.nome;
-        row.querySelector('[data-selected-product]').textContent = product.codigo_barras ? 'Código: ' + product.codigo_barras : 'Produto selecionado';
-        row.querySelector('[data-unit-price]').textContent = 'R$ ' + Number(product.preco).toLocaleString('pt-BR', {minimumFractionDigits: 2});
-        closeResults(row);
-        if (invalidate !== false) invalidateReview();
-    }
-    function bindSearch(row) {
-        const query = row.querySelector('.sale-product-query');
-        const list = row.querySelector('.sale-search-results');
-        query.addEventListener('input', function () {
-            row.querySelector('[data-product-value]').value = '';
-            row.querySelector('[data-selected-product]').textContent = '';
-            const needle = query.value.trim().toLocaleLowerCase('pt-BR');
-            list.replaceChildren();
-            const matches = needle ? catalog.filter(function (product) { return product.nome.toLocaleLowerCase('pt-BR').includes(needle) || String(product.codigo_barras).includes(needle); }).slice(0, 8) : [];
-            matches.forEach(function (product, index) {
-                const option = document.createElement('button');
-                option.type = 'button'; option.className = 'sale-search-option'; option.id = list.id + '-option-' + index;
-                option.setAttribute('role', 'option'); option.setAttribute('aria-selected', 'false');
-                option.textContent = product.nome + (product.codigo_barras ? ' · ' + product.codigo_barras : '');
-                option.addEventListener('click', function () { choose(row, product); });
-                list.appendChild(option);
-            });
-            list.hidden = matches.length === 0;
-            query.setAttribute('aria-expanded', matches.length ? 'true' : 'false');
-            invalidateReview();
-        });
-        query.addEventListener('keydown', function (event) {
-            const options = Array.from(list.querySelectorAll('[role="option"]'));
-            if (event.key === 'Escape') { closeResults(row); return; }
-            if (!options.length || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
-            event.preventDefault();
-            let current = options.findIndex(function (option) { return option.id === query.getAttribute('aria-activedescendant'); });
-            if (event.key === 'Enter' && current >= 0) { options[current].click(); return; }
-            current = event.key === 'ArrowDown' ? (current + 1) % options.length : (current <= 0 ? options.length - 1 : current - 1);
-            options.forEach(function (option, index) { option.setAttribute('aria-selected', index === current ? 'true' : 'false'); });
-            query.setAttribute('aria-activedescendant', options[current].id);
-        });
-    }
-    function bindSaleRow(row) {
-        bindSearch(row);
-        const product = productById(row.querySelector('[data-product-value]').value);
-        if (product) choose(row, product, false);
-        row.querySelector('[name="quantidade"]').addEventListener('input', invalidateReview);
-        row.querySelector('.sale-remove-button').addEventListener('click', function () {
-            if (items.querySelectorAll('[data-sale-row]').length === 1) {
-                row.querySelector('.sale-product-query').value = '';
-                row.querySelector('[data-product-value]').value = '';
-                row.querySelector('[data-selected-product]').textContent = '';
-                row.querySelector('[data-unit-price]').textContent = 'Validado ao revisar';
-            } else row.remove();
-            invalidateReview();
-        });
-    }
-    function bindPaymentRow(row) {
-        row.querySelectorAll('select, input').forEach(function (field) { field.addEventListener('input', invalidateReview); field.addEventListener('change', invalidateReview); });
-        row.querySelector('.payment-remove-button').addEventListener('click', function () {
-            if (payments.querySelectorAll('[data-payment-row]').length === 1) {
-                row.querySelector('select').value = '';
-                row.querySelectorAll('input').forEach(function (input) { input.value = ''; });
-            } else row.remove();
-            invalidateReview();
-        });
-    }
-    document.getElementById('add-sale-item').addEventListener('click', function () {
-        const row = items.querySelector('[data-sale-row]').cloneNode(true); const index = ++rowIndex;
-        row.querySelector('label[for^="sale-product-query"]').htmlFor = 'sale-product-query-' + index;
-        row.querySelector('.sale-product-query').id = 'sale-product-query-' + index;
-        row.querySelector('.sale-product-query').value = ''; row.querySelector('[data-product-value]').value = '';
-        row.querySelector('[data-selected-product]').textContent = ''; row.querySelector('[data-unit-price]').textContent = 'Validado ao revisar';
-        row.querySelector('.sale-search-results').id = 'sale-product-results-' + index;
-        row.querySelector('.sale-product-query').setAttribute('aria-controls', row.querySelector('.sale-search-results').id);
-        row.querySelector('label[for^="sale-quantity"]').htmlFor = 'sale-quantity-' + index;
-        row.querySelector('[name="quantidade"]').id = 'sale-quantity-' + index; row.querySelector('[name="quantidade"]').value = '1';
-        row.querySelector('.sale-search-results').replaceChildren(); row.querySelector('.sale-search-results').hidden = true;
-        items.appendChild(row); bindSaleRow(row); invalidateReview(); row.querySelector('.sale-product-query').focus();
-    });
-    document.getElementById('add-payment').addEventListener('click', function () {
-        const row = payments.querySelector('[data-payment-row]').cloneNode(true); const index = ++paymentIndex;
-        row.querySelectorAll('label').forEach(function (label) { label.htmlFor = label.htmlFor.replace(/-\d+$/, '-' + index); });
-        row.querySelectorAll('select, input').forEach(function (field) { field.value = ''; field.id = field.id.replace(/-\d+$/, '-' + index); });
-        const help = row.querySelector('small'); if (help) help.id = help.id.replace(/-\d+$/, '-' + index);
-        const tendered = row.querySelector('[name="valor_entregue"]'); tendered.setAttribute('aria-describedby', help.id);
-        payments.appendChild(row); bindPaymentRow(row); invalidateReview(); row.querySelector('select').focus();
-    });
-    items.querySelectorAll('[data-sale-row]').forEach(bindSaleRow);
-    payments.querySelectorAll('[data-payment-row]').forEach(bindPaymentRow);
-    form.querySelectorAll('#sale-discount').forEach(function (field) { field.addEventListener('input', invalidateReview); });
-    form.querySelectorAll('[name="forma_parcela"], [name="valor_aplicado"], [name="valor_entregue"]').forEach(function (field) { field.addEventListener('input', invalidateReview); field.addEventListener('change', invalidateReview); });
-    document.addEventListener('click', function (event) { items.querySelectorAll('[data-sale-row]').forEach(function (row) { if (!row.querySelector('[data-product-search]').contains(event.target)) closeResults(row); }); });
-    form.addEventListener('submit', function (event) {
-        if (!event.submitter || event.submitter.value !== 'confirmar') return;
-        const confirm = document.getElementById('confirm-sale-button');
-        if (confirm) {
-            const action = document.createElement('input');
-            action.type = 'hidden'; action.name = 'acao'; action.value = 'confirmar';
-            form.appendChild(action);
-            confirm.removeAttribute('name');
-            confirm.disabled = true;
-            confirm.textContent = 'Registrando venda…';
-        }
-    });
-});
-</script>
 {% endblock %}

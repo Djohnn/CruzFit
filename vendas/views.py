@@ -234,7 +234,7 @@ def registrar_venda(request):
         else:
             payments = []
     else:
-        payments = [{'forma': 'DINHEIRO', 'valor_aplicado': '', 'valor_entregue': ''}]
+        payments = [{'forma': '', 'valor_aplicado': '', 'valor_entregue': ''}]
 
     return render(
         request,
