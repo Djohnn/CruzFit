@@ -798,7 +798,7 @@ class RemediationRegressionTests(TestCase):
         response = self.client.get("/", follow=False)
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Escolha uma ação para continuar")
+        self.assertContains(response, "Acesse o caixa ou escolha uma tarefa de estoque.")
 
     def test_unauthenticated_root_redirects_to_login(self):
         self.client.logout()
