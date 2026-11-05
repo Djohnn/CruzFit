@@ -46,9 +46,9 @@ class ImpeccableRemediationTemplateTests(TestCase):
     def test_home_groups_actions_without_invalid_span_wrappers(self):
         response = self.client.get(reverse('home'))
 
-        self.assertContains(response, 'Operação principal')
-        self.assertContains(response, 'Movimentações')
-        self.assertContains(response, 'class="home-action-content"')
+        self.assertContains(response, 'Visão do dia')
+        self.assertContains(response, 'Atenção ao estoque')
+        self.assertContains(response, 'Acesso rápido')
         self.assertNotContains(response, '<span>\n                    <h2>')
 
     def test_inventory_cards_show_stock_price_and_status(self):

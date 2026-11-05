@@ -76,17 +76,17 @@ class BrandAndLoginContractTests(unittest.TestCase):
         self.assertIn("surface-section", source)
         self.assertIn("readonly", source)
 
-    def test_home_template_exposes_the_three_approved_inventory_paths(self):
+    def test_home_template_exposes_dashboard_and_operational_paths(self):
         source = (PROJECT_ROOT / "usuarios" / "templates" / "home.html").read_text(
             encoding="utf-8"
         )
 
         self.assertIn("Cadastrar produto", source)
-        self.assertIn("Visualizar estoque", source)
-        self.assertIn("Consultar produto", source)
+        self.assertIn("Atenção ao estoque", source)
+        self.assertIn("Recebimentos de hoje", source)
         self.assertIn("{% url 'add_produto' %}", source)
         self.assertIn("{% url 'estoque' %}", source)
-        self.assertIn("{% url 'consulta_produto' %}", source)
+        self.assertIn("{% url 'vendas:vendas' %}", source)
 
     def test_product_and_vendor_templates_have_approved_operational_states(self):
         product_source = (
@@ -230,14 +230,14 @@ class RemediationRegressionTests(TestCase):
 
         self.assertEqual(Users.objects.filter(first_name="Conta Duplicada").count(), 1)
 
-    def test_authenticated_home_renders_the_approved_action_cards(self):
+    def test_authenticated_home_renders_the_approved_dashboard(self):
         response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Cadastrar produto")
-        self.assertContains(response, "Visualizar estoque")
-        self.assertContains(response, "Consultar produto")
-        self.assertContains(response, "Registrar baixa")
+        self.assertContains(response, "Atenção ao estoque")
+        self.assertContains(response, "Recebimentos de hoje")
+        self.assertContains(response, "Últimas vendas")
         self.assertContains(response, "Registrar entrada")
 
     def test_stock_outflow_page_renders_multi_product_form_and_history(self):
@@ -798,7 +798,7 @@ class RemediationRegressionTests(TestCase):
         response = self.client.get("/", follow=False)
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Acesse o caixa ou escolha uma tarefa de estoque.")
+        self.assertContains(response, "Visão do dia")
 
     def test_unauthenticated_root_redirects_to_login(self):
         self.client.logout()

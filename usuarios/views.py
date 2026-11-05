@@ -7,6 +7,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from .dashboard import painel_do_dia
 from .models import Users
 from .services import (
     AmbiguousIdentifierError,
@@ -103,7 +104,7 @@ def login(request):
 @login_required(login_url='login')
 @require_GET
 def home(request):
-    return render(request, 'home.html')
+    return render(request, 'home.html', {"painel": painel_do_dia()})
 
 
 @require_POST
