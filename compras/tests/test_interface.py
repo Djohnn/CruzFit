@@ -1,4 +1,5 @@
 from decimal import Decimal
+from html.parser import HTMLParser
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -9,6 +10,28 @@ from compras.services import confirmar_pedido, criar_rascunho, receber_pedido
 from estoque.models import Categoria, Fornecedor, Produto
 
 User = get_user_model()
+
+
+class DashboardShortcutParser(HTMLParser):
+    """Collect links only from the Home dashboard shortcut navigation."""
+
+    def __init__(self):
+        super().__init__()
+        self.in_shortcuts = False
+        self.hrefs = []
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == 'nav' and 'dashboard-shortcuts' in attributes.get('class', '').split():
+            self.in_shortcuts = True
+        elif tag == 'a' and self.in_shortcuts:
+            href = attributes.get('href')
+            if href:
+                self.hrefs.append(href)
+
+    def handle_endtag(self, tag):
+        if tag == 'nav' and self.in_shortcuts:
+            self.in_shortcuts = False
 
 
 class PurchaseInterfaceTests(TestCase):
@@ -115,6 +138,31 @@ class PurchaseInterfaceTests(TestCase):
             response,
             f"{reverse('login')}?next={reverse('compras:lista')}",
         )
+
+    def test_home_do_gerente_exibe_atalho_de_compras(self):
+        """Given a manager, When opening Home, Then the readable Compras shortcut is present."""
+        self._login(self.manager)
+
+        response = self.client.get(reverse('home'))
+        parser = DashboardShortcutParser()
+        parser.feed(response.content.decode())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(reverse('compras:lista'), parser.hrefs)
+
+    def test_home_do_vendedor_exibe_atalho_de_compras(self):
+        """Given a seller, When opening Home, Then the same authenticated Compras shortcut is present."""
+        self._login(self.seller)
+
+        response = self.client.get(reverse('home'))
+        parser = DashboardShortcutParser()
+        parser.feed(response.content.decode())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(reverse('compras:lista'), parser.hrefs)
+
+        lista = self.client.get(reverse('compras:lista'))
+        self.assertEqual(lista.status_code, 200)
 
     def test_lista_filtra_fornecedor_e_estado(self):
         """Given two orders, When filtering, Then only the selected order is shown."""
