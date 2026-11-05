@@ -119,7 +119,7 @@
                         </thead>
                         <tbody>
                             {% for entrada in historico %}
-                                <tr>
+                                <tr id="entrada-{{ entrada.pk }}">
                                     <td>{{ entrada.criada_em|date:"d/m/Y · H:i" }}</td>
                                     <td>
                                         {% for item in entrada.itens.all %}

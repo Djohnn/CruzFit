@@ -28,6 +28,7 @@
           <div class="inventory-nav-links">
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}" href="{% url 'home' %}" {% if request.resolver_match.url_name == 'home' %}aria-current="page"{% endif %}>Início</a>
             <a class="inventory-nav-link {% if 'fornecedor' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'fornecedores' %}">Fornecedores</a>
+            <a class="inventory-nav-link {% if request.resolver_match.namespace == 'compras' %}active{% endif %}" href="{% url 'compras:lista' %}" {% if request.resolver_match.namespace == 'compras' %}aria-current="page"{% endif %}>Compras</a>
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'estoque' or request.resolver_match.url_name == 'produto' or request.resolver_match.url_name == 'add_produto' %}active{% endif %}" href="{% url 'estoque' %}" {% if request.resolver_match.url_name == 'estoque' or request.resolver_match.url_name == 'produto' or request.resolver_match.url_name == 'add_produto' %}aria-current="page"{% endif %}>Estoque</a>
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'modelos_etiqueta' %}active{% endif %}" href="{% url 'modelos_etiqueta' %}">Etiquetas</a>
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'consulta_produto' %}active{% endif %}" href="{% url 'consulta_produto' %}">Consulta</a>

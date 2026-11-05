@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Compras | Cruz Fit{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'compras/css/compras.css' %}">{% endblock %}
+
+{% block 'body' %}
+<main class="container compras-page" data-testid="purchase-list">
+    <header class="page-heading compras-heading">
+        <div>
+            <p class="eyebrow">Suprimentos</p>
+            <h1>Pedidos de compra</h1>
+            <p>Do fornecedor ao estoque, com cada saldo e evento no mesmo histórico.</p>
+        </div>
+        {% if request.user.is_superuser or request.user.cargo == 'G' %}
+            <a class="btn btn-primary" href="{% url 'compras:novo' %}">Novo pedido</a>
+        {% endif %}
+    </header>
+
+    {% if messages %}
+        <div class="feedback-stack" aria-live="polite">
+            {% for message in messages %}<div class="alert {{ message.tags }}" role="status">{{ message }}</div>{% endfor %}
+        </div>
+    {% endif %}
+
+    <section class="surface-section purchase-filters" aria-labelledby="purchase-filters-heading">
+        <div class="section-heading-row">
+            <div><h2 id="purchase-filters-heading">Filtrar pedidos</h2><p class="section-help">Combine fornecedor, estado e período sem perder o contexto.</p></div>
+        </div>
+        <form method="get" class="filters-grid" novalidate>
+            <div class="form-group"><label for="id_fornecedor">Fornecedor</label><select class="form-control" id="id_fornecedor" name="fornecedor"><option value="">Todos os fornecedores</option>{% for fornecedor in fornecedores %}<option value="{{ fornecedor.pk }}"{% if filtros.fornecedor == fornecedor.pk|stringformat:'s' %} selected{% endif %}>{{ fornecedor.nome }}</option>{% endfor %}</select></div>
+            <div class="form-group"><label for="id_estado">Estado</label><select class="form-control" id="id_estado" name="estado"><option value="">Todos os estados</option>{% for value,label in estados %}<option value="{{ value }}"{% if filtros.estado == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+            <div class="form-group"><label for="id_data_inicio">Criado a partir de</label><input class="form-control" id="id_data_inicio" type="date" name="data_inicio" value="{{ filtros.data_inicio }}"></div>
+            <div class="form-group"><label for="id_data_fim">Criado até</label><input class="form-control" id="id_data_fim" type="date" name="data_fim" value="{{ filtros.data_fim }}"></div>
+            <div class="form-actions form-grid-wide"><button class="btn btn-primary" type="submit">Aplicar filtros</button><a class="btn btn-outline-light" href="{% url 'compras:lista' %}">Limpar</a></div>
+        </form>
+    </section>
+
+    <section class="surface-section" aria-labelledby="purchase-results-heading">
+        <div class="section-heading-row"><div><h2 id="purchase-results-heading">Pedidos registrados</h2><p class="section-help">{{ pagina.paginator.count }} pedido{{ pagina.paginator.count|pluralize }} encontrado{{ pagina.paginator.count|pluralize }}.</p></div></div>
+        {% if pedidos %}
+            <div class="purchase-list-desktop table-responsive">
+                <table class="table table-dark purchase-table">
+                    <thead><tr><th scope="col">Pedido</th><th scope="col">Fornecedor</th><th scope="col">Estado</th><th scope="col">Quantidade pedida</th><th scope="col">Quantidade recebida</th><th scope="col">Quantidade cancelada</th><th scope="col">Quantidade pendente</th><th scope="col"><span class="sr-only">Ações</span></th></tr></thead>
+                    <tbody>{% for row in pedidos %}<tr><td><a href="{% url 'compras:detalhe' row.pedido.pk %}">#{{ row.pedido.pk }}</a><small>{{ row.pedido.criado_em|date:'d/m/Y H:i' }}</small></td><td>{{ row.pedido.fornecedor_nome }}</td><td><span class="purchase-status purchase-status-{{ row.pedido.estado|lower }}">{{ row.pedido.get_estado_display }}</span></td><td>{{ row.resumo.pedida|floatformat:2 }}</td><td>{{ row.resumo.recebida|floatformat:2 }}</td><td>{{ row.resumo.cancelada|floatformat:2 }}</td><td>{{ row.resumo.pendente|floatformat:2 }}</td><td><a class="btn btn-outline-light btn-sm" href="{% url 'compras:detalhe' row.pedido.pk %}">Abrir</a></td></tr>{% endfor %}</tbody>
+                </table>
+            </div>
+            <div class="purchase-list-mobile">{% for row in pedidos %}<article class="purchase-card"><div class="purchase-card-top"><a href="{% url 'compras:detalhe' row.pedido.pk %}"><strong>Pedido #{{ row.pedido.pk }}</strong></a><span class="purchase-status purchase-status-{{ row.pedido.estado|lower }}">{{ row.pedido.get_estado_display }}</span></div><p>{{ row.pedido.fornecedor_nome }} · {{ row.pedido.criado_em|date:'d/m/Y H:i' }}</p><dl class="purchase-metrics"><div><dt>Quantidade pedida</dt><dd>{{ row.resumo.pedida|floatformat:2 }}</dd></div><div><dt>Quantidade recebida</dt><dd>{{ row.resumo.recebida|floatformat:2 }}</dd></div><div><dt>Quantidade cancelada</dt><dd>{{ row.resumo.cancelada|floatformat:2 }}</dd></div><div><dt>Quantidade pendente</dt><dd>{{ row.resumo.pendente|floatformat:2 }}</dd></div></dl><a class="btn btn-outline-light btn-sm" href="{% url 'compras:detalhe' row.pedido.pk %}">Abrir pedido</a></article>{% endfor %}</div>
+            {% if pagina.has_other_pages %}<nav class="purchase-pagination" aria-label="Paginação de pedidos"><span>Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>{% if pagina.has_previous %}<a class="btn btn-outline-light btn-sm" href="?{{ querystring }}{% if querystring %}&{% endif %}page={{ pagina.previous_page_number }}">Anterior</a>{% endif %}{% if pagina.has_next %}<a class="btn btn-outline-light btn-sm" href="?{{ querystring }}{% if querystring %}&{% endif %}page={{ pagina.next_page_number }}">Próxima</a>{% endif %}</nav>{% endif %}
+        {% else %}
+            <div class="empty-state" role="status"><strong>Nenhum pedido encontrado.</strong><span>Ajuste os filtros ou crie um novo pedido de compra para começar.</span>{% if request.user.is_superuser or request.user.cargo == 'G' %}<a class="btn btn-primary" href="{% url 'compras:novo' %}">Criar primeiro pedido</a>{% endif %}</div>
+        {% endif %}
+    </section>
+</main>
+{% endblock %}

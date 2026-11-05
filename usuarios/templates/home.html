@@ -79,6 +79,7 @@
                     {% if request.user.cargo == 'G' or request.user.is_superuser %}<a href="{% url 'add_produto' %}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5ZM3 7l9 5 9-5M12 12v10"/></svg>Cadastrar produto</a>{% endif %}
                     <a href="{% url 'registrar_entrada' %}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg>Registrar entrada</a>
                     {% if request.user.cargo == 'G' or request.user.is_superuser %}<a href="{% url 'fornecedores' %}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 5h11v12H3V5Zm11 5h4l3 4v3h-7M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm10 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg>Fornecedores</a>{% endif %}
+                    <a href="{% url 'compras:lista' %}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16v14H4zM8 7V4h8v3M8 12h8m-8 4h8"/></svg>Compras</a>
                 </nav>
             </section>
         </aside>
