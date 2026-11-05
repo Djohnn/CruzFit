@@ -71,6 +71,7 @@ class ProdutoEdicaoForm(forms.ModelForm):
         }
         for field_name, field_id in field_ids.items():
             self.fields[field_name].widget.attrs["id"] = field_id
+            self.fields[field_name].widget.attrs["class"] = "form-control"
 
     def clean_codigo_barras(self):
         codigo_barras = self.cleaned_data.get("codigo_barras")

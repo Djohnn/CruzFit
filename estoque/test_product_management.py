@@ -47,6 +47,19 @@ class ProductManagementTests(TestCase):
         self.assertIsNotNone(service, f"Serviço ausente: {name}")
         return service
 
+    def test_edit_form_styles_fields_and_renders_prices_once(self):
+        """Given gerente; When abrir edição; Then campos estilizados e preços únicos."""
+        self.client.force_login(self.manager)
+        response = self.client.get(
+            reverse("editar_produto", kwargs={"slug": self.product.slug}),
+        )
+        self.assertEqual(response.status_code, 200)
+        for name, field in response.context["form"].fields.items():
+            with self.subTest(field=name):
+                self.assertIn("form-control", field.widget.attrs.get("class", ""))
+                self.assertContains(response, f'name="{name}"', count=1)
+        self.assertContains(response, "Preços e reposição", count=1)
+
     def edit_data(self, **overrides):
         data = {
             "nome": "Camiseta editada",
