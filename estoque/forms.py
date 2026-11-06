@@ -150,6 +150,33 @@ class VariacaoProdutoForm(forms.Form):
             raise forms.ValidationError(str(exc)) from exc
 
 
+class ProdutoConversaoFichaForm(forms.Form):
+    cor = forms.CharField(max_length=40, required=False, label='Cor ausente')
+    tamanho = forms.ChoiceField(
+        choices=Produto.TAMANHO_CHOICES,
+        required=False,
+        label='Tamanho ausente',
+    )
+    motivo = forms.CharField(
+        max_length=500,
+        label='Motivo da conversão',
+        widget=forms.Textarea(attrs={'rows': 3}),
+    )
+    chave_idempotencia = forms.CharField(max_length=64, widget=forms.HiddenInput)
+    confirmacao = forms.BooleanField(
+        required=True,
+        label='Confirmo que o produto original será a primeira variação.',
+    )
+
+    def __init__(self, *args, produto, **kwargs):
+        self.produto = produto
+        super().__init__(*args, **kwargs)
+        self.fields['cor'].required = not bool(produto.cor)
+        self.fields['tamanho'].required = not bool(produto.tamanho)
+        for name, field in self.fields.items():
+            field.widget.attrs.setdefault('class', 'form-control')
+
+
 VariacaoProdutoFormSet = formset_factory(
     VariacaoProdutoForm,
     extra=1,

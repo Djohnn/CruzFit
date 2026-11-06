@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Transformar produto | Cruz Fit{% endblock %}
+
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+    <main class="container inventory-page">
+        <header class="page-heading">
+            <p class="eyebrow">Ficha de catálogo</p>
+            <h1>Transformar em produto com variações</h1>
+            <p>O produto original será preservado como a primeira variação.</p>
+        </header>
+
+        <section class="surface-section" aria-labelledby="conversion-heading">
+            <h2 id="conversion-heading">Confirmar conversão</h2>
+            <div class="detail-fields">
+                <div class="detail-field">
+                    <label>Nome</label>
+                    <output class="detail-value readonly">{{ produto.nome }}</output>
+                </div>
+                <div class="detail-field">
+                    <label>EAN salvo</label>
+                    <output class="detail-value readonly">{{ produto.codigo_barras|default:'Será gerado se necessário' }}</output>
+                </div>
+                {% if produto.cor %}
+                    <div class="detail-field">
+                        <label>Cor atual</label>
+                        <output class="detail-value readonly">{{ produto.cor }}</output>
+                    </div>
+                {% endif %}
+                {% if produto.tamanho %}
+                    <div class="detail-field">
+                        <label>Tamanho atual</label>
+                        <output class="detail-value readonly">{{ produto.get_tamanho_display }}</output>
+                    </div>
+                {% endif %}
+            </div>
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+            <form action="{% url 'converter_produto' produto.slug %}" method="post" class="operational-form">
+                {% csrf_token %}
+                {{ form.chave_idempotencia }}
+                <div class="form-grid">
+                    {% if not produto.cor %}
+                        <div class="form-group">
+                            {{ form.cor.label_tag }}{{ form.cor }}{{ form.cor.errors }}
+                        </div>
+                    {% endif %}
+                    {% if not produto.tamanho %}
+                        <div class="form-group">
+                            {{ form.tamanho.label_tag }}{{ form.tamanho }}{{ form.tamanho.errors }}
+                        </div>
+                    {% endif %}
+                    <div class="form-group form-grid-wide">
+                        {{ form.motivo.label_tag }}{{ form.motivo }}{{ form.motivo.errors }}
+                    </div>
+                    <div class="form-group form-grid-wide">
+                        <label class="checkbox-field">{{ form.confirmacao }} {{ form.confirmacao.label }}</label>
+                        {{ form.confirmacao.errors }}
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <a href="{% url 'produto' produto.slug %}" class="btn btn-outline-light">Cancelar</a>
+                    <button class="btn btn-success" type="submit">Confirmar conversão</button>
+                </div>
+            </form>
+        </section>
+    </main>
+{% endblock %}

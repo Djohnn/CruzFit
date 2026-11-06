@@ -37,6 +37,7 @@ from .models import (
     Produto,
     ProdutoAlteracao,
     ProdutoCadastro,
+    ProdutoConversaoFicha,
     ProdutoInativacao,
     normalizar_variacao,
 )
@@ -300,6 +301,140 @@ def _ficha_data(dados: Mapping[str, object]) -> dict[str, object]:
 
 def _ficha_audit_payload(common: Mapping[str, object], lines: Sequence[Mapping[str, object]]) -> object:
     return _json_safe({'ficha': dict(common), 'variacoes': list(lines)})
+
+
+def _conversion_variation_data(
+    product: Produto,
+    data: Mapping[str, object],
+) -> dict[str, str]:
+    current_color = ' '.join(str(product.cor or '').split())
+    requested_color = ' '.join(str(data.get('cor') or '').split())
+    if current_color and requested_color and normalizar_variacao(current_color) != normalizar_variacao(requested_color):
+        raise ProductOperationError('A cor já preenchida não pode ser substituída na conversão.')
+    color = current_color or requested_color
+    if not color:
+        raise ProductOperationError('Informe a cor ausente da primeira variação.')
+
+    current_size = str(product.tamanho or '').strip().upper()
+    requested_size = str(data.get('tamanho') or '').strip().upper()
+    if current_size and requested_size and current_size != requested_size:
+        raise ProductOperationError('O tamanho já preenchido não pode ser substituído na conversão.')
+    size = current_size or requested_size
+    if not size:
+        raise ProductOperationError('Informe o tamanho ausente da primeira variação.')
+    if size not in dict(Produto.TAMANHO_CHOICES):
+        raise ProductOperationError('Selecione um tamanho válido para a primeira variação.')
+
+    return {'cor': color, 'tamanho': size}
+
+
+def _conversion_signature(
+    actor,
+    product_id: int,
+    reason: str,
+    data: Mapping[str, object],
+) -> str:
+    payload = json.dumps(
+        [actor.pk, product_id, reason, data],
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def _conversion_snapshot(product: Produto) -> dict[str, object]:
+    return cast(dict[str, object], _json_safe({
+        **_product_snapshot(product),
+        'ficha_id': product.ficha_id,
+        'slug': product.slug,
+        'cor_normalizada': product.cor_normalizada,
+        'tamanho_normalizado': product.tamanho_normalizado,
+    }))
+
+
+def converter_produto_em_ficha(
+    *,
+    actor,
+    product_id: int,
+    dados: Mapping[str, object],
+    reason: str,
+    idempotency_key: str | None,
+) -> FichaOperationResult:
+    _require_manager(actor)
+    key = _product_key(idempotency_key)
+    motivo = _product_reason(reason)
+
+    with transaction.atomic():
+        try:
+            product = Produto.objects.select_for_update().select_related('categoria').get(
+                pk=product_id,
+            )
+        except Produto.DoesNotExist as error:
+            raise ProductOperationError('Produto não encontrado.') from error
+
+        variation_data = _conversion_variation_data(product, dados)
+        signature = _conversion_signature(
+            actor,
+            product.pk,
+            motivo,
+            {'produto_id': product.pk, **variation_data},
+        )
+        existing = ProdutoConversaoFicha.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            _check_product_replay(existing, signature)
+            return FichaOperationResult(existing.ficha, created=False)
+
+        if product.ficha_id is not None:
+            raise ProductOperationError(
+                'Este produto já está vinculado a uma ficha de variações.',
+            )
+
+        before = _conversion_snapshot(product)
+        try:
+            ficha = FichaProduto.objects.create(
+                nome=product.nome,
+                categoria=product.categoria,
+                modelo=product.modelo,
+                tecido=product.tecido,
+                genero=product.genero,
+            )
+            product.ficha = ficha
+            product.cor = variation_data['cor']
+            product.tamanho = variation_data['tamanho']
+            if not product.codigo_barras:
+                used_codes = Produto.objects.exclude(
+                    pk=product.pk,
+                ).exclude(codigo_barras__isnull=True).exclude(
+                    codigo_barras='',
+                ).values_list('codigo_barras', flat=True)
+                product.codigo_barras = generate_ean13(used_codes)
+            product.save()
+            ProdutoConversaoFicha.objects.create(
+                produto=product,
+                ficha=ficha,
+                responsavel=actor,
+                motivo=motivo,
+                chave_idempotencia=key,
+                assinatura=signature,
+                dados_anteriores=before,
+                dados_novos=_json_safe({
+                    'ficha_id': ficha.pk,
+                    'produto_id': product.pk,
+                    **variation_data,
+                    'codigo_barras': product.codigo_barras,
+                }),
+            )
+        except ValidationError as error:
+            raise ProductOperationError('; '.join(error.messages)) from error
+        except IntegrityError as error:
+            raise ProductOperationError(
+                'Produto ou operação de conversão já registrada. Confira os dados.',
+            ) from error
+
+    return FichaOperationResult(ficha, created=True)
 
 
 def cadastrar_ficha_variacoes(

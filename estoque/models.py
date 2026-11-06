@@ -315,6 +315,33 @@ class FichaProdutoAlteracao(models.Model):
         ordering = ('-criada_em', '-pk')
 
 
+class ProdutoConversaoFicha(models.Model):
+    produto = models.OneToOneField(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name='conversao_ficha',
+    )
+    ficha = models.ForeignKey(
+        FichaProduto,
+        on_delete=models.PROTECT,
+        related_name='conversoes_produto',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    dados_anteriores = models.JSONField()
+    dados_novos = models.JSONField()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
 class ProdutoInativacao(models.Model):
     produto = models.ForeignKey(
         Produto,

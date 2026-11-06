@@ -69,7 +69,16 @@
                                     <div class="product-minimum">Mínimo: {{ produto.estoque_minimo|floatformat:2 }}</div>
                                 {% endif %}
                                 <div class="product-price"><span>Preço de venda</span><strong>R$ {{ produto.preco_venda|floatformat:2 }}</strong></div>
-                                <a href="{% url 'produto' produto.slug %}" class="btn btn-primary card-action">Ver detalhes</a>
+                                <div class="form-actions card-action">
+                                    <a href="{% url 'produto' produto.slug %}" class="btn btn-primary">Ver detalhes</a>
+                                    {% if request.user.is_superuser or request.user.cargo == 'G' %}
+                                        {% if produto.ficha_id %}
+                                            <a href="{% url 'produto' produto.slug %}#variation-grid-heading" class="btn btn-outline-light">Gerenciar variações</a>
+                                        {% else %}
+                                            <a href="{% url 'converter_produto' produto.slug %}" class="btn btn-outline-light">Transformar em produto com variações</a>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
                             </div>
                         </article>
                     {% endfor %}

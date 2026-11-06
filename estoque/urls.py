@@ -26,6 +26,8 @@ urlpatterns = [
     path('codigo-barras/gerar/', views.gerar_codigo_barras, name='gerar_codigo_barras'),
     path('etiquetas/modelos/', views.modelos_etiqueta, name='modelos_etiqueta'),
     path('produto/<slug:slug>/etiquetas/', views.imprimir_etiquetas, name='imprimir_etiquetas'),
+    path('produto/<slug:slug>/transformar-variacoes/', views.converter_produto,
+         name='converter_produto'),
     path('produto/<slug:slug>/editar/', views.editar_produto, name='editar_produto'),
     path('ficha/<int:ficha_id>/variacao/', views.adicionar_variacao,
          name='adicionar_variacao'),

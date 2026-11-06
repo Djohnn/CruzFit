@@ -23,6 +23,7 @@ from .barcodes import generate_ean13, render_ean13_svg
 from .forms import (
     FichaProdutoForm,
     ModeloEtiquetaForm,
+    ProdutoConversaoFichaForm,
     ProdutoEdicaoForm,
     ProdutoForm,
     VariacaoProdutoForm,
@@ -62,6 +63,9 @@ from .services import (
 )
 from .services import (
     cadastrar_produto as cadastrar_produto_service,
+)
+from .services import (
+    converter_produto_em_ficha as converter_produto_em_ficha_service,
 )
 from .services import (
     corrigir_baixa as corrigir_baixa_service,
@@ -419,7 +423,7 @@ def imprimir_etiquetas(request, slug):
 @require_GET
 def estoque(request):
     reposicao = request.GET.get('reposicao') == '1'
-    produtos = Produto.objects.select_related('categoria').annotate(
+    produtos = Produto.objects.select_related('categoria', 'ficha').annotate(
         reposicao_necessaria=Case(
             When(
                 ativo=True,
@@ -442,6 +446,56 @@ def estoque(request):
         request,
         'estoque.html',
         {'produtos': produtos, 'reposicao': reposicao},
+    )
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def converter_produto(request, slug):
+    try:
+        produto = Produto.objects.select_related('categoria', 'ficha').get(slug=slug)
+    except Produto.DoesNotExist:
+        return HttpResponseNotFound('Produto não encontrado.')
+
+    if produto.ficha_id:
+        messages.info(request, 'Este produto já está vinculado a uma ficha de variações.')
+        return redirect('produto', slug=produto.slug)
+
+    if request.method == 'GET':
+        form = ProdutoConversaoFichaForm(
+            produto=produto,
+            initial={'chave_idempotencia': uuid.uuid4().hex},
+        )
+    else:
+        form = ProdutoConversaoFichaForm(request.POST, produto=produto)
+        if form.is_valid():
+            try:
+                result = converter_produto_em_ficha_service(
+                    actor=request.user,
+                    product_id=produto.pk,
+                    dados={
+                        'cor': form.cleaned_data.get('cor'),
+                        'tamanho': form.cleaned_data.get('tamanho'),
+                    },
+                    reason=form.cleaned_data['motivo'],
+                    idempotency_key=form.cleaned_data['chave_idempotencia'],
+                )
+            except ProductOperationError as error:
+                form.add_error(None, str(error))
+            else:
+                messages.success(
+                    request,
+                    'Produto convertido em ficha de variações.'
+                    if result.created
+                    else 'Essa conversão já foi registrada.',
+                )
+                return redirect('produto', slug=produto.slug)
+
+    return render(
+        request,
+        'converter_produto.html',
+        {'produto': produto, 'form': form},
+        status=400 if request.method == 'POST' else 200,
     )
 
 

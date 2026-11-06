@@ -1,8 +1,10 @@
 """Regressões P0 para fichas e variações de produto."""
 
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from compras.services import confirmar_pedido, criar_rascunho, receber_pedido
@@ -10,11 +12,24 @@ from vendas.services import registrar_venda
 
 from .barcodes import generate_ean13, validate_ean13
 from .forms import VariacaoProdutoForm
-from .models import Categoria, FichaProduto, Fornecedor, Produto
+from .models import (
+    BaixaEstoque,
+    Categoria,
+    EntradaEstoque,
+    FichaProduto,
+    Fornecedor,
+    Imagem,
+    ItemBaixaEstoque,
+    ItemEntradaEstoque,
+    Produto,
+    ProdutoCadastro,
+    ProdutoConversaoFicha,
+)
 from .services import (
     ProductOperationError,
     adicionar_variacoes_ficha,
     cadastrar_ficha_variacoes,
+    converter_produto_em_ficha,
 )
 
 
@@ -63,6 +78,230 @@ class VariacoesProdutoTests(TestCase):
             reason='Cadastrar coleção Dry Fit',
             idempotency_key='ficha-dry-fit-1',
         ).ficha
+
+    def create_legacy_product(self, **overrides):
+        data = {
+            'nome': 'Produto legado com histórico',
+            'categoria': self.category,
+            'cor': '',
+            'tamanho': '',
+            'quantidade': Decimal('4.00'),
+            'preco_compra': Decimal('10.00'),
+            'preco_venda': Decimal('25.00'),
+            'ativo': False,
+            'codigo_barras': self.code(),
+        }
+        data.update(overrides)
+        product = Produto.objects.create(**data)
+        ProdutoCadastro.objects.create(
+            produto=product,
+            responsavel=self.manager,
+            motivo='Cadastro legado',
+            chave_idempotencia=f'cadastro-legado-{product.pk}',
+            assinatura='cadastro-legado-assinatura',
+            dados_novos={'nome': product.nome},
+        )
+        Imagem.objects.create(
+            produto=product,
+            imagem='imagem_produto/legado.jpg',
+        )
+        entrada = EntradaEstoque.objects.create(
+            motivo='AJUSTE',
+            responsavel=self.manager,
+            chave_idempotencia=f'entrada-legado-{product.pk}',
+        )
+        ItemEntradaEstoque.objects.create(
+            entrada=entrada,
+            produto=product,
+            quantidade=Decimal('4.00'),
+        )
+        baixa = BaixaEstoque.objects.create(
+            motivo='AJUSTE',
+            responsavel=self.manager,
+            chave_idempotencia=f'baixa-legado-{product.pk}',
+        )
+        ItemBaixaEstoque.objects.create(
+            baixa=baixa,
+            produto=product,
+            quantidade=Decimal('1.00'),
+        )
+        return product
+
+    def test_converter_produto_preserva_o_registro_original_e_historico(self):
+        """Given legado com histórico; When converter; Then manter a mesma linha."""
+        product = self.create_legacy_product()
+        original = {
+            'pk': product.pk,
+            'slug': product.slug,
+            'codigo_barras': product.codigo_barras,
+            'quantidade': product.quantidade,
+            'preco_compra': product.preco_compra,
+            'preco_venda': product.preco_venda,
+            'ativo': product.ativo,
+        }
+
+        result = converter_produto_em_ficha(
+            actor=self.manager,
+            product_id=product.pk,
+            dados={'cor': 'Preta', 'tamanho': 'M'},
+            reason='Organizar produto legado',
+            idempotency_key='converter-legado-1',
+        )
+
+        product.refresh_from_db()
+        self.assertTrue(result.created)
+        self.assertEqual(product.ficha.variacoes.get(pk=product.pk).pk, product.pk)
+        self.assertEqual(
+            {field: getattr(product, field) for field in original},
+            original,
+        )
+        self.assertEqual(product.ficha.variacoes.count(), 1)
+        self.assertEqual(product.cor, 'Preta')
+        self.assertEqual(product.tamanho, 'M')
+        self.assertEqual(Imagem.objects.filter(produto=product).count(), 1)
+        self.assertEqual(product.cadastros.count(), 1)
+        self.assertEqual(ItemEntradaEstoque.objects.filter(produto=product).count(), 1)
+        self.assertEqual(ItemBaixaEstoque.objects.filter(produto=product).count(), 1)
+        self.assertEqual(ProdutoConversaoFicha.objects.count(), 1)
+
+    def test_converter_preenche_somente_dados_de_variacao_ausentes(self):
+        """Given cor existente; When converter; Then pedir somente tamanho."""
+        product = self.create_legacy_product(cor='Azul')
+
+        result = converter_produto_em_ficha(
+            actor=self.manager,
+            product_id=product.pk,
+            dados={'cor': '', 'tamanho': 'G'},
+            reason='Completar variação',
+            idempotency_key='converter-missing-size',
+        )
+
+        product.refresh_from_db()
+        self.assertTrue(result.created)
+        self.assertEqual(product.cor, 'Azul')
+        self.assertEqual(product.tamanho, 'G')
+
+        complete = self.create_legacy_product(cor='Branca', tamanho='P')
+        result = converter_produto_em_ficha(
+            actor=self.manager,
+            product_id=complete.pk,
+            dados={'cor': '', 'tamanho': ''},
+            reason='Vincular ficha completa',
+            idempotency_key='converter-complete',
+        )
+        complete.refresh_from_db()
+        self.assertTrue(result.created)
+        self.assertEqual((complete.cor, complete.tamanho), ('Branca', 'P'))
+
+    def test_converter_rejeita_sobrescrita_e_segunda_conversao(self):
+        """Given dados vinculados; When alterar; Then rejeitar sem mutar."""
+        product = self.create_legacy_product(cor='Azul', tamanho='M')
+        converter_produto_em_ficha(
+            actor=self.manager,
+            product_id=product.pk,
+            dados={'cor': '', 'tamanho': ''},
+            reason='Primeira conversão',
+            idempotency_key='converter-first',
+        )
+
+        with self.assertRaisesRegex(ProductOperationError, 'já preenchida'):
+            converter_produto_em_ficha(
+                actor=self.manager,
+                product_id=product.pk,
+                dados={'cor': 'Vermelha', 'tamanho': 'M'},
+                reason='Sobrescrever cor',
+                idempotency_key='converter-overwrite',
+            )
+        with self.assertRaisesRegex(ProductOperationError, 'já está vinculado'):
+            converter_produto_em_ficha(
+                actor=self.manager,
+                product_id=product.pk,
+                dados={'cor': '', 'tamanho': ''},
+                reason='Converter novamente',
+                idempotency_key='converter-second',
+            )
+        product.refresh_from_db()
+        self.assertEqual((product.cor, product.tamanho), ('Azul', 'M'))
+        self.assertEqual(FichaProduto.objects.count(), 1)
+
+    def test_converter_replaya_e_rejeita_conflito_de_chave(self):
+        """Given conversão salva; When reenviar; Then retornar mesma ficha."""
+        product = self.create_legacy_product()
+        data = {
+            'actor': self.manager,
+            'product_id': product.pk,
+            'dados': {'cor': 'Preta', 'tamanho': 'M'},
+            'reason': 'Organizar produto legado',
+            'idempotency_key': 'converter-replay',
+        }
+        first = converter_produto_em_ficha(**data)
+        replay = converter_produto_em_ficha(**data)
+
+        self.assertTrue(first.created)
+        self.assertFalse(replay.created)
+        self.assertEqual(replay.ficha.pk, first.ficha.pk)
+        self.assertEqual(Produto.objects.filter(pk=product.pk).count(), 1)
+        self.assertEqual(ProdutoConversaoFicha.objects.count(), 1)
+        with self.assertRaisesRegex(ProductOperationError, 'chave já foi usada'):
+            converter_produto_em_ficha(
+                **{**data, 'reason': 'Outro motivo'},
+            )
+
+    def test_converter_reverte_falha_depois_de_criar_ficha(self):
+        """Given falha no vínculo; Then remover ficha e auditoria."""
+        product = self.create_legacy_product()
+
+        with patch.object(
+            Produto,
+            'save',
+            side_effect=ValidationError('falha simulada no produto'),
+        ):
+            with self.assertRaisesRegex(ProductOperationError, 'falha simulada'):
+                converter_produto_em_ficha(
+                    actor=self.manager,
+                    product_id=product.pk,
+                    dados={'cor': 'Preta', 'tamanho': 'M'},
+                    reason='Testar rollback',
+                    idempotency_key='converter-rollback',
+                )
+
+        product.refresh_from_db()
+        self.assertIsNone(product.ficha_id)
+        self.assertEqual(FichaProduto.objects.count(), 0)
+        self.assertEqual(ProdutoConversaoFicha.objects.count(), 0)
+
+    def test_converter_exige_gerente_ou_superusuario(self):
+        """Given vendedor; When converter; Then bloquear no serviço."""
+        product = self.create_legacy_product()
+        seller = get_user_model().objects.create_user(
+            username='vendedor-conversao', password='senha', cargo='V',
+        )
+
+        with self.assertRaisesRegex(ProductOperationError, 'Apenas o gerente'):
+            converter_produto_em_ficha(
+                actor=seller,
+                product_id=product.pk,
+                dados={'cor': 'Preta', 'tamanho': 'M'},
+                reason='Tentativa de vendedor',
+                idempotency_key='converter-vendedor',
+            )
+
+    def test_converter_permite_superusuario(self):
+        """Given superusuário; When converter; Then permitir a operação."""
+        product = self.create_legacy_product()
+        superuser = get_user_model().objects.create_superuser(
+            username='superuser-conversao', password='senha', cargo='V',
+        )
+
+        result = converter_produto_em_ficha(
+            actor=superuser,
+            product_id=product.pk,
+            dados={'cor': 'Preta', 'tamanho': 'M'},
+            reason='Conversão por superusuário',
+            idempotency_key='converter-superuser',
+        )
+
+        self.assertTrue(result.created)
 
     def test_cadastro_cria_ficha_linhas_e_total_informativo(self):
         """Given três linhas; When cadastrar; Then totalizar 16 sem estoque na ficha."""

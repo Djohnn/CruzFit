@@ -16,7 +16,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
-from .models import Categoria, Imagem, ItemBaixaEstoque, Produto
+from .models import Categoria, FichaProduto, Imagem, ItemBaixaEstoque, Produto
 from .services import ProductOperationError, StockOperationError, registrar_baixa
 
 
@@ -60,6 +60,115 @@ class ProductManagementTests(TestCase):
                 self.assertContains(response, f'name="{name}"', count=1)
         self.assertContains(response, "Preços e reposição", count=1)
 
+    def test_stock_shows_management_or_conversion_action(self):
+        """Given produtos simples e vinculados; Then exibir ação correta."""
+        ficha = FichaProduto.objects.create(
+            nome='Ficha de camiseta',
+            categoria=self.category,
+        )
+        linked = Produto.objects.create(
+            nome='Ficha de camiseta',
+            ficha=ficha,
+            categoria=self.category,
+            cor='Preta',
+            tamanho='M',
+            quantidade=Decimal('2.00'),
+            preco_compra=Decimal('20.00'),
+            preco_venda=Decimal('40.00'),
+        )
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse('estoque'))
+
+        self.assertContains(response, 'Gerenciar variações')
+        self.assertContains(response, 'Transformar em produto com variações')
+        self.assertContains(
+            response,
+            f'href="{reverse("produto", kwargs={"slug": linked.slug})}#variation-grid-heading"',
+        )
+        self.assertContains(
+            response,
+            reverse('converter_produto', kwargs={'slug': self.product.slug}),
+        )
+
+    def test_conversion_form_exposes_only_missing_variation_fields(self):
+        """Given cor atual e tamanho ausente; Then solicitar só tamanho."""
+        self.product.cor = 'Azul'
+        self.product.save(update_fields=('cor',))
+        self.client.force_login(self.manager)
+
+        response = self.client.get(
+            reverse('converter_produto', kwargs={'slug': self.product.slug}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.product.nome)
+        self.assertContains(response, 'Azul')
+        self.assertTrue(response.context['form'].fields['tamanho'].required)
+        self.assertFalse(response.context['form'].fields['cor'].required)
+        self.assertNotContains(response, 'name="cor"')
+
+    def test_seller_cannot_access_conversion_by_direct_url(self):
+        """Given vendedor; When GET/POST direto; Then retornar 403."""
+        self.client.force_login(self.seller)
+        url = reverse('converter_produto', kwargs={'slug': self.product.slug})
+
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertEqual(
+            self.client.post(
+                url,
+                {
+                    'tamanho': 'M',
+                    'confirmacao': 'sim',
+                    'motivo': 'Tentativa direta',
+                    'chave_idempotencia': 'vendedor-direct-post',
+                },
+            ).status_code,
+            403,
+        )
+
+    def test_manager_conversion_requires_explicit_confirmation(self):
+        """Given conversão; When não confirmar; Then não vincular produto."""
+        self.client.force_login(self.manager)
+        url = reverse('converter_produto', kwargs={'slug': self.product.slug})
+
+        response = self.client.post(
+            url,
+            {
+                'cor': 'Preta',
+                'tamanho': 'M',
+                'motivo': 'Conversão sem confirmação',
+                'chave_idempotencia': 'conversion-without-confirmation',
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.product.refresh_from_db()
+        self.assertIsNone(self.product.ficha_id)
+
+    def test_manager_can_convert_from_stock_flow(self):
+        """Given gerente; When confirmar; Then redirecionar à primeira variação."""
+        self.client.force_login(self.manager)
+        url = reverse('converter_produto', kwargs={'slug': self.product.slug})
+
+        response = self.client.post(
+            url,
+            {
+                'cor': 'Preta',
+                'tamanho': 'M',
+                'motivo': 'Converter produto legado',
+                'chave_idempotencia': 'conversion-view-success',
+                'confirmacao': 'on',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.product.refresh_from_db()
+        self.assertIsNotNone(self.product.ficha_id)
+        self.assertEqual(
+            response.headers['Location'],
+            reverse('produto', kwargs={'slug': self.product.slug}),
+        )
     def edit_data(self, **overrides):
         data = {
             "nome": "Camiseta editada",
