@@ -432,10 +432,6 @@ def estornar_lancamento(
         raise FinanceOperationError('Selecione um lançamento financeiro válido.') from error
     if not original.pk:
         raise FinanceOperationError('Selecione um lançamento financeiro válido.')
-    if original.estorno_de_id:
-        raise FinanceOperationError('Um estorno não pode ser estornado novamente.')
-    if original.estorno_operacoes.exists():
-        raise FinanceOperationError('Esse lançamento já possui um estorno.')
     movement = _business_date(movement_date)
     _validate_movement_date(original.conta, movement)
     normalized_reason = _required_text(reason, 'um motivo', 500)
@@ -458,6 +454,8 @@ def estornar_lancamento(
             locked_original = LancamentoFinanceiro.objects.select_for_update().select_related(
                 'conta',
             ).get(pk=original.pk)
+            if locked_original.estorno_de_id:
+                raise FinanceOperationError('Um estorno não pode ser estornado novamente.')
             if locked_original.estorno_operacoes.exists():
                 raise FinanceOperationError('Esse lançamento já possui um estorno.')
             inverse = (

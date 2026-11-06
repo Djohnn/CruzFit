@@ -27,6 +27,7 @@ Base usada: `222c45fb3c2e3413637a7e9a40d4526e61d78078` (`feat: gerenciar e conve
 - Reenvio equivalente retorna a operação existente. Reutilização da chave, inclusive entre tipos de operação distintos, é rejeitada.
 - Transferências bloqueiam as duas contas em ordem determinística e gravam as duas pernas na mesma transação; falha entre débito e crédito desfaz tudo.
 - Interface server-rendered responsiva: painel, cadastro, saldo, histórico, aporte, transferência e estorno. O vendedor recebe `403` nas escritas diretas.
+- Correção desta reauditoria: `estornar_lancamento` agora verifica chave e assinatura dentro da transação, antes de rejeitar um lançamento já estornado; a proteção `select_for_update()` e a validação de segundo estorno permanecem dentro da transação.
 - Não foram implementados Pix, cartão, integração com Caixa, contas a pagar, fechamento mensal ou ativação real.
 
 ## Arquivos alterados
@@ -49,11 +50,12 @@ Comandos finais e evidências:
 
 ```text
 manage.py test financeiro.tests --keepdb --verbosity 1
-Ran 13 tests in 13.844s
+Ran 16 tests in 17.797s
 OK
 
-manage.py test [suíte funcional serial: Caixa, Compras, Vendas, Estoque, dashboard, Financeiro]
-Ran 167 tests in 73.598s
+$labels=@('caixa.tests.test_corte','caixa.tests.test_fechamento','caixa.tests.test_finalizacao','caixa.tests.test_fluxo_integrado','caixa.tests.test_interface','caixa.tests.test_migracao_legado','caixa.tests.test_movimentos','caixa.tests.test_pagamentos','caixa.tests.test_restituicoes','caixa.tests.test_sessoes','compras.tests.test_compatibilidade','compras.tests.test_interface','compras.tests.test_services','estoque.test_vendas','estoque.test_reversoes','usuarios.test_dashboard','financeiro.tests')
+manage.py test $labels --keepdb --verbosity 1
+Ran 170 tests in 74.246s
 OK
 
 manage.py check
@@ -72,14 +74,32 @@ git diff --check
 Sem erros de whitespace; o Git apenas informou conversão LF/CRLF no documento de plano.
 ```
 
+Regressão TDD do estorno:
+
+```text
+RED — antes da correção:
+Ran 3 tests in 3.116s
+FAILED (failures=1, errors=1)
+  replay com mesma chave/dados: ERROR — "Esse lançamento já possui um estorno."
+  mesma chave com dados diferentes: FAIL — recebeu a mensagem de segundo estorno em vez de conflito de idempotência
+  chave diferente: OK
+
+GREEN — depois da correção:
+Ran 3 tests in 3.086s
+OK
+```
+
+Os três casos agora estão cobertos: replay equivalente retorna `created=False` e preserva contagens/saldo; payload diferente rejeita a chave sem gravar; outra chave rejeita o segundo estorno sem gravar.
+
 Foi feita uma tentativa da suíte completa (`439 testes descobertos`). Ela parou sem progresso nos testes de concorrência; o módulo isolado `caixa.tests.test_concorrencia` travou já no primeiro caso. A execução ampla sem esses dois módulos de concorrência terminou com `1 failure / 79 errors`, todos em áreas legadas/ambientais (permissão de diretórios temporários de mídia, fixture de etiqueta padrão ausente e testes de backup/runtime). Esse gate fica HOLD; não há traceback em `financeiro`.
 
 ## Interface
 
 - Desktop: painel e histórico validados no navegador em viewport `1280×720`.
-- Mobile: painel, detalhe da conta e formulário de aporte validados em viewport `390×844`; cartões, ações e campos permaneceram acessíveis sem overflow horizontal visível.
+- Mobile: painel, detalhe/histórico e formulário de estorno validados no navegador in-app em viewport `390×844`; cartões, ações e campos permaneceram acessíveis sem overflow horizontal visível.
 - Fluxo descartável exercitado: login do gerente sintético, cadastro de Conta A com R$ 500,00 em 06/11/2026 e aporte de R$ 50,00; a tela mostrou saldo R$ 550,00, receita operacional R$ 0,00 e o histórico append-only.
-- Impeccable: `context` foi executado. A instalação local não possui os subcomandos `audit` e `polish` (`Unknown command`), e o detector não conseguiu resolver o stylesheet Django dinâmico; portanto a auditoria/polish automatizados ficam HOLD, compensados nesta etapa pela validação visual real e pelos testes de views.
+- Impeccable: `context` foi executado. A instalação local não possui os subcomandos `audit` e `polish` (`Unknown command`); o detector também não conseguiu resolver o stylesheet Django dinâmico. Portanto, audit/polish automatizados ficam HOLD, separadamente do QA visual, que passou.
+- O CLI agent-browser não abriu por falta de permissão no socket padrão; o navegador in-app do Codex estava disponível e foi usado para o QA visual mobile.
 
 ## Critérios
 
@@ -90,13 +110,16 @@ Foi feita uma tentativa da suíte completa (`439 testes descobertos`). Ela parou
 | Véspera rejeitada sem gravação; dia do corte aceito | PASS | Testes com `2026-11-05` e `2026-11-06`; mensagem clara e contagens preservadas. |
 | Transferência R$ 80: R$ 500/R$ 100 → R$ 420/R$ 180 | PASS | Teste de serviço, duas pernas de livro e saldo total R$ 600,00. |
 | Replay equivalente sem duplicar | PASS | Testes de replay em serviço e interface. |
+| Replay de estorno com mesma chave e payload | PASS | Regressão GREEN: retorna estorno original com `created=False`, sem novas linhas ou alteração de saldo. |
+| Estorno com mesma chave e payload diferente | PASS | Regressão GREEN: conflito de idempotência, sem gravação. |
+| Estorno com outra chave após estorno existente | PASS | Regressão GREEN: rejeita segundo estorno, sem gravação. |
 | Chave reutilizada com dados/tipo diferente rejeitada | PASS | Teste regressivo global de idempotência; sem aporte parcial. |
 | Falha entre débito/crédito faz rollback total | PASS | Teste com falha simulada na segunda gravação; zero lançamento parcial. |
 | Aporte e estorno preservam histórico | PASS | Testes de serviço/interface; lançamento original permanece e inverso é vinculado. |
 | Permissão server-side e vendedor sem escrita | PASS | Serviços e POSTs diretos retornam `403` para vendedor. |
 | Interface desktop/mobile | PASS | Navegador real em 1280×720 e 390×844. |
-| Suíte serial funcional | PASS | 167 testes, `OK`. |
-| Suíte completa legada/concor­rência | HOLD | Bloqueio ambiental reproduzido no baseline; 439 testes não concluíram. |
+| Suíte serial funcional | PASS | 170 testes, `OK`. |
+| Suíte completa legada/concor­rência | HOLD | Nos 84 casos que falharam no candidato anterior, a base `222c45f` e o candidato reproduziram exatamente `1 failure / 39 errors`, nos mesmos módulos de etiqueta, mídia temporária e backup/runtime; concorrência SQLite segue bloqueada. |
 | Impeccable audit/polish | HOLD | Subcomandos indisponíveis na instalação local. |
 
 Conclusão: candidato da Etapa 1 funcionalmente PASS e pronto para auditoria, com os dois HOLDs ambientais explicitamente registrados. Merge, push, ativação da data real e integração com o cliente continuam fora deste trabalho.

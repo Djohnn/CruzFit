@@ -274,6 +274,128 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(original.estornos.count(), 1)
         self.assertEqual(EventoAuditoriaFinanceiro.objects.count(), 3)
 
+    def test_estorno_replay_with_same_key_and_payload_returns_original(self):
+        """Given estorno existente; When repete o payload; Then retorna o original."""
+        account = self.create_account()
+        aporte = registrar_aporte(
+            actor=self.manager,
+            account=account,
+            amount='80.00',
+            movement_date=CUTOVER,
+            reason='Aporte para replay de estorno',
+            idempotency_key='aporte-replay-estorno',
+        )
+        kwargs = {
+            'actor': self.manager,
+            'lancamento': aporte.aporte.lancamento,
+            'movement_date': CUTOVER,
+            'reason': 'Estorno replayável',
+            'idempotency_key': 'estorno-replayável',
+        }
+        first = estornar_lancamento(**kwargs)
+        counts = (
+            LancamentoFinanceiro.objects.count(),
+            EstornoFinanceiro.objects.count(),
+            EventoAuditoriaFinanceiro.objects.count(),
+        )
+
+        replay = estornar_lancamento(**kwargs)
+
+        self.assertFalse(replay.created)
+        self.assertEqual(replay.estorno.pk, first.estorno.pk)
+        self.assertEqual(counts, (
+            LancamentoFinanceiro.objects.count(),
+            EstornoFinanceiro.objects.count(),
+            EventoAuditoriaFinanceiro.objects.count(),
+        ))
+        self.assertEqual(calcular_saldo(account), Decimal('500.00'))
+
+    def test_estorno_replay_with_different_payload_rejects_key_conflict(self):
+        """Given chave de estorno; When dados mudam; Then rejeita sem gravar."""
+        account = self.create_account()
+        aporte = registrar_aporte(
+            actor=self.manager,
+            account=account,
+            amount='80.00',
+            movement_date=CUTOVER,
+            reason='Aporte para conflito de estorno',
+            idempotency_key='aporte-conflito-estorno',
+        )
+        estornar_lancamento(
+            actor=self.manager,
+            lancamento=aporte.aporte.lancamento,
+            movement_date=CUTOVER,
+            reason='Estorno original',
+            idempotency_key='estorno-conflito',
+        )
+        counts = (
+            LancamentoFinanceiro.objects.count(),
+            EstornoFinanceiro.objects.count(),
+            EventoAuditoriaFinanceiro.objects.count(),
+        )
+
+        with self.assertRaisesMessage(
+            FinanceOperationError,
+            'Essa chave de operação já foi usada com outros dados.',
+        ):
+            estornar_lancamento(
+                actor=self.manager,
+                lancamento=aporte.aporte.lancamento,
+                movement_date=CUTOVER,
+                reason='Estorno alterado',
+                idempotency_key='estorno-conflito',
+            )
+
+        self.assertEqual(counts, (
+            LancamentoFinanceiro.objects.count(),
+            EstornoFinanceiro.objects.count(),
+            EventoAuditoriaFinanceiro.objects.count(),
+        ))
+        self.assertEqual(calcular_saldo(account), Decimal('500.00'))
+
+    def test_estorno_with_different_key_rejects_second_reversal(self):
+        """Given estorno existente; When usa outra chave; Then não duplica."""
+        account = self.create_account()
+        aporte = registrar_aporte(
+            actor=self.manager,
+            account=account,
+            amount='80.00',
+            movement_date=CUTOVER,
+            reason='Aporte para segundo estorno',
+            idempotency_key='aporte-segundo-estorno',
+        )
+        estornar_lancamento(
+            actor=self.manager,
+            lancamento=aporte.aporte.lancamento,
+            movement_date=CUTOVER,
+            reason='Primeiro estorno',
+            idempotency_key='estorno-primeiro',
+        )
+        counts = (
+            LancamentoFinanceiro.objects.count(),
+            EstornoFinanceiro.objects.count(),
+            EventoAuditoriaFinanceiro.objects.count(),
+        )
+
+        with self.assertRaisesMessage(
+            FinanceOperationError,
+            'Esse lançamento já possui um estorno.',
+        ):
+            estornar_lancamento(
+                actor=self.manager,
+                lancamento=aporte.aporte.lancamento,
+                movement_date=CUTOVER,
+                reason='Segundo estorno',
+                idempotency_key='estorno-segundo',
+            )
+
+        self.assertEqual(counts, (
+            LancamentoFinanceiro.objects.count(),
+            EstornoFinanceiro.objects.count(),
+            EventoAuditoriaFinanceiro.objects.count(),
+        ))
+        self.assertEqual(calcular_saldo(account), Decimal('500.00'))
+
     def test_financial_writes_require_manager_in_service(self):
         """Given vendedor; When chama serviço; Then a escrita é negada."""
         account = self.create_account()

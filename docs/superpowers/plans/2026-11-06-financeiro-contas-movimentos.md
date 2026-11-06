@@ -36,7 +36,8 @@ Run:
 
 ```powershell
 $env:DJANGO_SETTINGS_MODULE = 'validation_financeiro_settings'
-& 'C:\desenvolvimento\Contruct\Project_construct\venv\Scripts\python.exe' manage.py test caixa.tests compras.tests vendas.tests usuarios.test_dashboard --verbosity 1
+$labels=@('caixa.tests.test_corte','caixa.tests.test_fechamento','caixa.tests.test_finalizacao','caixa.tests.test_fluxo_integrado','caixa.tests.test_interface','caixa.tests.test_migracao_legado','caixa.tests.test_movimentos','caixa.tests.test_pagamentos','caixa.tests.test_restituicoes','caixa.tests.test_sessoes','compras.tests.test_compatibilidade','compras.tests.test_interface','compras.tests.test_services','estoque.test_vendas','estoque.test_reversoes','usuarios.test_dashboard','financeiro.tests')
+& 'C:\desenvolvimento\Contruct\Project_construct\venv\Scripts\python.exe' manage.py test $labels --keepdb --verbosity 1
 ```
 
 Expected: existing focused suite passes; record the raw runner output and duration in the final report. If a pre-existing failure appears, classify it before implementation and do not alter unrelated code.
