@@ -27,6 +27,8 @@ urlpatterns = [
     path('etiquetas/modelos/', views.modelos_etiqueta, name='modelos_etiqueta'),
     path('produto/<slug:slug>/etiquetas/', views.imprimir_etiquetas, name='imprimir_etiquetas'),
     path('produto/<slug:slug>/editar/', views.editar_produto, name='editar_produto'),
+    path('ficha/<int:ficha_id>/variacao/', views.adicionar_variacao,
+         name='adicionar_variacao'),
     path('produto/<slug:slug>/inativar/', views.inativar_produto, name='inativar_produto'),
     path('produto/<slug:slug>', views.produto, name="produto"),
 ]

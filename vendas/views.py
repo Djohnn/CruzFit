@@ -204,11 +204,14 @@ def registrar_venda(request):
             fillvalue='',
         )
     ] if request.method == 'POST' else [{'produto': '', 'quantidade': '1'}]
-    produtos = list(Produto.objects.filter(ativo=True).order_by('nome', 'pk'))
+    produtos = list(Produto.objects.filter(ativo=True).order_by('nome', 'cor', 'tamanho', 'pk'))
     catalogo = [
         {
             'id': produto.pk,
             'nome': produto.nome,
+            'cor': produto.cor,
+            'tamanho': produto.get_tamanho_display() if produto.tamanho else '',
+            'label': produto.variacao_label,
             'codigo_barras': produto.codigo_barras or '',
             'preco': str(produto.preco_venda),
             'estoque': str(produto.quantidade),

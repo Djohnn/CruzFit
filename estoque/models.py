@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Q
 from django.template.defaultfilters import slugify
 
 from .barcodes import validate_ean13
@@ -15,7 +16,43 @@ class Categoria(models.Model):
 
     def __str__(self):
         return self.titulo
-    
+
+
+def normalizar_variacao(value: str | None) -> str:
+    """Normaliza somente a identidade técnica, preservando a apresentação."""
+    return ' '.join(str(value or '').split()).casefold()
+
+
+class FichaProduto(models.Model):
+    nome = models.CharField(max_length=40)
+    categoria = models.ForeignKey(Categoria, on_delete=models.SET_NULL, null=True,
+                                  blank=True)
+    modelo = models.CharField(max_length=80, blank=True, default='')
+    tecido = models.CharField(max_length=80, blank=True, default='')
+    genero = models.CharField(max_length=10, blank=True, default='')
+    slug = models.SlugField(unique=True, blank=True, null=True)
+    criada_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('nome', 'pk')
+
+    def __str__(self) -> str:
+        return self.nome
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.nome) or 'ficha-produto'
+            candidate = base
+            suffix = 2
+            while type(self).objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+                candidate = f'{base}-{suffix}'
+                suffix += 1
+            self.slug = candidate
+        self.nome = self.nome.strip()
+        return super().save(*args, **kwargs)
+
+
 class Produto(models.Model):
     TAMANHO_CHOICES = (
         ('P', 'P'),
@@ -31,11 +68,25 @@ class Produto(models.Model):
         ('FEMININO', 'Feminino'),
     )
 
-    nome = models.CharField(max_length=40, unique=True)
-    categoria = models.ForeignKey(Categoria, on_delete=models.SET_NULL, null=True)
+    nome = models.CharField(max_length=40)
+    ficha = models.ForeignKey(
+        FichaProduto,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='variacoes',
+    )
+    categoria = models.ForeignKey(
+        Categoria,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     tamanho = models.CharField(max_length=5, choices=TAMANHO_CHOICES, blank=True, default='')
     modelo = models.CharField(max_length=80, blank=True, default='')
     cor = models.CharField(max_length=40, blank=True, default='')
+    cor_normalizada = models.CharField(max_length=40, blank=True, default='')
+    tamanho_normalizado = models.CharField(max_length=5, blank=True, default='')
     tecido = models.CharField(max_length=80, blank=True, default='')
     genero = models.CharField(max_length=10, choices=GENERO_CHOICES, blank=True, default='')
     quantidade = models.DecimalField(
@@ -70,9 +121,37 @@ class Produto(models.Model):
     )
     ativo = models.BooleanField(default=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('nome',),
+                condition=Q(ficha__isnull=True),
+                name='unique_nome_produto_simples',
+            ),
+            models.UniqueConstraint(
+                fields=('ficha', 'cor_normalizada', 'tamanho_normalizado'),
+                condition=Q(ficha__isnull=False),
+                name='unique_ficha_cor_tamanho_normalizados',
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.nome
+
+    @property
+    def variacao_label(self) -> str:
+        values = []
+        if self.cor:
+            values.append(f'Cor: {self.cor}')
+        if self.tamanho:
+            values.append(f'Tamanho: {self.get_tamanho_display()}')
+        return f'{self.nome} — ' + ' · '.join(values) if values else self.nome
+
+    @property
+    def ficha_total(self):
+        if self.ficha_id is None:
+            return self.quantidade
+        return self.ficha.variacoes.aggregate(total=models.Sum('quantidade'))['total'] or Decimal('0')
 
     def _normalizar_codigo_barras(self):
         if not self.codigo_barras:
@@ -103,6 +182,12 @@ class Produto(models.Model):
         # temporário mantém exclude={'codigo_barras'} válido também em clean.
         self._codigo_barras_excluido_durante_clean = codigo_barras_excluido
         try:
+            self.nome = self.nome.strip()
+            self.cor_normalizada = normalizar_variacao(self.cor)
+            self.tamanho_normalizado = normalizar_variacao(self.tamanho)[:5]
+            if self.ficha_id and (not self.cor_normalizada or not self.tamanho_normalizado):
+                raise ValidationError({'cor': 'Informe a cor da variação.',
+                                       'tamanho': 'Informe o tamanho da variação.'})
             self._normalizar_precos()
             if not codigo_barras_excluido:
                 self._normalizar_codigo_barras()
@@ -116,7 +201,14 @@ class Produto(models.Model):
     
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = slugify(self.nome)
+            suffix = ' '.join(part for part in (self.cor, self.tamanho) if part)
+            base = slugify(' '.join(part for part in (self.nome, suffix) if part)) or 'produto'
+            candidate = base
+            number = 2
+            while type(self).objects.filter(slug=candidate).exclude(pk=self.pk).exists():
+                candidate = f'{base}-{number}'
+                number += 1
+            self.slug = candidate
         self.full_clean()
 
         return super().save(*args, **kwargs)
@@ -165,6 +257,48 @@ class ProdutoCadastro(models.Model):
         Produto,
         on_delete=models.PROTECT,
         related_name='cadastros',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    dados_novos = models.JSONField()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class FichaProdutoCadastro(models.Model):
+    ficha = models.ForeignKey(
+        FichaProduto,
+        on_delete=models.PROTECT,
+        related_name='cadastros',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    dados_novos = models.JSONField()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+
+class FichaProdutoAlteracao(models.Model):
+    ficha = models.ForeignKey(
+        FichaProduto,
+        on_delete=models.PROTECT,
+        related_name='alteracoes',
     )
     responsavel = models.ForeignKey(
         settings.AUTH_USER_MODEL,

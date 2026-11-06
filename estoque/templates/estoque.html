@@ -46,7 +46,7 @@
                                 <div class="card-image-placeholder" role="img" aria-label="Produto sem imagem">Sem imagem</div>
                             {% endif %}
                             <div class="card-body">
-                                <h3 class="card-title">{{ produto.nome }}</h3>
+                                <h3 class="card-title">{{ produto.variacao_label }}</h3>
                                 <span class="badge badge-info">{{ produto.categoria|default:'Sem categoria' }}</span>
                                 {% if produto.codigo_barras %}
                                     <div class="product-barcode">Código de barras: {{ produto.codigo_barras }}</div>

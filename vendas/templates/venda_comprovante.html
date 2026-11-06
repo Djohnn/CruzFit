@@ -161,7 +161,7 @@
             <thead><tr><th>Item</th><th>Qtd.</th><th>Total</th></tr></thead>
             <tbody>
             {% for item in venda.itens.all %}
-                <tr><td>{{ item.produto.nome }}<small>R$ {{ item.preco_unitario|floatformat:2 }} un.</small></td><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td></tr>
+                <tr><td>{{ item.produto.nome }}{% if item.produto.cor or item.produto.tamanho %}<small>Cor: {{ item.produto.cor }} · Tamanho: {{ item.produto.get_tamanho_display }}</small>{% endif %}<small>R$ {{ item.preco_unitario|floatformat:2 }} un.</small></td><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td></tr>
             {% endfor %}
             </tbody>
         </table>

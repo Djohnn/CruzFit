@@ -182,7 +182,7 @@ def _movement_items(
     return [
         {
             "produto_id": item.produto_id,
-            "produto": item.produto.nome,
+            "produto": item.produto.variacao_label,
             "quantidade": item.quantidade,
         }
         for item in movement.itens.all()
@@ -367,7 +367,7 @@ def _stock_rows(*, only_reorder: bool) -> list[StockReportRow]:
         rows.append(
             {
                 "produto_id": product.pk,
-                "produto": product.nome,
+                "produto": product.variacao_label,
                 "codigo_barras": product.codigo_barras or "",
                 "saldo": product.quantidade,
                 "estoque_minimo": product.estoque_minimo,
@@ -519,7 +519,7 @@ def sales_ranking() -> list[SalesRankingRow]:
             item.produto_id,
             {
                 "produto_id": item.produto_id,
-                "produto": item.produto.nome,
+                "produto": item.produto.variacao_label,
                 "quantidade": ZERO,
                 "faturamento": ZERO,
             },

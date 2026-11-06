@@ -74,7 +74,8 @@ class PurchaseItemForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields['produto_id'].queryset = Produto.objects.filter(
             ativo=True,
-        ).order_by('nome')
+        ).order_by('nome', 'cor', 'tamanho', 'pk')
+        self.fields['produto_id'].label_from_instance = lambda product: product.variacao_label
         self.fields['produto_id'].widget.attrs.update({'data-testid': 'purchase-product'})
         self.fields['quantidade'].widget.attrs.update({'data-testid': 'purchase-quantity'})
         self.fields['custo_unitario'].widget.attrs.update({'data-testid': 'purchase-cost'})

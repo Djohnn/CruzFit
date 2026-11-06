@@ -25,8 +25,10 @@
         <section class="surface-section" aria-labelledby="product-create-heading">
             <h2 id="product-create-heading">Cadastrar produto</h2>
             <p class="section-help">Preencha os dados principais. Campos marcados são obrigatórios.</p>
+            <button id="show-variation-registration" class="btn btn-outline-light" type="button" aria-controls="variation-registration" aria-expanded="{{ variation_mode|yesno:'true,false' }}">Produto com variações</button>
             <form action="{% url 'add_produto' %}" method="POST" enctype="multipart/form-data" class="operational-form">
                 {% csrf_token %}
+                <input type="hidden" name="tipo_cadastro" value="simples">
                 <input type="hidden" name="chave_idempotencia" value="{{ form_data.chave_idempotencia }}">
                 <div class="form-grid">
                     <div class="form-group form-grid-wide">
@@ -120,6 +122,51 @@
             </form>
         </section>
 
+        <section id="variation-registration" class="surface-section" aria-labelledby="variation-registration-heading" {% if not variation_mode %}hidden{% endif %}>
+            <div class="section-heading-row">
+                <div>
+                    <p class="eyebrow">Catálogo</p>
+                    <h2 id="variation-registration-heading">Produto com variações</h2>
+                    <p class="section-help">Cadastre o nome e os dados comuns uma vez. Cada linha terá seu próprio saldo, preço e código.</p>
+                </div>
+            </div>
+            {% if ficha_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ ficha_form.non_field_errors }}</div>{% endif %}
+            <form action="{% url 'add_produto' %}" method="POST" class="operational-form" id="variation-registration-form">
+                {% csrf_token %}
+                <input type="hidden" name="tipo_cadastro" value="variacoes">
+                <input type="hidden" name="chave_idempotencia" value="{{ form_data.chave_idempotencia|default:'' }}">
+                <div class="form-grid">
+                    <div class="form-group form-grid-wide"><label for="variation-base-name">Nome base</label>{{ ficha_form.nome }}{{ ficha_form.nome.errors }}</div>
+                    <div class="form-group"><label for="id_ficha-categoria">Categoria</label>{{ ficha_form.categoria }}{{ ficha_form.categoria.errors }}</div>
+                    <div class="form-group"><label for="id_ficha-genero">Gênero</label>{{ ficha_form.genero }}{{ ficha_form.genero.errors }}</div>
+                    <div class="form-group"><label for="id_ficha-modelo">Modelo</label>{{ ficha_form.modelo }}{{ ficha_form.modelo.errors }}</div>
+                    <div class="form-group"><label for="id_ficha-tecido">Tecido</label>{{ ficha_form.tecido }}{{ ficha_form.tecido.errors }}</div>
+                    <div class="form-group"><label for="id_ficha-preco_compra">Preço de compra padrão</label>{{ ficha_form.preco_compra }}{{ ficha_form.preco_compra.errors }}</div>
+                    <div class="form-group"><label for="id_ficha-preco_venda">Preço de venda padrão</label>{{ ficha_form.preco_venda }}{{ ficha_form.preco_venda.errors }}</div>
+                </div>
+                <div class="section-heading-row"><div><h3>Linhas de variação</h3><p class="section-help">Cor e tamanho identificam a combinação; preços podem ser alterados por linha.</p></div><button id="add-variation-row" class="btn btn-outline-light" type="button">+ Adicionar variação</button></div>
+                {{ variacao_formset.management_form }}
+                <div id="variation-rows">
+                    {% for form in variacao_formset %}
+                        <div class="variation-row form-grid" data-variation-row>
+                            <div class="form-group">{{ form.cor.label_tag }}{{ form.cor }}{{ form.cor.errors }}</div>
+                            <div class="form-group">{{ form.tamanho.label_tag }}{{ form.tamanho }}{{ form.tamanho.errors }}</div>
+                            <div class="form-group">{{ form.quantidade.label_tag }}{{ form.quantidade }}{{ form.quantidade.errors }}</div>
+                            <div class="form-group">{{ form.preco_compra.label_tag }}{{ form.preco_compra }}{{ form.preco_compra.errors }}</div>
+                            <div class="form-group">{{ form.preco_venda.label_tag }}{{ form.preco_venda }}{{ form.preco_venda.errors }}</div>
+                            <div class="form-group">{{ form.estoque_minimo.label_tag }}{{ form.estoque_minimo }}{{ form.estoque_minimo.errors }}</div>
+                            <div class="form-group form-grid-wide">{{ form.codigo_barras.label_tag }}{{ form.codigo_barras }}{{ form.codigo_barras.errors }}</div>
+                        </div>
+                    {% endfor %}
+                </div>
+                <template id="variation-empty-row">{% with form=variacao_formset.empty_form %}<div class="variation-row form-grid" data-variation-row>
+                    <div class="form-group">{{ form.cor.label_tag }}{{ form.cor }}</div><div class="form-group">{{ form.tamanho.label_tag }}{{ form.tamanho }}</div><div class="form-group">{{ form.quantidade.label_tag }}{{ form.quantidade }}</div><div class="form-group">{{ form.preco_compra.label_tag }}{{ form.preco_compra }}</div><div class="form-group">{{ form.preco_venda.label_tag }}{{ form.preco_venda }}</div><div class="form-group">{{ form.estoque_minimo.label_tag }}{{ form.estoque_minimo }}</div><div class="form-group form-grid-wide">{{ form.codigo_barras.label_tag }}{{ form.codigo_barras }}</div>
+                </div>{% endwith %}</template>
+                <div class="form-group form-grid-wide"><label for="variation-reason">Motivo do cadastro</label><textarea id="variation-reason" class="form-control" name="motivo" rows="3" maxlength="500" required>{{ form_data.motivo|default:'' }}</textarea></div>
+                <div class="form-actions"><button class="btn btn-outline-light" id="hide-variation-registration" type="button">Voltar ao cadastro simples</button><button class="btn btn-success" type="submit">Cadastrar ficha</button></div>
+            </form>
+        </section>
+
         <div class="modal fade" id="category-modal" tabindex="-1" role="dialog" aria-labelledby="category-modal-heading" aria-hidden="true">
             <div class="modal-dialog" role="document">
                 <div class="modal-content">
@@ -151,6 +198,33 @@
 
         <script>
             window.addEventListener('load', function () {
+                const simpleSection = document.querySelector('[aria-labelledby="product-create-heading"]');
+                const variationSection = document.getElementById('variation-registration');
+                const showVariation = document.getElementById('show-variation-registration');
+                const hideVariation = document.getElementById('hide-variation-registration');
+                function toggleVariations(show) {
+                    variationSection.hidden = !show;
+                    simpleSection.hidden = show;
+                    showVariation.setAttribute('aria-expanded', String(show));
+                }
+                if (showVariation && hideVariation && variationSection && simpleSection) {
+                    showVariation.addEventListener('click', function () { toggleVariations(true); });
+                    hideVariation.addEventListener('click', function () { toggleVariations(false); });
+                    {% if variation_mode %}toggleVariations(true);{% endif %}
+                }
+                const variationRows = document.getElementById('variation-rows');
+                const addVariation = document.getElementById('add-variation-row');
+                const emptyVariation = document.getElementById('variation-empty-row');
+                const totalVariations = document.getElementById('id_variacoes-TOTAL_FORMS');
+                if (variationRows && addVariation && emptyVariation && totalVariations) {
+                    addVariation.addEventListener('click', function () {
+                        const index = Number(totalVariations.value);
+                        const html = emptyVariation.innerHTML.replaceAll('__prefix__', String(index));
+                        variationRows.insertAdjacentHTML('beforeend', html);
+                        totalVariations.value = String(index + 1);
+                        variationRows.lastElementChild.querySelector('input,select').focus();
+                    });
+                }
                 const categoryForm = document.getElementById('category-form');
                 const categorySelect = document.getElementById('product-category');
                 const categoryModal = document.getElementById('category-modal');

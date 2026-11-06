@@ -149,6 +149,8 @@ class ItemPedidoCompra(models.Model):
         related_name='itens_pedidos_compra',
     )
     produto_nome = models.CharField(max_length=40)
+    produto_cor = models.CharField(max_length=40, blank=True, default='')
+    produto_tamanho = models.CharField(max_length=5, blank=True, default='')
     produto_codigo_barras = models.CharField(max_length=13, blank=True, default='')
     quantidade = models.DecimalField(
         max_digits=12,
@@ -186,6 +188,12 @@ class ItemPedidoCompra(models.Model):
 
     def __str__(self):
         return f'{self.produto_nome} - {self.quantidade:g}'
+
+    @property
+    def produto_exibicao(self):
+        if self.produto_cor or self.produto_tamanho:
+            return f'{self.produto_nome} — Cor: {self.produto_cor} · Tamanho: {self.produto_tamanho}'
+        return self.produto_nome
 
 
 class RecebimentoCompra(models.Model):

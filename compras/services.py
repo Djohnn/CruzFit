@@ -219,6 +219,9 @@ def _append_items(pedido: PedidoCompra, lines: Sequence[Mapping[str, object]], p
             pedido=pedido,
             produto=products[_line_id(line, 'produto_id')],
             produto_nome=products[_line_id(line, 'produto_id')].nome,
+            produto_cor=products[_line_id(line, 'produto_id')].cor,
+            produto_tamanho=products[_line_id(line, 'produto_id')].get_tamanho_display()
+            if products[_line_id(line, 'produto_id')].tamanho else '',
             produto_codigo_barras=products[_line_id(line, 'produto_id')].codigo_barras or '',
             quantidade=_line_decimal(line, 'quantidade'),
             custo_unitario=_line_decimal(line, 'custo_unitario'),

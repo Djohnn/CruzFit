@@ -20,12 +20,20 @@ from PIL import Image, UnidentifiedImageError
 from rolepermissions.decorators import has_permission_decorator
 
 from .barcodes import generate_ean13, render_ean13_svg
-from .forms import ModeloEtiquetaForm, ProdutoEdicaoForm, ProdutoForm
+from .forms import (
+    FichaProdutoForm,
+    ModeloEtiquetaForm,
+    ProdutoEdicaoForm,
+    ProdutoForm,
+    VariacaoProdutoForm,
+    VariacaoProdutoFormSet,
+)
 from .fornecedores import fornecedores_ativos
 from .models import (
     BaixaEstoque,
     Categoria,
     EntradaEstoque,
+    FichaProduto,
     Fornecedor,
     ModeloEtiqueta,
     Produto,
@@ -45,6 +53,12 @@ from .services import (
     ProductOperationError,
     ReversalOperationError,
     StockOperationError,
+)
+from .services import (
+    adicionar_variacoes_ficha as adicionar_variacoes_ficha_service,
+)
+from .services import (
+    cadastrar_ficha_variacoes as cadastrar_ficha_variacoes_service,
 )
 from .services import (
     cadastrar_produto as cadastrar_produto_service,
@@ -151,6 +165,8 @@ def add_produto(request):
                 'form_data': form_data,
                 'tamanho_choices': Produto.TAMANHO_CHOICES,
                 'genero_choices': Produto.GENERO_CHOICES,
+                'ficha_form': FichaProdutoForm(prefix='ficha'),
+                'variacao_formset': VariacaoProdutoFormSet(prefix='variacoes'),
             },
         )
 
@@ -172,6 +188,63 @@ def add_produto(request):
         return JsonResponse(
             {'id': categoria_nova.pk, 'titulo': categoria_nova.titulo},
             status=201,
+        )
+
+    if request.POST.get('tipo_cadastro') == 'variacoes':
+        ficha_form = FichaProdutoForm(request.POST, prefix='ficha')
+        variation_formset = VariacaoProdutoFormSet(
+            request.POST,
+            prefix='variacoes',
+        )
+        if ficha_form.is_valid() and variation_formset.is_valid():
+            default_cost = ficha_form.cleaned_data['preco_compra']
+            default_price = ficha_form.cleaned_data['preco_venda']
+            lines = []
+            for form in variation_formset:
+                data = dict(form.cleaned_data)
+                data['preco_compra'] = (
+                    default_cost if data.get('preco_compra') is None
+                    else data['preco_compra']
+                )
+                data['preco_venda'] = (
+                    default_price if data.get('preco_venda') is None
+                    else data['preco_venda']
+                )
+                lines.append(data)
+            try:
+                result = cadastrar_ficha_variacoes_service(
+                    actor=request.user,
+                    dados={
+                        key: ficha_form.cleaned_data[key]
+                        for key in ('nome', 'categoria', 'modelo', 'tecido', 'genero')
+                    },
+                    variacoes=lines,
+                    reason=request.POST.get('motivo', ''),
+                    idempotency_key=request.POST.get('chave_idempotencia'),
+                )
+            except ProductOperationError as error:
+                ficha_form.add_error(None, str(error))
+            else:
+                first_product = result.ficha.variacoes.order_by('pk').first()
+                messages.success(
+                    request,
+                    'Ficha com variações cadastrada com sucesso.'
+                    if result.created else 'Essa ficha já foi cadastrada.',
+                )
+                return redirect('produto', slug=first_product.slug)
+
+        return render(
+            request,
+            'add_produto.html',
+            {
+                'categorias': Categoria.objects.all(),
+                'form_data': request.POST,
+                'tamanho_choices': Produto.TAMANHO_CHOICES,
+                'genero_choices': Produto.GENERO_CHOICES,
+                'ficha_form': ficha_form,
+                'variacao_formset': variation_formset,
+                'variation_mode': True,
+            },
         )
 
     form_data = {
@@ -214,7 +287,9 @@ def add_produto(request):
         messages.error(request, 'Preencha os campos obrigatórios do produto.')
         return redirect(reverse('add_produto'))
 
-    if not previous_registration and Produto.objects.filter(nome=form_data['nome']).exists():
+    if not previous_registration and Produto.objects.filter(
+        nome=form_data['nome'], ficha__isnull=True,
+    ).exists():
         request.session['produto_form_data'] = form_data
         messages.error(request, 'Já existe um produto com esse nome.')
         return redirect(reverse('add_produto'))
@@ -296,7 +371,7 @@ def modelos_etiqueta(request):
 @require_GET
 def imprimir_etiquetas(request, slug):
     try:
-        produto = Produto.objects.select_related('categoria').get(slug=slug)
+        produto = Produto.objects.select_related('categoria', 'ficha').get(slug=slug)
     except Produto.DoesNotExist:
         return HttpResponseNotFound('Produto não encontrado.')
 
@@ -327,6 +402,8 @@ def imprimir_etiquetas(request, slug):
         'imprimir_etiquetas.html',
         {
             'produto': produto,
+            'variacoes': produto.ficha.variacoes.select_related('categoria').order_by('pk')
+            if produto.ficha_id else [produto],
             'modelos': modelos,
             'modelo': modelo,
             'quantidade': quantidade,
@@ -713,6 +790,55 @@ def editar_produto(request, slug):
 
 @gerente_required
 @require_POST
+def adicionar_variacao(request, ficha_id):
+    form = VariacaoProdutoForm(request.POST, prefix='variacao')
+    try:
+        ficha = FichaProduto.objects.get(pk=ficha_id)
+    except FichaProduto.DoesNotExist:
+        return HttpResponseNotFound('Ficha de produto não encontrada.')
+    if form.is_valid():
+        try:
+            first = ficha.variacoes.order_by('pk').first()
+            data = dict(form.cleaned_data)
+            data['preco_compra'] = (
+                first.preco_compra if data.get('preco_compra') is None
+                else data['preco_compra']
+            )
+            data['preco_venda'] = (
+                first.preco_venda if data.get('preco_venda') is None
+                else data['preco_venda']
+            )
+            result = adicionar_variacoes_ficha_service(
+                actor=request.user,
+                ficha_id=ficha.pk,
+                variacoes=[data],
+                reason=request.POST.get('motivo') or '',
+                idempotency_key=request.POST.get('chave_idempotencia'),
+            )
+        except ProductOperationError as error:
+            form.add_error(None, str(error))
+        else:
+            messages.success(
+                request,
+                'Variação adicionada.' if result.created else 'Essa variação já foi adicionada.',
+            )
+            return redirect('produto', slug=result.ficha.variacoes.order_by('-pk').first().slug)
+    return render(
+        request,
+        'produto.html',
+        {
+            'produto': ficha.variacoes.select_related('categoria').order_by('pk').first(),
+            'variacoes': ficha.variacoes.select_related('categoria').order_by('pk'),
+            'variacao_form': form,
+            'inativacao_chave': uuid.uuid4().hex,
+            'variacao_chave': request.POST.get('chave_idempotencia') or uuid.uuid4().hex,
+        },
+        status=400,
+    )
+
+
+@gerente_required
+@require_POST
 def inativar_produto(request, slug):
     try:
         produto = Produto.objects.get(slug=slug)
@@ -740,7 +866,7 @@ def inativar_produto(request, slug):
 @require_GET
 def produto(request, slug):
     try:
-        produto = Produto.objects.select_related('categoria').get(slug=slug)
+        produto = Produto.objects.select_related('categoria', 'ficha').get(slug=slug)
     except Produto.DoesNotExist:
         return HttpResponseNotFound('Produto não encontrado.')
 
@@ -749,6 +875,16 @@ def produto(request, slug):
         'produto.html',
         {
             'produto': produto,
+            'variacoes': produto.ficha.variacoes.select_related('categoria').order_by('pk')
+            if produto.ficha_id else [produto],
+            'variacao_form': VariacaoProdutoForm(
+                prefix='variacao',
+                initial={
+                    'preco_compra': produto.preco_compra,
+                    'preco_venda': produto.preco_venda,
+                },
+            ),
             'inativacao_chave': uuid.uuid4().hex,
+            'variacao_chave': uuid.uuid4().hex,
         },
     )

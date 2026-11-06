@@ -25,6 +25,9 @@ from .models import (
     BaixaEstoque,
     DevolucaoFornecedor,
     EntradaEstoque,
+    FichaProduto,
+    FichaProdutoAlteracao,
+    FichaProdutoCadastro,
     Imagem,
     ItemBaixaCorrecao,
     ItemBaixaEstoque,
@@ -34,6 +37,7 @@ from .models import (
     ProdutoAlteracao,
     ProdutoCadastro,
     ProdutoInativacao,
+    normalizar_variacao,
 )
 
 TWO_PLACES = Decimal('0.01')
@@ -69,6 +73,12 @@ class ProductOperationResult:
     created: bool
 
 
+@dataclass(frozen=True)
+class FichaOperationResult:
+    ficha: FichaProduto
+    created: bool
+
+
 PRODUCT_EDIT_FIELDS = (
     'nome',
     'categoria',
@@ -95,6 +105,11 @@ PRODUCT_CREATE_FIELDS = (
     'preco_venda',
     'estoque_minimo',
     'codigo_barras',
+)
+
+VARIATION_FIELDS = (
+    'cor', 'tamanho', 'quantidade', 'preco_compra', 'preco_venda',
+    'estoque_minimo', 'codigo_barras',
 )
 
 
@@ -198,6 +213,176 @@ def _check_product_replay(operation, signature: str) -> None:
         raise ProductOperationError(
             'Essa chave já foi usada com outros dados. Abra uma nova operação.',
         )
+
+
+def _normalize_variation_data(data: Mapping[str, object], line_number: int) -> dict[str, object]:
+    normalized = _normalize_product_data(data, VARIATION_FIELDS)
+    normalized['cor'] = ' '.join(str(data.get('cor') or '').split())
+    normalized['tamanho'] = str(data.get('tamanho') or '').strip().upper()
+    normalized['cor_normalizada'] = normalizar_variacao(str(normalized['cor']))
+    normalized['tamanho_normalizado'] = normalizar_variacao(str(normalized['tamanho']))[:5]
+    if not normalized['cor_normalizada']:
+        raise ProductOperationError(f'Linha {line_number}: informe a cor.')
+    if not normalized['tamanho_normalizado']:
+        raise ProductOperationError(f'Linha {line_number}: informe o tamanho.')
+    if not normalized.get('codigo_barras'):
+        raise ProductOperationError(f'Linha {line_number}: informe o código de barras.')
+    return normalized
+
+
+def _normalize_variation_lines(lines: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
+    normalized_lines = []
+    seen = set()
+    for line_number, raw_line in enumerate(lines, start=1):
+        try:
+            normalized = _normalize_variation_data(raw_line, line_number)
+        except ProductOperationError:
+            raise
+        except (TypeError, AttributeError) as error:
+            raise ProductOperationError(f'Linha {line_number}: dados inválidos.') from error
+        identity = (
+            normalized['cor_normalizada'],
+            normalized['tamanho_normalizado'],
+        )
+        if identity in seen:
+            raise ProductOperationError(
+                f'Linha {line_number}: combinação de cor e tamanho duplicada.',
+            )
+        seen.add(identity)
+        normalized_lines.append(normalized)
+    if not normalized_lines:
+        raise ProductOperationError('Adicione pelo menos uma variação.')
+    return normalized_lines
+
+
+def _ficha_signature(actor, ficha_id: int, reason: str, data: object) -> str:
+    payload = json.dumps(
+        [actor.pk, ficha_id, reason, data],
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def _ficha_data(dados: Mapping[str, object]) -> dict[str, object]:
+    normalized = _normalize_product_data(
+        dados,
+        ('nome', 'categoria', 'modelo', 'tecido', 'genero'),
+    )
+    normalized['nome'] = str(normalized['nome']).strip()
+    if not normalized['nome']:
+        raise ProductOperationError('Informe o nome da ficha.')
+    return normalized
+
+
+def _ficha_audit_payload(common: Mapping[str, object], lines: Sequence[Mapping[str, object]]) -> object:
+    return _json_safe({'ficha': dict(common), 'variacoes': list(lines)})
+
+
+def cadastrar_ficha_variacoes(
+    *, actor, dados: Mapping[str, object], variacoes: Iterable[Mapping[str, object]],
+    reason: str, idempotency_key: str | None,
+) -> FichaOperationResult:
+    _require_manager(actor)
+    key = _product_key(idempotency_key)
+    motivo = _product_reason(reason)
+    common = _ficha_data(dados)
+    lines = _normalize_variation_lines(variacoes)
+    signature_data = _ficha_audit_payload(common, lines)
+    signature = _ficha_signature(actor, 0, motivo, signature_data)
+
+    with transaction.atomic():
+        existing = FichaProdutoCadastro.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            if existing.assinatura != signature:
+                raise ProductOperationError(
+                    'Essa chave já foi usada com outros dados. Abra uma nova operação.',
+                )
+            return FichaOperationResult(existing.ficha, created=False)
+        try:
+            ficha = FichaProduto.objects.create(**common)
+            for normalized in lines:
+                Produto.objects.create(
+                    nome=ficha.nome,
+                    ficha=ficha,
+                    categoria=ficha.categoria,
+                    modelo=ficha.modelo,
+                    tecido=ficha.tecido,
+                    genero=ficha.genero,
+                    **normalized,
+                )
+            FichaProdutoCadastro.objects.create(
+                ficha=ficha,
+                responsavel=actor,
+                motivo=motivo,
+                chave_idempotencia=key,
+                assinatura=signature,
+                dados_novos=signature_data,
+            )
+        except ValidationError as error:
+            raise ProductOperationError('; '.join(error.messages)) from error
+        except IntegrityError as error:
+            raise ProductOperationError(
+                'A combinação ou o código de barras já está cadastrado.',
+            ) from error
+    return FichaOperationResult(ficha, created=True)
+
+
+def adicionar_variacoes_ficha(
+    *, actor, ficha_id: int, variacoes: Iterable[Mapping[str, object]],
+    reason: str, idempotency_key: str | None,
+) -> FichaOperationResult:
+    _require_manager(actor)
+    key = _product_key(idempotency_key)
+    motivo = _product_reason(reason)
+    lines = _normalize_variation_lines(variacoes)
+    with transaction.atomic():
+        try:
+            ficha = FichaProduto.objects.select_for_update().get(pk=ficha_id)
+        except FichaProduto.DoesNotExist as error:
+            raise ProductOperationError('Ficha de produto não encontrada.') from error
+        signature_data = _ficha_audit_payload(
+            {'ficha_id': ficha.pk, 'nome': ficha.nome}, lines,
+        )
+        signature = _ficha_signature(actor, ficha.pk, motivo, signature_data)
+        existing = FichaProdutoAlteracao.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            if existing.assinatura != signature:
+                raise ProductOperationError(
+                    'Essa chave já foi usada com outros dados. Abra uma nova operação.',
+                )
+            return FichaOperationResult(existing.ficha, created=False)
+        try:
+            for normalized in lines:
+                Produto.objects.create(
+                    nome=ficha.nome,
+                    ficha=ficha,
+                    categoria=ficha.categoria,
+                    modelo=ficha.modelo,
+                    tecido=ficha.tecido,
+                    genero=ficha.genero,
+                    **normalized,
+                )
+            FichaProdutoAlteracao.objects.create(
+                ficha=ficha,
+                responsavel=actor,
+                motivo=motivo,
+                chave_idempotencia=key,
+                assinatura=signature,
+                dados_novos=signature_data,
+            )
+        except ValidationError as error:
+            raise ProductOperationError('; '.join(error.messages)) from error
+        except IntegrityError as error:
+            raise ProductOperationError(
+                'A combinação ou o código de barras já está cadastrado.',
+            ) from error
+    return FichaOperationResult(ficha, created=True)
 
 
 def _image_descriptors(images: Sequence[object]) -> list[dict[str, object]]:

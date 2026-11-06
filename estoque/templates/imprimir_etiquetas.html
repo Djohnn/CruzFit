@@ -25,7 +25,7 @@
     <main class="container inventory-page label-print-page">
         <header class="page-heading print-controls">
             <h1>Imprimir etiquetas</h1>
-            <p>Escolha o modelo e a quantidade para gerar uma prévia térmica de {{ produto.nome }}.</p>
+            <p>Escolha o modelo e a quantidade para gerar uma prévia térmica de {{ produto.variacao_label }}.</p>
             <a href="{% url 'produto' produto.slug %}" class="btn btn-outline-light">Voltar ao produto</a>
         </header>
 
@@ -74,6 +74,7 @@
                     {% for etiqueta in etiquetas %}
                         <article class="thermal-label" aria-label="Etiqueta {{ etiqueta }} de {{ etiquetas|length }}">
                             <strong class="thermal-label-product-name">{{ produto.nome }}</strong>
+                            {% if produto.cor or produto.tamanho %}<small>Cor: {{ produto.cor }} · Tamanho: {{ produto.get_tamanho_display }}</small>{% endif %}
                             {{ barcode_svg }}
                             <span class="thermal-label-code">{{ produto.codigo_barras }}</span>
                         </article>

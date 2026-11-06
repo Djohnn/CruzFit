@@ -41,7 +41,7 @@
                 <thead><tr><th>Produto</th><th>Quantidade</th><th>Preço unitário</th><th>Bruto</th><th>Líquido</th></tr></thead>
                 <tbody>
                 {% for item in venda.itens.all %}
-                    <tr><th scope="row">{{ item.produto.nome }}</th><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td><td>R$ {{ item.total_liquido|floatformat:2 }}</td></tr>
+                    <tr><th scope="row">{{ item.produto.nome }}{% if item.produto.cor or item.produto.tamanho %}<small class="d-block">Cor: {{ item.produto.cor }} · Tamanho: {{ item.produto.get_tamanho_display }}</small>{% endif %}</th><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.preco_unitario|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td><td>R$ {{ item.total_liquido|floatformat:2 }}</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

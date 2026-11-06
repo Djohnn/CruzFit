@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', function () {
         row.querySelector('[name="quantidade"]').disabled = !product;
         row.querySelector('[name="produto"]').disabled = !product;
         if (product) {
-            row.querySelector('.sale-product-query').value = product.nome;
+            row.querySelector('.sale-product-query').value = product.label || product.nome;
             row.querySelector('[data-selected-product]').textContent = product.codigo_barras ? 'Código: ' + product.codigo_barras : '';
         }
         row.querySelector('[name="quantidade"]').addEventListener('input', () => changed(true));
@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         search.value = '';
         closeResults();
-        document.getElementById('checkout-search-status').textContent = product.nome + ' adicionado ao carrinho.';
+        document.getElementById('checkout-search-status').textContent = (product.label || product.nome) + ' adicionado ao carrinho.';
         changed(true);
         search.focus();
     }
@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', function () {
             button.className = 'sale-search-option';
             button.setAttribute('role', 'option');
             button.setAttribute('aria-selected', 'false');
-            button.textContent = product.nome + ' · ' + money(units(product.preco)) + ' · Estoque: ' + product.estoque;
+            button.textContent = (product.label || product.nome) + ' · ' + money(units(product.preco)) + ' · Estoque: ' + product.estoque;
             button.addEventListener('click', () => addProduct(product));
             results.appendChild(button);
         });
@@ -176,6 +176,15 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('checkout-search-status').textContent = needle && !matches.length ? 'Nenhum produto encontrado.' : 'Clique no produto para adicionar.';
     });
     search.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            const rawBarcode = search.value.replace(/[^0-9]/g, '');
+            const exact = catalog.find(product => String(product.codigo_barras || '') === rawBarcode && rawBarcode.length === 13);
+            if (exact) {
+                event.preventDefault();
+                addProduct(exact);
+                return;
+            }
+        }
         if (event.key === 'Escape') { closeResults(); return; }
         if (results.hidden || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
         event.preventDefault();

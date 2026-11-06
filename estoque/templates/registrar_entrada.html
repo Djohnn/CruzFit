@@ -43,7 +43,7 @@
                             <select id="inflow-product-{{ forloop.counter }}" class="form-control" name="produto" required>
                                 <option value="">Selecione um produto</option>
                                 {% for produto in produtos %}
-                                    <option value="{{ produto.id }}" {% if produto.pk|stringformat:'s' == linha.produto %}selected{% endif %}>{{ produto.nome }} (estoque: {{ produto.quantidade|floatformat:2 }})</option>
+                                    <option value="{{ produto.id }}" {% if produto.pk|stringformat:'s' == linha.produto %}selected{% endif %}>{{ produto.variacao_label }} (estoque: {{ produto.quantidade|floatformat:2 }})</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -123,7 +123,7 @@
                                     <td>{{ entrada.criada_em|date:"d/m/Y · H:i" }}</td>
                                     <td>
                                         {% for item in entrada.itens.all %}
-                                            {{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}
+                                            {{ item.produto.variacao_label }}{% if not forloop.last %}<br>{% endif %}
                                         {% endfor %}
                                     </td>
                                     <td>

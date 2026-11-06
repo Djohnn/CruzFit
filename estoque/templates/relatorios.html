@@ -56,7 +56,7 @@
                 <select id="report-product" class="form-control" name="produto">
                     <option value="">Todos os produtos</option>
                     {% for produto in produtos_filtro %}
-                        <option value="{{ produto.pk }}" {% if filtros.produto == produto.pk|stringformat:'s' %}selected{% endif %}>{{ produto.nome }}</option>
+                        <option value="{{ produto.pk }}" {% if filtros.produto == produto.pk|stringformat:'s' %}selected{% endif %}>{{ produto.variacao_label }}</option>
                     {% endfor %}
                 </select>
             </div>

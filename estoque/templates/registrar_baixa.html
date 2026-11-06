@@ -110,7 +110,7 @@
                                     <td>{{ baixa.criada_em|date:"d/m/Y · H:i" }}</td>
                                     <td>
                                         {% for item in baixa.itens.all %}
-                                            {{ item.produto.nome }}{% if not forloop.last %}<br>{% endif %}
+                                            {{ item.produto.variacao_label }}{% if not forloop.last %}<br>{% endif %}
                                         {% endfor %}
                                     </td>
                                     <td>
@@ -147,7 +147,7 @@
             const reviewList = document.getElementById('outflow-review-list');
             const productCatalog = [
                 {% for produto in produtos %}
-                    {id: '{{ produto.id }}', name: '{{ produto.nome|escapejs }}', barcode: '{{ produto.codigo_barras|default:''|escapejs }}', stock: Number('{{ produto.quantidade|floatformat:2|escapejs }}'.replace(',', '.'))}{% if not forloop.last %},{% endif %}
+                    {id: '{{ produto.id }}', name: '{{ produto.variacao_label|escapejs }}', barcode: '{{ produto.codigo_barras|default:''|escapejs }}', stock: Number('{{ produto.quantidade|floatformat:2|escapejs }}'.replace(',', '.'))}{% if not forloop.last %},{% endif %}
                 {% endfor %}
             ];
 
