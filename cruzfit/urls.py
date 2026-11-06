@@ -13,6 +13,7 @@ urlpatterns = [
     path('caixa/', include(('caixa.urls', 'caixa'), namespace='caixa')),
     path('vendas/', include(('vendas.urls', 'vendas'))),
     path('compras/', include(('compras.urls', 'compras'), namespace='compras')),
+    path('financeiro/', include(('financeiro.urls', 'financeiro'), namespace='financeiro')),
     path('estoque/', include('estoque.urls'))
     
 ] 

@@ -36,6 +36,7 @@
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'registrar_baixa' %}active{% endif %}" href="{% url 'registrar_baixa' %}">Baixas</a>
             <a class="inventory-nav-link {% if request.resolver_match.namespace == 'vendas' %}active{% endif %}" href="{% url 'vendas:vendas' %}">Vendas</a>
             <a class="inventory-nav-link {% if request.resolver_match.namespace == 'caixa' %}active{% endif %}" href="{% url 'caixa:painel' %}" {% if request.resolver_match.namespace == 'caixa' %}aria-current="page"{% endif %}>Caixa</a>
+            {% if request.user.is_superuser or request.user.cargo == 'G' %}<a class="inventory-nav-link {% if request.resolver_match.namespace == 'financeiro' %}active{% endif %}" href="{% url 'financeiro:painel' %}" {% if request.resolver_match.namespace == 'financeiro' %}aria-current="page"{% endif %}>Financeiro</a>{% endif %}
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'movimentacoes' %}active{% endif %}" href="{% url 'movimentacoes' %}">Histórico</a>
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'relatorios' and relatorio != 'ranking' %}active{% endif %}" href="{% url 'relatorios' %}?relatorio=saldo">Relatórios de estoque</a>
             <a class="inventory-nav-link {% if request.resolver_match.url_name == 'relatorios' and relatorio == 'ranking' %}active{% endif %}" href="{% url 'relatorios' %}?relatorio=ranking">Ranking de vendas</a>

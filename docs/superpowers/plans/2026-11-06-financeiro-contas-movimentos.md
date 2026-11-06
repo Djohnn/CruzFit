@@ -176,6 +176,7 @@ Expected: all service scenarios pass with raw output captured for the final repo
 - Create: `financeiro/views.py`
 - Create: `financeiro/urls.py`
 - Create: `financeiro/templates/financeiro/painel.html`
+- Create: `financeiro/templates/financeiro/detalhe.html`
 - Create: `financeiro/templates/financeiro/conta_form.html`
 - Create: `financeiro/templates/financeiro/movimento_form.html`
 - Create: `templates/static/financeiro/css/financeiro.css`
