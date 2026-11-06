@@ -8,7 +8,8 @@ from django.test import TestCase
 from compras.services import confirmar_pedido, criar_rascunho, receber_pedido
 from vendas.services import registrar_venda
 
-from .barcodes import generate_ean13
+from .barcodes import generate_ean13, validate_ean13
+from .forms import VariacaoProdutoForm
 from .models import Categoria, FichaProduto, Fornecedor, Produto
 from .services import (
     ProductOperationError,
@@ -80,6 +81,28 @@ class VariacoesProdutoTests(TestCase):
         )
         self.assertTrue(all(ficha.variacoes.values_list('slug', flat=True)))
         self.assertFalse(hasattr(ficha, 'quantidade'))
+
+    def test_codigo_em_branco_gera_ean_unico_nos_dois_fluxos(self):
+        manual = self.code()
+        linhas = [
+            {**self.line('Preta', 'M', '1'), 'codigo_barras': ''},
+            {**self.line('Branca', 'M', '1'), 'codigo_barras': ''},
+            self.line('Azul', 'G', '1', code=manual),
+        ]
+        dados = dict(actor=self.manager, dados=self.common(), variacoes=linhas,
+                     reason='Cadastrar ficha', idempotency_key='ficha-ean')
+        ficha = cadastrar_ficha_variacoes(**dados).ficha
+        self.assertFalse(cadastrar_ficha_variacoes(**dados).created)
+        form = VariacaoProdutoForm({**self.line('Verde', 'G', '1'), 'codigo_barras': ''})
+        self.assertTrue(form.is_valid(), form.errors)
+        adicionar_variacoes_ficha(
+            actor=self.manager, ficha_id=ficha.pk, variacoes=[form.cleaned_data],
+            reason='Adicionar verde', idempotency_key='adicionar-ean',
+        )
+        codigos = list(ficha.variacoes.values_list('codigo_barras', flat=True))
+        self.assertEqual(len(set(codigos)), 4)
+        self.assertEqual(ficha.variacoes.get(cor='Azul').codigo_barras, manual)
+        self.assertTrue(all(validate_ean13(codigo) for codigo in codigos))
 
     def test_venda_baixa_somente_a_variacao_selecionada(self):
         """Given Preta M=8; When vender uma; Then somente ela fica em 7."""

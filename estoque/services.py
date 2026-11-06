@@ -16,6 +16,7 @@ from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from PIL import Image, ImageDraw
 
+from .barcodes import generate_ean13, validate_ean13
 from .fornecedores import cadastrar_fornecedor as cadastrar_fornecedor
 from .fornecedores import editar_fornecedor as editar_fornecedor
 from .fornecedores import inativar_fornecedor as inativar_fornecedor
@@ -225,8 +226,6 @@ def _normalize_variation_data(data: Mapping[str, object], line_number: int) -> d
         raise ProductOperationError(f'Linha {line_number}: informe a cor.')
     if not normalized['tamanho_normalizado']:
         raise ProductOperationError(f'Linha {line_number}: informe o tamanho.')
-    if not normalized.get('codigo_barras'):
-        raise ProductOperationError(f'Linha {line_number}: informe o código de barras.')
     return normalized
 
 
@@ -263,6 +262,29 @@ def _ficha_signature(actor, ficha_id: int, reason: str, data: object) -> str:
         default=str,
     )
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
+def _preencher_eans_variacoes(lines: list[dict[str, object]]) -> list[dict[str, object]]:
+    if all(line['codigo_barras'] for line in lines):
+        return lines
+    used_codes = set(Produto.objects.exclude(codigo_barras__isnull=True).exclude(
+        codigo_barras='',
+    ).values_list('codigo_barras', flat=True))
+    for line in lines:
+        if line['codigo_barras']:
+            try:
+                used_codes.add(validate_ean13(str(line['codigo_barras'])))
+            except ValueError as error:
+                raise ProductOperationError(str(error)) from error
+    result = []
+    for line in lines:
+        if line['codigo_barras']:
+            result.append(line)
+        else:
+            code = generate_ean13(used_codes)
+            used_codes.add(code)
+            result.append({**line, 'codigo_barras': code})
+    return result
 
 
 def _ficha_data(dados: Mapping[str, object]) -> dict[str, object]:
@@ -304,7 +326,8 @@ def cadastrar_ficha_variacoes(
             return FichaOperationResult(existing.ficha, created=False)
         try:
             ficha = FichaProduto.objects.create(**common)
-            for normalized in lines:
+            saved_lines = _preencher_eans_variacoes(lines)
+            for normalized in saved_lines:
                 Produto.objects.create(
                     nome=ficha.nome,
                     ficha=ficha,
@@ -320,7 +343,7 @@ def cadastrar_ficha_variacoes(
                 motivo=motivo,
                 chave_idempotencia=key,
                 assinatura=signature,
-                dados_novos=signature_data,
+                dados_novos=_ficha_audit_payload(common, saved_lines),
             )
         except ValidationError as error:
             raise ProductOperationError('; '.join(error.messages)) from error
@@ -358,7 +381,8 @@ def adicionar_variacoes_ficha(
                 )
             return FichaOperationResult(existing.ficha, created=False)
         try:
-            for normalized in lines:
+            saved_lines = _preencher_eans_variacoes(lines)
+            for normalized in saved_lines:
                 Produto.objects.create(
                     nome=ficha.nome,
                     ficha=ficha,
@@ -374,7 +398,9 @@ def adicionar_variacoes_ficha(
                 motivo=motivo,
                 chave_idempotencia=key,
                 assinatura=signature,
-                dados_novos=signature_data,
+                dados_novos=_ficha_audit_payload(
+                    {'ficha_id': ficha.pk, 'nome': ficha.nome}, saved_lines,
+                ),
             )
         except ValidationError as error:
             raise ProductOperationError('; '.join(error.messages)) from error

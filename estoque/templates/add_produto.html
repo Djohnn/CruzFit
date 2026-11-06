@@ -143,6 +143,7 @@
                     <div class="form-group"><label for="id_ficha-tecido">Tecido</label>{{ ficha_form.tecido }}{{ ficha_form.tecido.errors }}</div>
                     <div class="form-group"><label for="id_ficha-preco_compra">Preço de compra padrão</label>{{ ficha_form.preco_compra }}{{ ficha_form.preco_compra.errors }}</div>
                     <div class="form-group"><label for="id_ficha-preco_venda">Preço de venda padrão</label>{{ ficha_form.preco_venda }}{{ ficha_form.preco_venda.errors }}</div>
+                    <div class="form-group form-grid-wide">{% include "_ganho_produto.html" %}</div>
                 </div>
                 <div class="section-heading-row"><div><h3>Linhas de variação</h3><p class="section-help">Cor e tamanho identificam a combinação; preços podem ser alterados por linha.</p></div><button id="add-variation-row" class="btn btn-outline-light" type="button">+ Adicionar variação</button></div>
                 {{ variacao_formset.management_form }}
@@ -154,6 +155,7 @@
                             <div class="form-group">{{ form.quantidade.label_tag }}{{ form.quantidade }}{{ form.quantidade.errors }}</div>
                             <div class="form-group">{{ form.preco_compra.label_tag }}{{ form.preco_compra }}{{ form.preco_compra.errors }}</div>
                             <div class="form-group">{{ form.preco_venda.label_tag }}{{ form.preco_venda }}{{ form.preco_venda.errors }}</div>
+                            <div class="form-group form-grid-wide">{% include "_ganho_produto.html" %}</div>
                             <div class="form-group">{{ form.estoque_minimo.label_tag }}{{ form.estoque_minimo }}{{ form.estoque_minimo.errors }}</div>
                             <div class="form-group form-grid-wide">{{ form.codigo_barras.label_tag }}{{ form.codigo_barras }}{{ form.codigo_barras.errors }}</div>
                         </div>
@@ -161,6 +163,7 @@
                 </div>
                 <template id="variation-empty-row">{% with form=variacao_formset.empty_form %}<div class="variation-row form-grid" data-variation-row>
                     <div class="form-group">{{ form.cor.label_tag }}{{ form.cor }}</div><div class="form-group">{{ form.tamanho.label_tag }}{{ form.tamanho }}</div><div class="form-group">{{ form.quantidade.label_tag }}{{ form.quantidade }}</div><div class="form-group">{{ form.preco_compra.label_tag }}{{ form.preco_compra }}</div><div class="form-group">{{ form.preco_venda.label_tag }}{{ form.preco_venda }}</div><div class="form-group">{{ form.estoque_minimo.label_tag }}{{ form.estoque_minimo }}</div><div class="form-group form-grid-wide">{{ form.codigo_barras.label_tag }}{{ form.codigo_barras }}</div>
+                    <div class="form-group form-grid-wide">{% include "_ganho_produto.html" %}</div>
                 </div>{% endwith %}</template>
                 <div class="form-group form-grid-wide"><label for="variation-reason">Motivo do cadastro</label><textarea id="variation-reason" class="form-control" name="motivo" rows="3" maxlength="500" required>{{ form_data.motivo|default:'' }}</textarea></div>
                 <div class="form-actions"><button class="btn btn-outline-light" id="hide-variation-registration" type="button">Voltar ao cadastro simples</button><button class="btn btn-success" type="submit">Cadastrar ficha</button></div>

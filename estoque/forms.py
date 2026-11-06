@@ -129,7 +129,10 @@ class VariacaoProdutoForm(forms.Form):
     estoque_minimo = forms.DecimalField(
         required=False, min_value=0, max_digits=12, decimal_places=2,
     )
-    codigo_barras = forms.CharField(max_length=17, label='Código de barras (EAN-13)')
+    codigo_barras = forms.CharField(
+        max_length=17, required=False, label='Código de barras (EAN-13)',
+        help_text='Deixe em branco para gerar automaticamente.',
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -140,7 +143,7 @@ class VariacaoProdutoForm(forms.Form):
     def clean_codigo_barras(self):
         value = self.cleaned_data.get('codigo_barras')
         if not value:
-            raise forms.ValidationError('Informe o código de barras.')
+            return None
         try:
             return validate_ean13(value)
         except ValueError as exc:
