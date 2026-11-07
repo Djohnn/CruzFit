@@ -64,4 +64,4 @@
 
 - [x] Rodar focados, recorte serial, Django check, drift de migrações, Ruff, mypy e `git diff --check`.
 - [x] Registrar suíte ampla e Impeccable separadamente, mantendo os HOLDs anteriores.
-- [ ] Atualizar apenas o checkbox da Etapa 2 com evidência e congelar o candidato sem merge/push. (Concluir após o commit de implementação e o relatório.)
+- [x] Atualizar apenas o checkbox da Etapa 2 com evidência e congelar o candidato sem merge/push.
