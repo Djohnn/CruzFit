@@ -242,6 +242,17 @@ def _validate_movement_date(account: ContaFinanceira, movement_date: date) -> No
         )
 
 
+def _assert_month_open_for_correction(movement_date: date) -> None:
+    month = date(movement_date.year, movement_date.month, 1)
+    if FechamentoMensal.objects.filter(
+        mes_referencia=month,
+        vigente=True,
+    ).exists():
+        raise FinanceOperationError(
+            f'O mês {month:%Y-%m} está fechado; reabra-o antes de registrar uma correção retroativa.',
+        )
+
+
 def _account(value: ContaFinanceira | int) -> ContaFinanceira:
     if isinstance(value, ContaFinanceira):
         if not value.pk:
@@ -404,6 +415,7 @@ def registrar_recebiveis_cartao(
                 raise FinanceOperationError(
                     'Esse pagamento de cartão já está em A receber.',
                 )
+            _assert_month_open_for_correction(approval_date)
             _assert_key_available(key, RecebivelCartao)
             receivable = RecebivelCartao.objects.create(
                 pagamento_origem=locked,
@@ -475,6 +487,7 @@ def confirmar_pix(
                 ).first()
                 if source_existing:
                     raise FinanceOperationError('Esse pagamento Pix já foi creditado.')
+                _assert_month_open_for_correction(movement)
                 locked_account = ContaFinanceira.objects.select_for_update().get(
                     pk=resolved.pk,
                 )
@@ -600,6 +613,7 @@ def liquidar_cartao(
                         raise _conflicting_key()
                     return LiquidacaoCartaoResult(existing, created=False)
                 _assert_key_available(key, DepositoCartao)
+                _assert_month_open_for_correction(movement)
                 locked_account = ContaFinanceira.objects.select_for_update().get(
                     pk=resolved.pk,
                 )
@@ -720,6 +734,7 @@ def cancelar_recebiveis_cartao_por_reversao(
                 recebivel_id=receivable.pk,
             ).exists():
                 continue
+            _assert_month_open_for_correction(today)
             receivable.cancelado = True
             receivable.cancelado_em = today
             receivable.save(update_fields=('cancelado', 'cancelado_em'))
@@ -790,6 +805,7 @@ def registrar_estorno_cartao(
                     raise _conflicting_key()
                 return EstornoRecebimentoCartaoResult(existing, created=False)
             _assert_key_available(key, EstornoRecebimentoCartao)
+            _assert_month_open_for_correction(movement)
             locked_receivable = RecebivelCartao.objects.select_for_update().get(
                 pk=receivable.pk,
             )
@@ -889,6 +905,7 @@ def criar_conta_financeira(
                     raise _conflicting_key()
                 return ContaResult(existing, created=False)
             _assert_key_available(key, ContaFinanceira)
+            _assert_month_open_for_correction(cutover)
             account = ContaFinanceira.objects.create(
                 nome=normalized_name,
                 saldo_inicial=balance,
@@ -1497,6 +1514,7 @@ def registrar_aporte(
                     raise _conflicting_key()
                 return AporteResult(existing, created=False)
             _assert_key_available(key, AporteFinanceiro)
+            _assert_month_open_for_correction(movement)
             locked = ContaFinanceira.objects.select_for_update().get(pk=resolved.pk)
             ledger = LancamentoFinanceiro.objects.create(
                 conta=locked,
@@ -1576,6 +1594,7 @@ def transferir_entre_contas(
                     raise _conflicting_key()
                 return TransferenciaResult(existing, created=False)
             _assert_key_available(key, TransferenciaFinanceira)
+            _assert_month_open_for_correction(movement)
 
             account_ids = sorted((source_account.pk, target_account.pk))
             locked_accounts = {
@@ -1682,6 +1701,7 @@ def estornar_lancamento(
                         raise _conflicting_key()
                     return EstornoResult(existing, created=False)
                 _assert_key_available(key, EstornoFinanceiro)
+                _assert_month_open_for_correction(movement)
                 locked_original = LancamentoFinanceiro.objects.select_for_update().select_related(
                     'conta',
                 ).get(pk=original.pk)
@@ -1810,6 +1830,7 @@ def criar_conta_pagar(
                         raise _conflicting_key()
                     return ContaPagarResult(existing, created=False)
                 _assert_key_available(key, ContaPagar)
+                _assert_month_open_for_correction(due)
                 payable = ContaPagar.objects.create(
                     descricao=normalized_description,
                     categoria=normalized_category,
@@ -1905,6 +1926,7 @@ def criar_conta_pagar_de_compra(
                     raise FinanceOperationError(
                         'Esse pedido já possui uma conta a pagar.',
                     )
+                _assert_month_open_for_correction(due)
                 payable = ContaPagar.objects.create(
                     descricao=f'{normalized_description} #{source.public_id[:8]}',
                     categoria=normalized_category,
@@ -2028,6 +2050,7 @@ def pagar_conta_pagar(
                     raise FinanceOperationError(
                         'O valor do pagamento deve ser igual ao valor da conta a pagar.',
                     )
+                _assert_month_open_for_correction(movement)
                 locked_account = ContaFinanceira.objects.select_for_update().get(
                     pk=resolved_account.pk,
                 )
@@ -2135,6 +2158,7 @@ def estornar_pagamento_conta_pagar(
                     pagamento_id=locked_payment.pk,
                 ).exists():
                     raise FinanceOperationError('Esse pagamento já possui um estorno.')
+                _assert_month_open_for_correction(movement)
                 original = LancamentoFinanceiro.objects.select_for_update().get(
                     pk=locked_payment.lancamento_id,
                 )

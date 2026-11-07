@@ -382,6 +382,47 @@ class FechamentoMensalServiceTests(TestCase):
             )
         self.assertEqual(financeiro_models.FechamentoMensal.objects.count(), 0)
 
+    def test_retroactive_movement_requires_explicit_reopening(self):
+        """Given mês fechado; When corrige data antiga; Then exige reabertura."""
+        preview = services.previsualizar_fechamento(month=MONTH, margin='100.00')
+        closing = services.confirmar_fechamento_mensal(
+            actor=self.manager,
+            month=MONTH,
+            margin='100.00',
+            preview_signature=preview.assinatura,
+            reason='Fechar novembro antes da correção',
+            idempotency_key='fechamento-correção-retroativa',
+        ).fechamento
+        with self.assertRaisesMessage(
+            services.FinanceOperationError,
+            'está fechado; reabra-o',
+        ):
+            services.registrar_aporte(
+                actor=self.manager,
+                account=self.account,
+                amount='25.00',
+                movement_date=date(2026, 11, 20),
+                reason='Correção depois do fechamento',
+                idempotency_key='aporte-retroativo-bloqueado',
+            )
+        self.assertEqual(financeiro_models.LancamentoFinanceiro.objects.count(), 0)
+        services.reabrir_fechamento_mensal(
+            actor=self.manager,
+            fechamento=closing,
+            reason='Autorizar correção retroativa',
+            idempotency_key='reabertura-correção-retroativa',
+        )
+        result = services.registrar_aporte(
+            actor=self.manager,
+            account=self.account,
+            amount='25.00',
+            movement_date=date(2026, 11, 20),
+            reason='Correção autorizada',
+            idempotency_key='aporte-retroativo-autorizado',
+        )
+        self.assertTrue(result.created)
+        self.assertEqual(services.calcular_saldo(self.account), Decimal('525.00'))
+
 
 class FechamentoMensalConcurrencyTests(TransactionTestCase):
     reset_sequences = True
