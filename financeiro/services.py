@@ -1421,7 +1421,14 @@ def pagar_conta_pagar(
                 locked_payable = ContaPagar.objects.select_for_update().get(
                     pk=payable.pk,
                 )
-                if locked_payable.situacao != ContaPagar.Situacao.ABERTA:
+                current_payment = PagamentoContaPagar.objects.filter(
+                    conta_pagar=locked_payable,
+                    vigente=True,
+                ).first()
+                if (
+                    locked_payable.situacao != ContaPagar.Situacao.ABERTA
+                    or current_payment is not None
+                ):
                     raise FinanceOperationError('Essa conta a pagar já foi paga.')
                 if value != locked_payable.valor:
                     raise FinanceOperationError(
@@ -1452,6 +1459,7 @@ def pagar_conta_pagar(
                     motivo=normalized_reason,
                     chave_idempotencia=key,
                     assinatura=signature,
+                    vigente=True,
                 )
                 locked_payable.situacao = ContaPagar.Situacao.PAGA
                 locked_payable.save(update_fields=('situacao',))
@@ -1476,7 +1484,10 @@ def pagar_conta_pagar(
                 if existing.assinatura != signature:
                     raise _conflicting_key() from error
                 return PagamentoContaPagarResult(existing, created=False)
-            if PagamentoContaPagar.objects.filter(conta_pagar_id=payable.pk).exists():
+            if PagamentoContaPagar.objects.filter(
+                conta_pagar_id=payable.pk,
+                vigente=True,
+            ).exists():
                 raise FinanceOperationError('Essa conta a pagar já foi paga.') from error
             _assert_key_available(key, PagamentoContaPagar)
             raise
@@ -1558,6 +1569,8 @@ def estornar_pagamento_conta_pagar(
                     chave_idempotencia=key,
                     assinatura=signature,
                 )
+                locked_payment.vigente = False
+                locked_payment.save(update_fields=('vigente',))
                 locked_payable.situacao = ContaPagar.Situacao.ABERTA
                 locked_payable.save(update_fields=('situacao',))
                 _audit(

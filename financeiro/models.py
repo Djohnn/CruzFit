@@ -513,17 +513,22 @@ class ContaPagar(models.Model):
             ),
         ]
 
+    @property
+    def pagamento(self):
+        """Mantém o acesso de template ao único pagamento integral vigente."""
+        return self.pagamentos.filter(vigente=True).first()
+
     def __str__(self) -> str:
         return f'{self.descricao} — R$ {self.valor}'
 
 
 class PagamentoContaPagar(models.Model):
-    """Baixa integral de uma obrigação e seu débito financeiro."""
+    """Baixa integral histórica, com no máximo uma baixa vigente."""
 
-    conta_pagar = models.OneToOneField(
+    conta_pagar = models.ForeignKey(
         ContaPagar,
         on_delete=models.PROTECT,
-        related_name='pagamento',
+        related_name='pagamentos',
     )
     conta = models.ForeignKey(
         ContaFinanceira,
@@ -541,6 +546,7 @@ class PagamentoContaPagar(models.Model):
         decimal_places=2,
         validators=[MinValueValidator(Decimal('0.01'))],
     )
+    vigente = models.BooleanField(default=True)
     responsavel = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -557,6 +563,11 @@ class PagamentoContaPagar(models.Model):
             models.CheckConstraint(
                 check=models.Q(valor__gt=0),
                 name='financeiro_pagamento_conta_pagar_positivo',
+            ),
+            models.UniqueConstraint(
+                fields=('conta_pagar',),
+                condition=models.Q(vigente=True),
+                name='financeiro_pagamento_conta_pagar_vigente_unico',
             ),
         ]
 

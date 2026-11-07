@@ -373,6 +373,82 @@ class ContasPagarServiceTests(TestCase):
                 idempotency_key='estorno-pagamento-segundo',
             )
 
+    def test_reopened_obligation_can_be_paid_again_with_historical_payment_preserved(self):
+        """Given baixa estornada; When paga de novo; Then só a nova baixa vigora."""
+        models, services = self._api()
+        payable = services.criar_conta_pagar(
+            actor=self.manager,
+            description='Despesa reaberta',
+            category='Operacional',
+            amount='120.00',
+            due_date=CUTOVER,
+            reason='Criar despesa reaberta',
+            idempotency_key='despesa-reaberta',
+        ).conta
+        first_kwargs = {
+            'actor': self.manager,
+            'conta_pagar': payable,
+            'account': self.account,
+            'payment_date': CUTOVER,
+            'amount': '120.00',
+            'reason': 'Primeiro pagamento',
+            'idempotency_key': 'pagamento-reaberta-1',
+        }
+        first = services.pagar_conta_pagar(**first_kwargs)
+        reversal = services.estornar_pagamento_conta_pagar(
+            actor=self.manager,
+            pagamento=first.pagamento,
+            movement_date=CUTOVER,
+            reason='Estornar primeiro pagamento',
+            idempotency_key='estorno-reaberta-1',
+        )
+
+        second = services.pagar_conta_pagar(
+            **{
+                **first_kwargs,
+                'reason': 'Segundo pagamento',
+                'idempotency_key': 'pagamento-reaberta-2',
+            },
+        )
+
+        payable.refresh_from_db()
+        first.pagamento.refresh_from_db()
+        second.pagamento.refresh_from_db()
+        self.assertEqual(calcular_saldo(self.account), Decimal('380.00'))
+        self.assertEqual(models.PagamentoContaPagar.objects.filter(
+            conta_pagar=payable,
+        ).count(), 2)
+        self.assertEqual(models.EstornoPagamentoContaPagar.objects.count(), 1)
+        self.assertEqual(models.LancamentoFinanceiro.objects.count(), 3)
+        self.assertEqual(models.LancamentoFinanceiro.objects.filter(
+            direcao=models.LancamentoFinanceiro.Direcao.DEBITO,
+        ).count(), 2)
+        self.assertEqual(models.PagamentoContaPagar.objects.filter(
+            conta_pagar=payable,
+            vigente=True,
+        ).count(), 1)
+        self.assertFalse(first.pagamento.vigente)
+        self.assertTrue(second.pagamento.vigente)
+        self.assertEqual(payable.situacao, models.ContaPagar.Situacao.PAGA)
+        self.assertEqual(reversal.estorno.pk, first.pagamento.estorno_pagamento.pk)
+
+        historical_replay = services.pagar_conta_pagar(**first_kwargs)
+        self.assertFalse(historical_replay.created)
+        self.assertEqual(historical_replay.pagamento.pk, first.pagamento.pk)
+
+        old_reversal_replay = services.estornar_pagamento_conta_pagar(
+            actor=self.manager,
+            pagamento=first.pagamento,
+            movement_date=CUTOVER,
+            reason='Estornar primeiro pagamento',
+            idempotency_key='estorno-reaberta-1',
+        )
+        self.assertFalse(old_reversal_replay.created)
+        self.assertEqual(old_reversal_replay.estorno.pk, reversal.estorno.pk)
+        payable.refresh_from_db()
+        self.assertEqual(payable.situacao, models.ContaPagar.Situacao.PAGA)
+        self.assertEqual(calcular_saldo(self.account), Decimal('380.00'))
+
     def test_same_reversal_key_with_changed_data_is_rejected_without_writes(self):
         """Given estorno idempotente; When muda dados; Then rejeita sem gravar."""
         models, services = self._api()
@@ -592,3 +668,93 @@ class ContaPagarConcurrencyTests(TransactionTestCase):
         self.assertLessEqual(len(results), 1)
         self.assertLessEqual(len(errors), 1)
         self.assertEqual(len(results) + len(errors), 2)
+
+    def test_concurrent_payments_after_reversal_create_one_current_payment(self):
+        """Given obrigação reaberta; When há duas baixas; Then só uma vigora."""
+        manager = User.objects.create_user(
+            username='gerente-pagamento-concorrente', password='senha', cargo='G',
+        )
+        account = criar_conta_financeira(
+            actor=manager,
+            name='Conta concorrente reaberta',
+            initial_balance='500.00',
+            cutover_date=CUTOVER,
+            reason='Preparar concorrência de pagamento',
+            idempotency_key='conta-concorrente-reaberta',
+        ).conta
+        payable = financeiro_services.criar_conta_pagar(
+            actor=manager,
+            description='Despesa concorrente reaberta',
+            category='Operacional',
+            amount='120.00',
+            due_date=CUTOVER,
+            reason='Criar obrigação concorrente reaberta',
+            idempotency_key='despesa-concorrente-reaberta',
+        ).conta
+        first = financeiro_services.pagar_conta_pagar(
+            actor=manager,
+            conta_pagar=payable,
+            account=account,
+            payment_date=CUTOVER,
+            amount='120.00',
+            reason='Pagamento anterior',
+            idempotency_key='pagamento-concorrente-anterior',
+        ).pagamento
+        financeiro_services.estornar_pagamento_conta_pagar(
+            actor=manager,
+            pagamento=first,
+            movement_date=CUTOVER,
+            reason='Reabrir obrigação concorrente',
+            idempotency_key='estorno-concorrente-anterior',
+        )
+
+        barrier = Barrier(2)
+        results = []
+        errors = []
+
+        def worker(key):
+            close_old_connections()
+            try:
+                actor = User.objects.get(pk=manager.pk)
+                barrier.wait(timeout=10)
+                results.append(financeiro_services.pagar_conta_pagar(
+                    actor=actor,
+                    conta_pagar=payable.pk,
+                    account=account.pk,
+                    payment_date=CUTOVER,
+                    amount='120.00',
+                    reason='Pagamento concorrente reaberto',
+                    idempotency_key=key,
+                ))
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                close_old_connections()
+
+        connections['default'].close()
+        threads = [Thread(target=worker, args=(key,), daemon=True)
+                   for key in ('pagamento-concorrente-novo-1', 'pagamento-concorrente-novo-2')]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=15)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], financeiro_services.FinanceOperationError)
+        self.assertEqual(financeiro_models.PagamentoContaPagar.objects.filter(
+            conta_pagar=payable,
+        ).count(), 2)
+        self.assertEqual(financeiro_models.PagamentoContaPagar.objects.filter(
+            conta_pagar=payable,
+            vigente=True,
+        ).count(), 1)
+        self.assertEqual(financeiro_models.EstornoPagamentoContaPagar.objects.count(), 1)
+        self.assertEqual(financeiro_models.LancamentoFinanceiro.objects.count(), 3)
+        self.assertEqual(financeiro_models.LancamentoFinanceiro.objects.filter(
+            direcao=financeiro_models.LancamentoFinanceiro.Direcao.DEBITO,
+        ).count(), 2)
+        payable.refresh_from_db()
+        self.assertEqual(payable.situacao, financeiro_models.ContaPagar.Situacao.PAGA)
+        self.assertEqual(calcular_saldo(account), Decimal('380.00'))

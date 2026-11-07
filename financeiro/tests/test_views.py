@@ -402,6 +402,65 @@ class ContaPagarViewTests(TestCase):
         self.assertEqual(payable.situacao, ContaPagar.Situacao.ABERTA)
         self.assertEqual(calcular_saldo(self.account), Decimal('500.00'))
 
+    def test_manager_can_pay_reopened_payable_and_see_two_payment_movements(self):
+        """Given estorno; When paga novamente; Then tela mantém os dois históricos."""
+        payable = criar_conta_pagar(
+            actor=self.manager,
+            description='Despesa reaberta na interface',
+            category='Operacional',
+            amount='120.00',
+            due_date=date(2026, 11, 6),
+            reason='Criar despesa reaberta na interface',
+            idempotency_key='despesa-view-reaberta',
+        ).conta
+        self.client.force_login(self.manager)
+        first_response = self.client.post(
+            reverse('financeiro:conta_pagar_pagamento', args=(payable.pk,)),
+            {
+                'conta_id': self.account.pk,
+                'valor': '120.00',
+                'data_pagamento': '2026-11-06',
+                'motivo': 'Primeiro pagamento pela interface',
+                'chave_idempotencia': 'pagamento-view-reaberta-1',
+            },
+        )
+        first = PagamentoContaPagar.objects.get(conta_pagar=payable)
+        reversal_response = self.client.post(
+            reverse('financeiro:conta_pagar_estorno', args=(first.pk,)),
+            {
+                'data_movimento': '2026-11-06',
+                'motivo': 'Estornar para reabrir na interface',
+                'chave_idempotencia': 'estorno-view-reaberta-1',
+            },
+        )
+        panel_after_reversal = self.client.get(reverse('financeiro:painel'))
+        second_response = self.client.post(
+            reverse('financeiro:conta_pagar_pagamento', args=(payable.pk,)),
+            {
+                'conta_id': self.account.pk,
+                'valor': '120.00',
+                'data_pagamento': '2026-11-06',
+                'motivo': 'Segundo pagamento pela interface',
+                'chave_idempotencia': 'pagamento-view-reaberta-2',
+            },
+        )
+        detail_response = self.client.get(
+            reverse('financeiro:conta_detalhe', args=(self.account.pk,)),
+        )
+
+        self.assertEqual(first_response.status_code, 302)
+        self.assertEqual(reversal_response.status_code, 302)
+        self.assertEqual(second_response.status_code, 302)
+        self.assertContains(
+            panel_after_reversal,
+            reverse('financeiro:conta_pagar_pagamento', args=(payable.pk,)),
+        )
+        self.assertContains(detail_response, 'Pagamento de conta a pagar', count=2)
+        self.assertEqual(PagamentoContaPagar.objects.filter(
+            conta_pagar=payable,
+        ).count(), 2)
+        self.assertEqual(calcular_saldo(self.account), Decimal('380.00'))
+
     def test_vendor_direct_posts_to_payable_actions_are_forbidden(self):
         """Given vendedor; When forja POST; Then as escritas retornam 403."""
         payable = criar_conta_pagar(
