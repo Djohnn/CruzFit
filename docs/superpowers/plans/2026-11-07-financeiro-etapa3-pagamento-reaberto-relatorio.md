@@ -10,6 +10,10 @@ Base confirmada: `54ad0b6e586cd28ffe7df6832c93c1e38c7c41fb`
 
 Commit da correção: `87c4d574db2ea53b139704ae3a529128cb3d0a66`
 
+## Graphify
+
+Consulta realizada na cópia descartável `C:\desenvolvimento\Contruct\.tmp-financeiro-etapa3-graphify-7f5a1b`, sobre `LancamentoFinanceiro`, `estornar_lancamento()`, saldo e idempotência. O grafo existente foi materializado antes da Etapa 3: a consulta aos nomes novos de `ContaPagar` não encontrou nós, enquanto a consulta aos fluxos legados confirmou o padrão de lançamento append-only, estorno vinculado e auditoria usado na correção. Nenhum grafo foi escrito na worktree do candidato.
+
 ## Causa raiz
 
 `PagamentoContaPagar.conta_pagar` era `OneToOneField`. Depois de `pagar → estornar`, o serviço reabria a obrigação, mas o pagamento antigo continuava ocupando a unicidade física. O segundo pagamento falhava em:
