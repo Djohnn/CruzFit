@@ -4,6 +4,7 @@ Data: 2026-11-06
 Branch: `codex/financeiro`
 Worktree: `C:\desenvolvimento\Contruct\.worktrees\financeiro`
 Base usada: `222c45fb3c2e3413637a7e9a40d4526e61d78078` (`feat: gerenciar e converter variacoes no estoque`)
+Código funcional congelado: `27e08c289f4927e0f7ae6483ee1501922b467b23` (`fix: serializa estornos concorrentes`); relatório e evidências acompanham o commit local final desta worktree.
 
 ## Proveniência e preparação
 
@@ -27,7 +28,8 @@ Base usada: `222c45fb3c2e3413637a7e9a40d4526e61d78078` (`feat: gerenciar e conve
 - Reenvio equivalente retorna a operação existente. Reutilização da chave, inclusive entre tipos de operação distintos, é rejeitada.
 - Transferências bloqueiam as duas contas em ordem determinística e gravam as duas pernas na mesma transação; falha entre débito e crédito desfaz tudo.
 - Interface server-rendered responsiva: painel, cadastro, saldo, histórico, aporte, transferência e estorno. O vendedor recebe `403` nas escritas diretas.
-- Correção desta reauditoria: `estornar_lancamento` agora verifica chave e assinatura dentro da transação, antes de rejeitar um lançamento já estornado; a proteção `select_for_update()` e a validação de segundo estorno permanecem dentro da transação.
+- Correções desta reauditoria: `estornar_lancamento` verifica chave e assinatura dentro da transação, antes de rejeitar um lançamento já estornado; a proteção `select_for_update()` e a validação de segundo estorno permanecem dentro da transação. Em SQLite, contenções identificadas exclusivamente por `SQLITE_BUSY`/`SQLITE_LOCKED` reiniciam a transação inteira por no máximo cinco tentativas, com backoff curto; outros erros de banco são relançados.
+- A regressão concorrente usa duas conexões independentes e chamadas sincronizadas. O resultado comprovado é um estorno e um lançamento de reversão, com um retorno `created=True`, outro `created=False` e saldo final de R$ 500,00.
 - Não foram implementados Pix, cartão, integração com Caixa, contas a pagar, fechamento mensal ou ativação real.
 
 ## Arquivos alterados
@@ -40,22 +42,23 @@ Base usada: `222c45fb3c2e3413637a7e9a40d4526e61d78078` (`feat: gerenciar e conve
 - `financeiro/tests/test_services.py`, `financeiro/tests/test_views.py`
 - `docs/superpowers/specs/2026-11-06-financeiro-contas-movimentos-design.md`
 - `docs/superpowers/plans/2026-11-06-financeiro-contas-movimentos.md`
+- `docs/superpowers/plans/2026-11-06-financeiro-fechamento-mensal-prd.md`
 - Este relatório e a cópia do PRD com os checkboxes comprovados.
 
 ## Baseline e verificação
 
-Baseline focado antes da implementação: `154 testes em 49.347s — OK`, usando Caixa funcional, Compras, Vendas/estornos e dashboard. O teste de concorrência do baseline já travava no primeiro caso com SQLite/processos concorrentes.
+Baseline focado antes da implementação: `154 testes em 49.347s — OK`, usando Caixa funcional, Compras, Vendas/estornos e dashboard. O teste de concorrência do baseline já travava no primeiro caso com SQLite/processos concorrentes. A reauditoria anterior confirmou também `170/170` no recorte funcional; o recorte atual soma dois testes de regressão e, por isso, tem 172 casos.
 
 Comandos finais e evidências:
 
 ```text
-manage.py test financeiro.tests --keepdb --verbosity 1
-Ran 16 tests in 17.797s
+manage.py test financeiro.tests --settings=validation_financeiro_settings --keepdb --verbosity 1
+Ran 18 tests in 19.449s
 OK
 
 $labels=@('caixa.tests.test_corte','caixa.tests.test_fechamento','caixa.tests.test_finalizacao','caixa.tests.test_fluxo_integrado','caixa.tests.test_interface','caixa.tests.test_migracao_legado','caixa.tests.test_movimentos','caixa.tests.test_pagamentos','caixa.tests.test_restituicoes','caixa.tests.test_sessoes','compras.tests.test_compatibilidade','compras.tests.test_interface','compras.tests.test_services','estoque.test_vendas','estoque.test_reversoes','usuarios.test_dashboard','financeiro.tests')
-manage.py test $labels --keepdb --verbosity 1
-Ran 170 tests in 74.246s
+manage.py test $labels --settings=validation_financeiro_settings --noinput --verbosity 0
+Ran 172 tests in 79.278s
 OK
 
 manage.py check
@@ -67,38 +70,36 @@ No changes detected
 python -m ruff check . --no-cache
 All checks passed!
 
-mypy . --exclude-gitignore
+mypy . --exclude-gitignore --cache-dir C:\Users\johnn\.codex\visualizations\2026\11\06\01a1b22c-4afc-7f23-98e1-e390cdb31c9c\financeiro-test\mypy-cache
 Success: no issues found in 77 source files
 
 git diff --check
-Sem erros de whitespace; o Git apenas informou conversão LF/CRLF no documento de plano.
+Exit 0; apenas avisos de conversão LF/CRLF dos arquivos editados.
 ```
 
 Regressão TDD do estorno:
 
 ```text
-RED — antes da correção:
-Ran 3 tests in 3.116s
-FAILED (failures=1, errors=1)
-  replay com mesma chave/dados: ERROR — "Esse lançamento já possui um estorno."
-  mesma chave com dados diferentes: FAIL — recebeu a mensagem de segundo estorno em vez de conflito de idempotência
-  chave diferente: OK
+RED — antes da correção concorrente:
+Ran 1 test in 0.897s
+FAILED (failures=1)
+  OperationalError('database is locked') em uma das duas conexões SQLite sincronizadas
 
-GREEN — depois da correção:
-Ran 3 tests in 3.086s
+GREEN — depois da correção concorrente:
+Ran 1 test in 0.890s
 OK
 ```
 
-Os três casos agora estão cobertos: replay equivalente retorna `created=False` e preserva contagens/saldo; payload diferente rejeita a chave sem gravar; outra chave rejeita o segundo estorno sem gravar.
+Os três casos de idempotência do estorno continuam cobertos pelo recorte de serviços (15 testes OK): replay equivalente retorna `created=False` e preserva contagens/saldo; payload diferente rejeita a chave sem gravar; outra chave rejeita o segundo estorno sem gravar. A nova regressão concorrente comprovou duas conexões independentes, exatamente um estorno, um lançamento de reversão, retornos `created=True`/`created=False` e saldo final de R$ 500,00. O teste adicional de erro não-lock confirmou que `OperationalError` alheio à contenção continua identificável.
 
-Foi feita uma tentativa da suíte completa (`439 testes descobertos`). Ela parou sem progresso nos testes de concorrência; o módulo isolado `caixa.tests.test_concorrencia` travou já no primeiro caso. A execução ampla sem esses dois módulos de concorrência terminou com `1 failure / 79 errors`, todos em áreas legadas/ambientais (permissão de diretórios temporários de mídia, fixture de etiqueta padrão ausente e testes de backup/runtime). Esse gate fica HOLD; não há traceback em `financeiro`.
+Comparação de reauditoria do recorte amplo que exclui `caixa.tests.test_concorrencia` e `compras.tests.test_concorrencia`: a base `222c45f` e o candidato reproduziram `78` eventos de erro e `50` identificadores únicos, nos mesmos casos legados/ambientais. A suíte completa continua em HOLD; não há evidência de falha nova em `financeiro` nesse recorte. A execução funcional limpa do candidato, separada acima, terminou em 172/172.
 
 ## Interface
 
 - Desktop: painel e histórico validados no navegador em viewport `1280×720`.
 - Mobile: painel, detalhe/histórico e formulário de estorno validados no navegador in-app em viewport `390×844`; cartões, ações e campos permaneceram acessíveis sem overflow horizontal visível.
 - Fluxo descartável exercitado: login do gerente sintético, cadastro de Conta A com R$ 500,00 em 06/11/2026 e aporte de R$ 50,00; a tela mostrou saldo R$ 550,00, receita operacional R$ 0,00 e o histórico append-only.
-- Impeccable: `context` foi executado. A instalação local não possui os subcomandos `audit` e `polish` (`Unknown command`); o detector também não conseguiu resolver o stylesheet Django dinâmico. Portanto, audit/polish automatizados ficam HOLD, separadamente do QA visual, que passou.
+- Impeccable: `context` foi executado. `audit` e `polish` foram consultados separadamente e ambos retornaram `Unknown command`; a instalação local é v4.6.0 e informou v4.8.0 disponível. Nenhuma atualização foi executada. Portanto, audit/polish automatizados ficam HOLD, separadamente do QA visual, que passou.
 - O CLI agent-browser não abriu por falta de permissão no socket padrão; o navegador in-app do Codex estava disponível e foi usado para o QA visual mobile.
 
 ## Critérios
@@ -118,8 +119,10 @@ Foi feita uma tentativa da suíte completa (`439 testes descobertos`). Ela parou
 | Aporte e estorno preservam histórico | PASS | Testes de serviço/interface; lançamento original permanece e inverso é vinculado. |
 | Permissão server-side e vendedor sem escrita | PASS | Serviços e POSTs diretos retornam `403` para vendedor. |
 | Interface desktop/mobile | PASS | Navegador real em 1280×720 e 390×844. |
-| Suíte serial funcional | PASS | 170 testes, `OK`. |
-| Suíte completa legada/concor­rência | HOLD | Nos 84 casos que falharam no candidato anterior, a base `222c45f` e o candidato reproduziram exatamente `1 failure / 39 errors`, nos mesmos módulos de etiqueta, mídia temporária e backup/runtime; concorrência SQLite segue bloqueada. |
-| Impeccable audit/polish | HOLD | Subcomandos indisponíveis na instalação local. |
+| Concorrência de estorno no SQLite | PASS | RED com `database is locked`; GREEN com duas conexões, um estorno, uma reversão, `created=True`/`created=False` e saldo R$ 500,00. |
+| Erros de banco não relacionados à contenção | PASS | Teste preserva e relança o `OperationalError` original. |
+| Suíte serial funcional | PASS | 172 testes, `OK`; 170/170 é a contagem da reauditoria anterior, antes dos dois testes novos. |
+| Suíte completa legada/concor­rência | HOLD | Comparação base/candidato no recorte amplo sem os dois módulos de concorrência: 78 eventos de erro e 50 identificadores únicos em ambos; a suíte completa permanece fora do PASS. |
+| Impeccable audit/polish | HOLD | `audit` e `polish` indisponíveis (`Unknown command`); atualização v4.8.0 não executada. |
 
 Conclusão: candidato da Etapa 1 funcionalmente PASS e pronto para auditoria, com os dois HOLDs ambientais explicitamente registrados. Merge, push, ativação da data real e integração com o cliente continuam fora deste trabalho.
