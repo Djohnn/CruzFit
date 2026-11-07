@@ -152,4 +152,3 @@ O resultado representa obrigações abertas em novembro, pagas em dezembro e rea
 ## Estado final
 
 Candidato funcional congelado para auditoria independente na branch `codex/financeiro`, sem promoção. A Etapa 5 de QA/auditoria ampla, a integração na `main`, publicação e implantação permanecem fora desta entrega.
-
