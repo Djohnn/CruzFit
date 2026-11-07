@@ -1,9 +1,11 @@
 from datetime import date
 from decimal import Decimal
+from threading import Barrier, Thread
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.db import OperationalError, close_old_connections, connections
+from django.test import TestCase, TransactionTestCase
 
 from financeiro.models import (
     AporteFinanceiro,
@@ -414,3 +416,108 @@ class FinanceServiceTests(TestCase):
             )
 
         self.assertEqual(AporteFinanceiro.objects.count(), 0)
+
+    def test_unrelated_database_error_is_not_reclassified(self):
+        """Given erro de banco não-lock; When estorna; Then mantém o erro original."""
+        account = self.create_account()
+        aporte = registrar_aporte(
+            actor=self.manager,
+            account=account,
+            amount='80.00',
+            movement_date=CUTOVER,
+            reason='Aporte para erro de banco',
+            idempotency_key='aporte-erro-banco',
+        )
+        database_error = OperationalError('database schema changed')
+
+        with patch(
+            'financeiro.services.EstornoFinanceiro.objects.filter',
+            side_effect=database_error,
+        ):
+            with self.assertRaises(OperationalError) as raised:
+                estornar_lancamento(
+                    actor=self.manager,
+                    lancamento=aporte.aporte.lancamento,
+                    movement_date=CUTOVER,
+                    reason='Estorno com erro de banco',
+                    idempotency_key='estorno-erro-banco',
+                )
+
+        self.assertIs(raised.exception, database_error)
+
+
+class EstornoConcurrencyTests(TransactionTestCase):
+    """Regressão para chamadas simultâneas em SQLite com conexões distintas."""
+
+    reset_sequences = True
+
+    def test_concurrent_same_key_returns_one_created_and_one_replay(self):
+        """Given duas conexões; When estornam juntas; Then há um único estorno."""
+        manager = User.objects.create_user(
+            username='gerente-estorno-concorrente',
+            password='senha-segura',
+            cargo='G',
+        )
+        account = criar_conta_financeira(
+            actor=manager,
+            name='Conta concorrente',
+            initial_balance='500.00',
+            cutover_date=CUTOVER,
+            reason='Abertura concorrente de QA',
+            idempotency_key='conta-concorrente',
+        ).conta
+        aporte = registrar_aporte(
+            actor=manager,
+            account=account,
+            amount='80.00',
+            movement_date=CUTOVER,
+            reason='Aporte concorrente de QA',
+            idempotency_key='aporte-concorrente',
+        )
+
+        barrier = Barrier(2)
+        results = []
+        errors = []
+        connection_ids = []
+
+        def worker():
+            close_old_connections()
+            try:
+                with connections['default'].cursor():
+                    pass
+                connection_ids.append(id(connections['default'].connection))
+                actor = User.objects.get(pk=manager.pk)
+                barrier.wait(timeout=10)
+                results.append(
+                    estornar_lancamento(
+                        actor=actor,
+                        lancamento=aporte.aporte.lancamento_id,
+                        movement_date=CUTOVER,
+                        reason='Estorno concorrente de QA',
+                        idempotency_key='estorno-concorrente',
+                    ),
+                )
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                close_old_connections()
+
+        connections['default'].close()
+        threads = [Thread(target=worker, daemon=True) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(len(set(connection_ids)), 2)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 2)
+        self.assertEqual(sorted(result.created for result in results), [False, True])
+        self.assertEqual(
+            {result.estorno.pk for result in results},
+            {EstornoFinanceiro.objects.get(chave_idempotencia='estorno-concorrente').pk},
+        )
+        self.assertEqual(EstornoFinanceiro.objects.count(), 1)
+        self.assertEqual(LancamentoFinanceiro.objects.count(), 2)
+        self.assertEqual(calcular_saldo(account.pk), Decimal('500.00'))

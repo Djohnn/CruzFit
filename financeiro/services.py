@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from time import sleep
 from typing import Any
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, OperationalError, connections, transaction
 from django.db.models import Sum
 
 from .models import (
@@ -46,6 +48,26 @@ class TransferenciaResult:
 class EstornoResult:
     estorno: EstornoFinanceiro
     created: bool
+
+
+ESTORNO_MAX_ATTEMPTS = 5
+
+
+def _is_recoverable_sqlite_lock(error: OperationalError) -> bool:
+    if connections['default'].vendor != 'sqlite':
+        return False
+    cause: BaseException | None = error.__cause__
+    while cause is not None:
+        if isinstance(cause, sqlite3.Error):
+            code = getattr(cause, 'sqlite_errorcode', None)
+            if isinstance(code, int):
+                return code & 0xFF in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+            name = getattr(cause, 'sqlite_errorname', None)
+            return isinstance(name, str) and name.startswith(
+                ('SQLITE_BUSY', 'SQLITE_LOCKED'),
+            )
+        cause = cause.__cause__
+    return False
 
 
 def _require_manager(actor: Any) -> None:
@@ -443,62 +465,77 @@ def estornar_lancamento(
         normalized_reason,
     ])
 
-    try:
-        with transaction.atomic():
-            existing = EstornoFinanceiro.objects.filter(chave_idempotencia=key).first()
+    for attempt in range(ESTORNO_MAX_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                existing = EstornoFinanceiro.objects.filter(
+                    chave_idempotencia=key,
+                ).first()
+                if existing:
+                    if existing.assinatura != signature:
+                        raise _conflicting_key()
+                    return EstornoResult(existing, created=False)
+                _assert_key_available(key, EstornoFinanceiro)
+                locked_original = LancamentoFinanceiro.objects.select_for_update().select_related(
+                    'conta',
+                ).get(pk=original.pk)
+                if locked_original.estorno_de_id:
+                    raise FinanceOperationError('Um estorno não pode ser estornado novamente.')
+                if locked_original.estorno_operacoes.exists():
+                    raise FinanceOperationError('Esse lançamento já possui um estorno.')
+                inverse = (
+                    LancamentoFinanceiro.Direcao.DEBITO
+                    if locked_original.direcao == LancamentoFinanceiro.Direcao.CREDITO
+                    else LancamentoFinanceiro.Direcao.CREDITO
+                )
+                reversal_ledger = LancamentoFinanceiro.objects.create(
+                    conta=locked_original.conta,
+                    direcao=inverse,
+                    valor=locked_original.valor,
+                    data_movimento=movement,
+                    descricao='Estorno financeiro',
+                    motivo=normalized_reason,
+                    responsavel=actor,
+                    estorno_de=locked_original,
+                )
+                estorno = EstornoFinanceiro.objects.create(
+                    lancamento_original=locked_original,
+                    lancamento=reversal_ledger,
+                    responsavel=actor,
+                    motivo=normalized_reason,
+                    chave_idempotencia=key,
+                    assinatura=signature,
+                )
+                _audit(
+                    action='ESTORNAR_LANCAMENTO',
+                    actor=actor,
+                    reason=normalized_reason,
+                    key=key,
+                    signature=signature,
+                    data={
+                        'estorno_id': estorno.pk,
+                        'lancamento_original_id': locked_original.pk,
+                        'lancamento_estorno_id': reversal_ledger.pk,
+                    },
+                )
+                return EstornoResult(estorno, created=True)
+        except IntegrityError as error:
+            existing = EstornoFinanceiro.objects.filter(
+                chave_idempotencia=key,
+            ).first()
             if existing:
                 if existing.assinatura != signature:
-                    raise _conflicting_key()
+                    raise _conflicting_key() from error
                 return EstornoResult(existing, created=False)
             _assert_key_available(key, EstornoFinanceiro)
-            locked_original = LancamentoFinanceiro.objects.select_for_update().select_related(
-                'conta',
-            ).get(pk=original.pk)
-            if locked_original.estorno_de_id:
-                raise FinanceOperationError('Um estorno não pode ser estornado novamente.')
-            if locked_original.estorno_operacoes.exists():
-                raise FinanceOperationError('Esse lançamento já possui um estorno.')
-            inverse = (
-                LancamentoFinanceiro.Direcao.DEBITO
-                if locked_original.direcao == LancamentoFinanceiro.Direcao.CREDITO
-                else LancamentoFinanceiro.Direcao.CREDITO
-            )
-            reversal_ledger = LancamentoFinanceiro.objects.create(
-                conta=locked_original.conta,
-                direcao=inverse,
-                valor=locked_original.valor,
-                data_movimento=movement,
-                descricao='Estorno financeiro',
-                motivo=normalized_reason,
-                responsavel=actor,
-                estorno_de=locked_original,
-            )
-            estorno = EstornoFinanceiro.objects.create(
-                lancamento_original=locked_original,
-                lancamento=reversal_ledger,
-                responsavel=actor,
-                motivo=normalized_reason,
-                chave_idempotencia=key,
-                assinatura=signature,
-            )
-            _audit(
-                action='ESTORNAR_LANCAMENTO',
-                actor=actor,
-                reason=normalized_reason,
-                key=key,
-                signature=signature,
-                data={
-                    'estorno_id': estorno.pk,
-                    'lancamento_original_id': locked_original.pk,
-                    'lancamento_estorno_id': reversal_ledger.pk,
-                },
-            )
-            return EstornoResult(estorno, created=True)
-    except IntegrityError as error:
-        existing = EstornoFinanceiro.objects.filter(chave_idempotencia=key).first()
-        if existing:
-            if existing.assinatura != signature:
-                raise _conflicting_key() from error
-            return EstornoResult(existing, created=False)
-        _assert_key_available(key, EstornoFinanceiro)
-        raise
+            raise
+        except OperationalError as error:
+            if (
+                not _is_recoverable_sqlite_lock(error)
+                or attempt + 1 >= ESTORNO_MAX_ATTEMPTS
+            ):
+                raise
+            sleep(0.01 * (attempt + 1))
+            continue
+
+    raise AssertionError('A rotina de estorno terminou sem resultado.')
