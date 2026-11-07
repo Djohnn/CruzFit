@@ -1,9 +1,13 @@
 # Relatório de auditoria — Financeiro Etapa 3
 
-Data da execução: 2026-11-07  
-Branch: `codex/financeiro`  
-Worktree: `C:\desenvolvimento\Contruct\.worktrees\financeiro`  
-Base solicitada: `0490b0b9bf5060d3e0b4e564e09b2a1e3e623d6a`  
+Data da execução: 2026-11-07
+
+Branch: `codex/financeiro`
+
+Worktree: `C:\desenvolvimento\Contruct\.worktrees\financeiro`
+
+Base solicitada: `0490b0b9bf5060d3e0b4e564e09b2a1e3e623d6a`
+
 Commit de implementação: `8115069` (`feat: implement contas a pagar`)
 
 ## Escopo e origem única
