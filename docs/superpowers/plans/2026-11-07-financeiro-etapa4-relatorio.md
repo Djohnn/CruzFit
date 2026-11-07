@@ -88,7 +88,7 @@ OK
 
 ```text
 Etapa 4 focada:
-Ran 15 tests in 12.702s
+Ran 15 tests in 12.751s
 OK
 
 Concorrência de confirmações:
