@@ -10,7 +10,12 @@ from django.http import Http404, HttpRequest, HttpResponse, HttpResponseForbidde
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
-from .models import ContaFinanceira, LancamentoFinanceiro
+from .models import (
+    ContaFinanceira,
+    ContaPagar,
+    LancamentoFinanceiro,
+    PagamentoContaPagar,
+)
 from .queries import (
     historico_conta,
     listar_contas,
@@ -24,8 +29,14 @@ from .services import (
     calcular_saldo,
     confirmar_pix,
     criar_conta_financeira,
+    criar_conta_pagar,
+    criar_conta_pagar_de_compra,
     estornar_lancamento,
+    estornar_pagamento_conta_pagar,
     liquidar_cartao,
+    listar_contas_pagar,
+    listar_pedidos_elegiveis_conta_pagar,
+    pagar_conta_pagar,
     registrar_aporte,
     transferir_entre_contas,
 )
@@ -62,6 +73,22 @@ def _ledger_or_404(pk: int) -> LancamentoFinanceiro:
         raise Http404('Lançamento financeiro não encontrado.') from error
 
 
+def _payable_or_404(pk: int) -> ContaPagar:
+    try:
+        return ContaPagar.objects.select_related('origem_pedido').get(pk=pk)
+    except ContaPagar.DoesNotExist as error:
+        raise Http404('Conta a pagar não encontrada.') from error
+
+
+def _payable_payment_or_404(pk: int) -> PagamentoContaPagar:
+    try:
+        return PagamentoContaPagar.objects.select_related(
+            'conta_pagar', 'conta', 'lancamento',
+        ).get(pk=pk)
+    except PagamentoContaPagar.DoesNotExist as error:
+        raise Http404('Pagamento de conta a pagar não encontrado.') from error
+
+
 def _base_context(request: HttpRequest) -> dict[str, object]:
     return {
         'contas': ContaFinanceira.objects.filter(ativo=True).order_by('nome', 'pk'),
@@ -75,12 +102,17 @@ def _base_context(request: HttpRequest) -> dict[str, object]:
 @gerente_required
 @require_http_methods(['GET'])
 def painel(request: HttpRequest) -> HttpResponse:
+    payables = listar_contas_pagar(as_of=date.today())
     return render(request, 'financeiro/painel.html', {
         'contas_resumo': listar_contas(),
         'saldo_consolidado': saldo_consolidado(),
         'receita_operacional': receita_operacional_consolidada(),
         'pix_pendentes': pix_pendentes(),
         'recebiveis_cartao': recebiveis_cartao_pendentes(),
+        'contas_pagar_abertas': payables['abertas'],
+        'contas_pagar_vencidas': payables['vencidas'],
+        'contas_pagar_pagas': payables['pagas'],
+        'pedidos_contas_pagar': listar_pedidos_elegiveis_conta_pagar(),
     })
 
 
@@ -319,3 +351,152 @@ def cartao_liquidacao(request: HttpRequest) -> HttpResponse:
         )
         return redirect('financeiro:conta_detalhe', pk=result.deposito.conta_id)
     return render(request, 'financeiro/cartao_form.html', context)
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def conta_pagar_nova(request: HttpRequest) -> HttpResponse:
+    context = {
+        **_base_context(request),
+        'titulo': 'Nova conta a pagar',
+        'acao': 'conta_pagar_nova',
+        'descricao': request.POST.get('descricao', ''),
+        'categoria': request.POST.get('categoria', ''),
+        'valor': request.POST.get('valor', ''),
+        'data_vencimento': request.POST.get(
+            'data_vencimento', date.today().isoformat(),
+        ),
+        'motivo': request.POST.get('motivo', ''),
+    }
+    if request.method == 'POST':
+        try:
+            result = criar_conta_pagar(
+                actor=request.user,
+                description=context['descricao'],
+                category=context['categoria'],
+                amount=context['valor'],
+                due_date=context['data_vencimento'],
+                reason=context['motivo'],
+                idempotency_key=context['chave_idempotencia'],
+            )
+        except FinanceOperationError as error:
+            messages.error(request, str(error))
+            return render(request, 'financeiro/conta_pagar_form.html', context, status=400)
+        messages.success(
+            request,
+            'Conta a pagar registrada.' if result.created
+            else 'A conta a pagar já estava registrada.',
+        )
+        return redirect('financeiro:painel')
+    return render(request, 'financeiro/conta_pagar_form.html', context)
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def conta_pagar_compra(request: HttpRequest) -> HttpResponse:
+    context = {
+        **_base_context(request),
+        'titulo': 'Gerar conta de compra recebida',
+        'acao': 'conta_pagar_compra',
+        'pedidos': listar_pedidos_elegiveis_conta_pagar(),
+        'pedido_id': request.POST.get('pedido_id', request.GET.get('pedido_id', '')),
+        'valor': request.POST.get('valor', ''),
+        'data_vencimento': request.POST.get(
+            'data_vencimento', date.today().isoformat(),
+        ),
+        'motivo': request.POST.get('motivo', ''),
+    }
+    if request.method == 'POST':
+        try:
+            result = criar_conta_pagar_de_compra(
+                actor=request.user,
+                pedido=context['pedido_id'],
+                amount=context['valor'],
+                due_date=context['data_vencimento'],
+                reason=context['motivo'],
+                idempotency_key=context['chave_idempotencia'],
+            )
+        except FinanceOperationError as error:
+            messages.error(request, str(error))
+            return render(request, 'financeiro/conta_pagar_form.html', context, status=400)
+        messages.success(
+            request,
+            'Conta da compra registrada.' if result.created
+            else 'A conta da compra já estava registrada.',
+        )
+        return redirect('financeiro:painel')
+    return render(request, 'financeiro/conta_pagar_form.html', context)
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def conta_pagar_pagamento(request: HttpRequest, pk: int) -> HttpResponse:
+    payable = _payable_or_404(pk)
+    context = {
+        **_base_context(request),
+        'titulo': 'Pagar conta a pagar',
+        'acao': 'conta_pagar_pagamento',
+        'conta_pagar': payable,
+        'conta_id': request.POST.get('conta_id', ''),
+        'valor': request.POST.get('valor', str(payable.valor)),
+        'data_pagamento': request.POST.get(
+            'data_pagamento', date.today().isoformat(),
+        ),
+        'motivo': request.POST.get('motivo', ''),
+    }
+    if request.method == 'POST':
+        try:
+            result = pagar_conta_pagar(
+                actor=request.user,
+                conta_pagar=payable,
+                account=context['conta_id'],
+                payment_date=context['data_pagamento'],
+                amount=context['valor'],
+                reason=context['motivo'],
+                idempotency_key=context['chave_idempotencia'],
+            )
+        except FinanceOperationError as error:
+            messages.error(request, str(error))
+            return render(request, 'financeiro/conta_pagar_form.html', context, status=400)
+        messages.success(
+            request,
+            'Pagamento registrado.' if result.created
+            else 'Esse pagamento já estava registrado.',
+        )
+        return redirect('financeiro:painel')
+    return render(request, 'financeiro/conta_pagar_form.html', context)
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def conta_pagar_estorno(request: HttpRequest, pk: int) -> HttpResponse:
+    payment = _payable_payment_or_404(pk)
+    context = {
+        **_base_context(request),
+        'titulo': 'Estornar pagamento de conta',
+        'acao': 'conta_pagar_estorno',
+        'pagamento': payment,
+        'data_movimento': request.POST.get(
+            'data_movimento', date.today().isoformat(),
+        ),
+        'motivo': request.POST.get('motivo', ''),
+    }
+    if request.method == 'POST':
+        try:
+            result = estornar_pagamento_conta_pagar(
+                actor=request.user,
+                pagamento=payment,
+                movement_date=context['data_movimento'],
+                reason=context['motivo'],
+                idempotency_key=context['chave_idempotencia'],
+            )
+        except FinanceOperationError as error:
+            messages.error(request, str(error))
+            return render(request, 'financeiro/conta_pagar_form.html', context, status=400)
+        messages.success(
+            request,
+            'Estorno do pagamento registrado.' if result.created
+            else 'Esse estorno já estava registrado.',
+        )
+        return redirect('financeiro:painel')
+    return render(request, 'financeiro/conta_pagar_form.html', context)

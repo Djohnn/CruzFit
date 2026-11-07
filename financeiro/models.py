@@ -467,6 +467,134 @@ class EstornoRecebimentoCartao(models.Model):
         return f'Estorno de cartão #{self.pagamento_restituicao_id}'
 
 
+class ContaPagar(models.Model):
+    """Obrigação financeira sem movimento até que seja efetivamente paga."""
+
+    class Situacao(models.TextChoices):
+        ABERTA = 'ABERTA', 'Aberta'
+        PAGA = 'PAGA', 'Paga'
+
+    descricao = models.CharField(max_length=160)
+    categoria = models.CharField(max_length=80)
+    valor = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    data_vencimento = models.DateField()
+    situacao = models.CharField(
+        max_length=8,
+        choices=Situacao.choices,
+        default=Situacao.ABERTA,
+    )
+    origem_pedido = models.OneToOneField(
+        'compras.PedidoCompra',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='conta_pagar',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='contas_pagar_criadas',
+    )
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('data_vencimento', 'criada_em', 'pk')
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(valor__gt=0),
+                name='financeiro_conta_pagar_valor_positivo',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.descricao} — R$ {self.valor}'
+
+
+class PagamentoContaPagar(models.Model):
+    """Baixa integral de uma obrigação e seu débito financeiro."""
+
+    conta_pagar = models.OneToOneField(
+        ContaPagar,
+        on_delete=models.PROTECT,
+        related_name='pagamento',
+    )
+    conta = models.ForeignKey(
+        ContaFinanceira,
+        on_delete=models.PROTECT,
+        related_name='pagamentos_contas_pagar',
+    )
+    lancamento = models.OneToOneField(
+        LancamentoFinanceiro,
+        on_delete=models.PROTECT,
+        related_name='pagamento_conta_pagar',
+    )
+    data_pagamento = models.DateField()
+    valor = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='pagamentos_contas_pagar',
+    )
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-data_pagamento', '-criada_em', '-pk')
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(valor__gt=0),
+                name='financeiro_pagamento_conta_pagar_positivo',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'Pagamento de {self.conta_pagar}'
+
+
+class EstornoPagamentoContaPagar(models.Model):
+    """Reversão de um pagamento que reabre a obrigação original."""
+
+    pagamento = models.OneToOneField(
+        PagamentoContaPagar,
+        on_delete=models.PROTECT,
+        related_name='estorno_pagamento',
+    )
+    lancamento = models.OneToOneField(
+        LancamentoFinanceiro,
+        on_delete=models.PROTECT,
+        related_name='estorno_pagamento_conta_pagar',
+    )
+    data_movimento = models.DateField()
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='estornos_pagamentos_contas_pagar',
+    )
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-data_movimento', '-criada_em', '-pk')
+
+    def __str__(self) -> str:
+        return f'Estorno do pagamento #{self.pagamento_id}'
+
+
 class EventoAuditoriaFinanceiro(models.Model):
     acao = models.CharField(max_length=80)
     responsavel = models.ForeignKey(

@@ -51,6 +51,32 @@ class ReceiptResult:
     created: bool
 
 
+@dataclass(frozen=True)
+class FinancialPayableSource:
+    pedido_id: int
+    public_id: str
+    fornecedor_nome: str
+    total_contratado: Decimal
+
+
+def resumo_pedido_para_financeiro(*, pedido_id: int) -> FinancialPayableSource:
+    """Retorna uma origem de obrigação somente quando o pedido foi recebido por inteiro."""
+    try:
+        pedido = PedidoCompra.objects.select_for_update().get(pk=int(pedido_id))
+    except (PedidoCompra.DoesNotExist, TypeError, ValueError) as error:
+        raise PurchaseOperationError('Pedido de compra não encontrado.') from error
+    if pedido.estado != PedidoCompra.Estado.RECEBIDO:
+        raise PurchaseOperationError(
+            'O pedido precisa estar totalmente recebido para gerar uma conta a pagar.',
+        )
+    return FinancialPayableSource(
+        pedido_id=pedido.pk,
+        public_id=str(pedido.public_id),
+        fornecedor_nome=pedido.fornecedor_nome,
+        total_contratado=pedido.total_contratado,
+    )
+
+
 def _require_manager(actor) -> None:
     if not (
         actor

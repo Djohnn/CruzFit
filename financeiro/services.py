@@ -15,16 +15,20 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from caixa.models import PagamentoRestituicao, PagamentoVenda
+from compras.services import PurchaseOperationError, resumo_pedido_para_financeiro
 
 from .models import (
     AporteFinanceiro,
     ContaFinanceira,
+    ContaPagar,
     DepositoCartao,
     EstornoFinanceiro,
+    EstornoPagamentoContaPagar,
     EstornoRecebimentoCartao,
     EventoAuditoriaFinanceiro,
     LancamentoFinanceiro,
     LiquidacaoCartao,
+    PagamentoContaPagar,
     RecebimentoPixFinanceiro,
     RecebivelCartao,
     TransferenciaFinanceira,
@@ -83,8 +87,27 @@ class EstornoRecebimentoCartaoResult:
     created: bool
 
 
+@dataclass(frozen=True)
+class ContaPagarResult:
+    conta: ContaPagar
+    created: bool
+
+
+@dataclass(frozen=True)
+class PagamentoContaPagarResult:
+    pagamento: PagamentoContaPagar
+    created: bool
+
+
+@dataclass(frozen=True)
+class EstornoPagamentoContaPagarResult:
+    estorno: EstornoPagamentoContaPagar
+    created: bool
+
+
 ESTORNO_MAX_ATTEMPTS = 5
 RECEBIMENTO_MAX_ATTEMPTS = 5
+CONTA_PAGAR_MAX_ATTEMPTS = 5
 
 
 def _is_recoverable_sqlite_lock(error: OperationalError) -> bool:
@@ -179,6 +202,30 @@ def _account(value: ContaFinanceira | int) -> ContaFinanceira:
         raise FinanceOperationError('Selecione uma conta financeira válida.') from error
 
 
+def _payable(value: ContaPagar | int) -> ContaPagar:
+    if isinstance(value, ContaPagar):
+        if not value.pk:
+            raise FinanceOperationError('Selecione uma conta a pagar válida.')
+        return value
+    try:
+        return ContaPagar.objects.get(pk=int(value))
+    except (ContaPagar.DoesNotExist, TypeError, ValueError) as error:
+        raise FinanceOperationError('Selecione uma conta a pagar válida.') from error
+
+
+def _payable_payment(value: PagamentoContaPagar | int) -> PagamentoContaPagar:
+    if isinstance(value, PagamentoContaPagar):
+        if not value.pk:
+            raise FinanceOperationError('Selecione um pagamento de conta a pagar válido.')
+        return value
+    try:
+        return PagamentoContaPagar.objects.get(pk=int(value))
+    except (PagamentoContaPagar.DoesNotExist, TypeError, ValueError) as error:
+        raise FinanceOperationError(
+            'Selecione um pagamento de conta a pagar válido.',
+        ) from error
+
+
 def _audit(
     *,
     action: str,
@@ -205,6 +252,9 @@ def _conflicting_key() -> FinanceOperationError:
 def _assert_key_available(key: str, current_model: Any) -> None:
     for model in (
         ContaFinanceira,
+        ContaPagar,
+        PagamentoContaPagar,
+        EstornoPagamentoContaPagar,
         AporteFinanceiro,
         TransferenciaFinanceira,
         EstornoFinanceiro,
@@ -1101,3 +1151,448 @@ def estornar_lancamento(
             continue
 
     raise AssertionError('A rotina de estorno terminou sem resultado.')
+
+
+def _payable_signature(
+    *,
+    operation: str,
+    actor: Any,
+    source_id: object,
+    description: str,
+    category: str,
+    value: Decimal,
+    due_date: date,
+    reason: str,
+) -> str:
+    return _signature([
+        operation,
+        actor.pk,
+        source_id,
+        description,
+        category,
+        str(value),
+        due_date.isoformat(),
+        reason,
+    ])
+
+
+def criar_conta_pagar(
+    *,
+    actor: Any,
+    description: object,
+    category: object,
+    amount: object,
+    due_date: object,
+    reason: object,
+    idempotency_key: object,
+) -> ContaPagarResult:
+    """Registra uma obrigação avulsa sem criar movimento de saldo."""
+    _require_manager(actor)
+    normalized_description = _required_text(description, 'uma descrição', 160)
+    normalized_category = _required_text(category, 'uma categoria', 80)
+    value = _money(amount, 'o valor da conta a pagar', positive=True)
+    due = _business_date(due_date, 'a data de vencimento')
+    normalized_reason = _required_text(reason, 'um motivo', 500)
+    key = _key(idempotency_key)
+    signature = _payable_signature(
+        operation='CRIAR_CONTA_PAGAR',
+        actor=actor,
+        source_id=None,
+        description=normalized_description,
+        category=normalized_category,
+        value=value,
+        due_date=due,
+        reason=normalized_reason,
+    )
+
+    for attempt in range(CONTA_PAGAR_MAX_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                existing = ContaPagar.objects.filter(
+                    chave_idempotencia=key,
+                ).first()
+                if existing:
+                    if existing.assinatura != signature:
+                        raise _conflicting_key()
+                    return ContaPagarResult(existing, created=False)
+                _assert_key_available(key, ContaPagar)
+                payable = ContaPagar.objects.create(
+                    descricao=normalized_description,
+                    categoria=normalized_category,
+                    valor=value,
+                    data_vencimento=due,
+                    responsavel=actor,
+                    motivo=normalized_reason,
+                    chave_idempotencia=key,
+                    assinatura=signature,
+                )
+                _audit(
+                    action='CRIAR_CONTA_PAGAR',
+                    actor=actor,
+                    reason=normalized_reason,
+                    key=key,
+                    signature=signature,
+                    data={'conta_pagar_id': payable.pk, 'valor': str(value)},
+                )
+                return ContaPagarResult(payable, created=True)
+        except IntegrityError as error:
+            existing = ContaPagar.objects.filter(chave_idempotencia=key).first()
+            if existing:
+                if existing.assinatura != signature:
+                    raise _conflicting_key() from error
+                return ContaPagarResult(existing, created=False)
+            _assert_key_available(key, ContaPagar)
+            raise
+        except OperationalError as error:
+            if (
+                not _is_recoverable_sqlite_lock(error)
+                or attempt + 1 >= CONTA_PAGAR_MAX_ATTEMPTS
+            ):
+                raise
+            sleep(0.01 * (attempt + 1))
+    raise AssertionError('A rotina de criação de conta a pagar terminou sem resultado.')
+
+
+def criar_conta_pagar_de_compra(
+    *,
+    actor: Any,
+    pedido: object,
+    amount: object,
+    due_date: object,
+    reason: object,
+    idempotency_key: object,
+) -> ContaPagarResult:
+    """Gera uma obrigação única para um pedido totalmente recebido."""
+    _require_manager(actor)
+    try:
+        pedido_id = int(str(getattr(pedido, 'pk', pedido)))
+    except (TypeError, ValueError) as error:
+        raise FinanceOperationError('Selecione um pedido de compra válido.') from error
+    normalized_category = 'Compras'
+    normalized_description = 'Compra recebida'
+    value = _money(amount, 'o valor da conta a pagar', positive=True)
+    due = _business_date(due_date, 'a data de vencimento')
+    normalized_reason = _required_text(reason, 'um motivo', 500)
+    key = _key(idempotency_key)
+
+    for attempt in range(CONTA_PAGAR_MAX_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                existing = ContaPagar.objects.filter(
+                    chave_idempotencia=key,
+                ).first()
+                signature = _payable_signature(
+                    operation='CRIAR_CONTA_PAGAR_COMPRA',
+                    actor=actor,
+                    source_id=pedido_id,
+                    description=normalized_description,
+                    category=normalized_category,
+                    value=value,
+                    due_date=due,
+                    reason=normalized_reason,
+                )
+                if existing:
+                    if existing.assinatura != signature:
+                        raise _conflicting_key()
+                    return ContaPagarResult(existing, created=False)
+                _assert_key_available(key, ContaPagar)
+                try:
+                    source = resumo_pedido_para_financeiro(pedido_id=pedido_id)
+                except PurchaseOperationError as error:
+                    raise FinanceOperationError(str(error)) from error
+                if value != source.total_contratado:
+                    raise FinanceOperationError(
+                        'O valor deve corresponder ao total contratado da compra.',
+                    )
+                existing_origin = ContaPagar.objects.filter(
+                    origem_pedido_id=source.pedido_id,
+                ).first()
+                if existing_origin:
+                    raise FinanceOperationError(
+                        'Esse pedido já possui uma conta a pagar.',
+                    )
+                payable = ContaPagar.objects.create(
+                    descricao=f'{normalized_description} #{source.public_id[:8]}',
+                    categoria=normalized_category,
+                    valor=value,
+                    data_vencimento=due,
+                    origem_pedido_id=source.pedido_id,
+                    responsavel=actor,
+                    motivo=normalized_reason,
+                    chave_idempotencia=key,
+                    assinatura=signature,
+                )
+                _audit(
+                    action='CRIAR_CONTA_PAGAR_COMPRA',
+                    actor=actor,
+                    reason=normalized_reason,
+                    key=key,
+                    signature=signature,
+                    data={
+                        'conta_pagar_id': payable.pk,
+                        'pedido_id': source.pedido_id,
+                        'valor': str(value),
+                    },
+                )
+                return ContaPagarResult(payable, created=True)
+        except IntegrityError as error:
+            existing = ContaPagar.objects.filter(chave_idempotencia=key).first()
+            if existing:
+                if existing.assinatura != signature:
+                    raise _conflicting_key() from error
+                return ContaPagarResult(existing, created=False)
+            if ContaPagar.objects.filter(origem_pedido_id=pedido_id).exists():
+                raise FinanceOperationError(
+                    'Esse pedido já possui uma conta a pagar.',
+                ) from error
+            _assert_key_available(key, ContaPagar)
+            raise
+        except OperationalError as error:
+            if (
+                not _is_recoverable_sqlite_lock(error)
+                or attempt + 1 >= CONTA_PAGAR_MAX_ATTEMPTS
+            ):
+                raise
+            sleep(0.01 * (attempt + 1))
+    raise AssertionError('A rotina de geração de conta a pagar terminou sem resultado.')
+
+
+def listar_contas_pagar(*, as_of: object) -> dict[str, Any]:
+    """Agrupa obrigações abertas, vencidas e pagas para o painel."""
+    reference = _business_date(as_of, 'a data de referência')
+    queryset = ContaPagar.objects.select_related('origem_pedido').all()
+    return {
+        'abertas': queryset.filter(
+            situacao=ContaPagar.Situacao.ABERTA,
+            data_vencimento__gte=reference,
+        ),
+        'vencidas': queryset.filter(
+            situacao=ContaPagar.Situacao.ABERTA,
+            data_vencimento__lt=reference,
+        ),
+        'pagas': queryset.filter(situacao=ContaPagar.Situacao.PAGA),
+    }
+
+
+def listar_pedidos_elegiveis_conta_pagar():
+    """Lista pedidos completos ainda sem obrigação financeira vinculada."""
+    from compras.models import PedidoCompra
+
+    return PedidoCompra.objects.filter(
+        estado=PedidoCompra.Estado.RECEBIDO,
+        conta_pagar__isnull=True,
+    ).order_by('-confirmado_em', '-pk')
+
+
+def pagar_conta_pagar(
+    *,
+    actor: Any,
+    conta_pagar: ContaPagar | int,
+    account: ContaFinanceira | int,
+    payment_date: object,
+    amount: object,
+    reason: object,
+    idempotency_key: object,
+) -> PagamentoContaPagarResult:
+    """Paga integralmente uma obrigação e registra o débito na mesma transação."""
+    _require_manager(actor)
+    payable = _payable(conta_pagar)
+    resolved_account = _account(account)
+    movement = _business_date(payment_date)
+    value = _money(amount, 'o valor do pagamento', positive=True)
+    normalized_reason = _required_text(reason, 'um motivo', 500)
+    key = _key(idempotency_key)
+    signature = _signature([
+        'PAGAR_CONTA_PAGAR', actor.pk, payable.pk, resolved_account.pk,
+        str(value), movement.isoformat(), normalized_reason,
+    ])
+
+    for attempt in range(CONTA_PAGAR_MAX_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                existing = PagamentoContaPagar.objects.filter(
+                    chave_idempotencia=key,
+                ).first()
+                if existing:
+                    if existing.assinatura != signature:
+                        raise _conflicting_key()
+                    return PagamentoContaPagarResult(existing, created=False)
+                _assert_key_available(key, PagamentoContaPagar)
+                locked_payable = ContaPagar.objects.select_for_update().get(
+                    pk=payable.pk,
+                )
+                if locked_payable.situacao != ContaPagar.Situacao.ABERTA:
+                    raise FinanceOperationError('Essa conta a pagar já foi paga.')
+                if value != locked_payable.valor:
+                    raise FinanceOperationError(
+                        'O valor do pagamento deve ser igual ao valor da conta a pagar.',
+                    )
+                locked_account = ContaFinanceira.objects.select_for_update().get(
+                    pk=resolved_account.pk,
+                )
+                if not locked_account.ativo:
+                    raise FinanceOperationError('A conta financeira está inativa.')
+                _validate_movement_date(locked_account, movement)
+                debit = LancamentoFinanceiro.objects.create(
+                    conta=locked_account,
+                    direcao=LancamentoFinanceiro.Direcao.DEBITO,
+                    valor=value,
+                    data_movimento=movement,
+                    descricao='Pagamento de conta a pagar',
+                    motivo=normalized_reason,
+                    responsavel=actor,
+                )
+                payment = PagamentoContaPagar.objects.create(
+                    conta_pagar=locked_payable,
+                    conta=locked_account,
+                    lancamento=debit,
+                    data_pagamento=movement,
+                    valor=value,
+                    responsavel=actor,
+                    motivo=normalized_reason,
+                    chave_idempotencia=key,
+                    assinatura=signature,
+                )
+                locked_payable.situacao = ContaPagar.Situacao.PAGA
+                locked_payable.save(update_fields=('situacao',))
+                _audit(
+                    action='PAGAR_CONTA_PAGAR',
+                    actor=actor,
+                    reason=normalized_reason,
+                    key=key,
+                    signature=signature,
+                    data={
+                        'pagamento_id': payment.pk,
+                        'conta_pagar_id': locked_payable.pk,
+                        'lancamento_id': debit.pk,
+                    },
+                )
+                return PagamentoContaPagarResult(payment, created=True)
+        except IntegrityError as error:
+            existing = PagamentoContaPagar.objects.filter(
+                chave_idempotencia=key,
+            ).first()
+            if existing:
+                if existing.assinatura != signature:
+                    raise _conflicting_key() from error
+                return PagamentoContaPagarResult(existing, created=False)
+            if PagamentoContaPagar.objects.filter(conta_pagar_id=payable.pk).exists():
+                raise FinanceOperationError('Essa conta a pagar já foi paga.') from error
+            _assert_key_available(key, PagamentoContaPagar)
+            raise
+        except OperationalError as error:
+            if (
+                not _is_recoverable_sqlite_lock(error)
+                or attempt + 1 >= CONTA_PAGAR_MAX_ATTEMPTS
+            ):
+                raise
+            sleep(0.01 * (attempt + 1))
+    raise AssertionError('A rotina de pagamento de conta a pagar terminou sem resultado.')
+
+
+def estornar_pagamento_conta_pagar(
+    *,
+    actor: Any,
+    pagamento: PagamentoContaPagar | int,
+    movement_date: object,
+    reason: object,
+    idempotency_key: object,
+) -> EstornoPagamentoContaPagarResult:
+    """Estorna o débito e reabre a obrigação em uma única transação."""
+    _require_manager(actor)
+    payment = _payable_payment(pagamento)
+    movement = _business_date(movement_date)
+    normalized_reason = _required_text(reason, 'um motivo', 500)
+    key = _key(idempotency_key)
+    signature = _signature([
+        'ESTORNAR_PAGAMENTO_CONTA_PAGAR', actor.pk, payment.pk,
+        movement.isoformat(), normalized_reason,
+    ])
+
+    for attempt in range(CONTA_PAGAR_MAX_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                existing = EstornoPagamentoContaPagar.objects.filter(
+                    chave_idempotencia=key,
+                ).first()
+                if existing:
+                    if existing.assinatura != signature:
+                        raise _conflicting_key()
+                    return EstornoPagamentoContaPagarResult(existing, created=False)
+                _assert_key_available(key, EstornoPagamentoContaPagar)
+                locked_payment = PagamentoContaPagar.objects.select_for_update().get(
+                    pk=payment.pk,
+                )
+                locked_payable = ContaPagar.objects.select_for_update().get(
+                    pk=locked_payment.conta_pagar_id,
+                )
+                if EstornoPagamentoContaPagar.objects.filter(
+                    pagamento_id=locked_payment.pk,
+                ).exists():
+                    raise FinanceOperationError('Esse pagamento já possui um estorno.')
+                original = LancamentoFinanceiro.objects.select_for_update().get(
+                    pk=locked_payment.lancamento_id,
+                )
+                locked_account = ContaFinanceira.objects.select_for_update().get(
+                    pk=locked_payment.conta_id,
+                )
+                if not locked_account.ativo:
+                    raise FinanceOperationError('A conta financeira está inativa.')
+                _validate_movement_date(locked_account, movement)
+                reversal = LancamentoFinanceiro.objects.create(
+                    conta=locked_account,
+                    direcao=LancamentoFinanceiro.Direcao.CREDITO,
+                    valor=locked_payment.valor,
+                    data_movimento=movement,
+                    descricao='Estorno de pagamento de conta a pagar',
+                    motivo=normalized_reason,
+                    responsavel=actor,
+                    estorno_de=original,
+                )
+                estorno = EstornoPagamentoContaPagar.objects.create(
+                    pagamento=locked_payment,
+                    lancamento=reversal,
+                    data_movimento=movement,
+                    responsavel=actor,
+                    motivo=normalized_reason,
+                    chave_idempotencia=key,
+                    assinatura=signature,
+                )
+                locked_payable.situacao = ContaPagar.Situacao.ABERTA
+                locked_payable.save(update_fields=('situacao',))
+                _audit(
+                    action='ESTORNAR_PAGAMENTO_CONTA_PAGAR',
+                    actor=actor,
+                    reason=normalized_reason,
+                    key=key,
+                    signature=signature,
+                    data={
+                        'estorno_id': estorno.pk,
+                        'pagamento_id': locked_payment.pk,
+                        'lancamento_original_id': original.pk,
+                        'lancamento_estorno_id': reversal.pk,
+                    },
+                )
+                return EstornoPagamentoContaPagarResult(estorno, created=True)
+        except IntegrityError as error:
+            existing = EstornoPagamentoContaPagar.objects.filter(
+                chave_idempotencia=key,
+            ).first()
+            if existing:
+                if existing.assinatura != signature:
+                    raise _conflicting_key() from error
+                return EstornoPagamentoContaPagarResult(existing, created=False)
+            if EstornoPagamentoContaPagar.objects.filter(
+                pagamento_id=payment.pk,
+            ).exists():
+                raise FinanceOperationError('Esse pagamento já possui um estorno.') from error
+            _assert_key_available(key, EstornoPagamentoContaPagar)
+            raise
+        except OperationalError as error:
+            if (
+                not _is_recoverable_sqlite_lock(error)
+                or attempt + 1 >= CONTA_PAGAR_MAX_ATTEMPTS
+            ):
+                raise
+            sleep(0.01 * (attempt + 1))
+    raise AssertionError('A rotina de estorno de pagamento terminou sem resultado.')

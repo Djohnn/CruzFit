@@ -7,16 +7,25 @@ from django.urls import reverse
 
 from caixa.models import SessaoCaixa
 from caixa.services import abrir_sessao, registrar_recebimento
-from estoque.models import Categoria, Produto
+from compras.models import PedidoCompra
+from compras.services import confirmar_pedido, criar_rascunho, receber_pedido
+from estoque.models import Categoria, Fornecedor, Produto
 from financeiro.models import (
     AporteFinanceiro,
+    ContaPagar,
     DepositoCartao,
     EstornoFinanceiro,
+    PagamentoContaPagar,
     RecebimentoPixFinanceiro,
     RecebivelCartao,
     TransferenciaFinanceira,
 )
-from financeiro.services import calcular_saldo, criar_conta_financeira, registrar_aporte
+from financeiro.services import (
+    calcular_saldo,
+    criar_conta_financeira,
+    criar_conta_pagar,
+    registrar_aporte,
+)
 from vendas.services import registrar_venda
 
 User = get_user_model()
@@ -238,3 +247,184 @@ class FinanceViewTests(TestCase):
         self.assertEqual(RecebimentoPixFinanceiro.objects.count(), 1)
         self.assertEqual(DepositoCartao.objects.count(), 1)
         self.assertEqual(calcular_saldo(self.account), Decimal('647.00'))
+
+
+class ContaPagarViewTests(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(
+            username='gerente-view-contas-pagar', password='senha', cargo='G',
+        )
+        self.seller = User.objects.create_user(
+            username='vendedor-view-contas-pagar', password='senha', cargo='V',
+        )
+        self.account = criar_conta_financeira(
+            actor=self.manager,
+            name='Conta view contas a pagar',
+            initial_balance='500.00',
+            cutover_date=date(2026, 11, 6),
+            reason='Conta para interface contas a pagar',
+            idempotency_key='conta-view-contas-pagar',
+        ).conta
+
+    def _create_purchase(self):
+        category = Categoria.objects.create(titulo='Categoria compra view')
+        supplier = Fornecedor.objects.create(
+            nome='Fornecedor view contas a pagar',
+            documento=None,
+            responsavel=self.manager,
+            chave_idempotencia='fornecedor-view-contas-pagar',
+            assinatura='assinatura-fornecedor-view-contas-pagar',
+        )
+        product = Produto.objects.create(
+            nome='Produto view contas a pagar',
+            categoria=category,
+            quantidade='1.00',
+            preco_compra='12.34',
+            preco_venda='20.00',
+        )
+        draft = criar_rascunho(
+            actor=self.manager,
+            fornecedor_id=supplier.pk,
+            lines=[{
+                'produto_id': product.pk,
+                'quantidade': '2.00',
+                'custo_unitario': '12.34',
+            }],
+            observation='Compra para tela financeira',
+            reason='Criar compra para tela financeira',
+            idempotency_key='pedido-view-contas-pagar-rascunho',
+        ).pedido
+        order = confirmar_pedido(
+            actor=self.manager,
+            pedido_id=draft.pk,
+            reason='Confirmar compra para tela financeira',
+            idempotency_key='pedido-view-contas-pagar-confirmacao',
+        ).pedido
+        item = order.itens.get()
+        receber_pedido(
+            actor=self.manager,
+            pedido_id=order.pk,
+            lines=[{'item_id': item.pk, 'quantidade': '2.00'}],
+            referencia_documental='NF-VIEW-CONTAS-PAGAR',
+            reason='Receber compra para tela financeira',
+            idempotency_key='recebimento-view-contas-pagar',
+        )
+        order.refresh_from_db()
+        self.assertEqual(order.estado, PedidoCompra.Estado.RECEBIDO)
+        return order
+
+    def test_panel_lists_open_overdue_and_paid_payables(self):
+        """Given obrigações; When abre painel; Then exibe os três estados."""
+        open_payable = criar_conta_pagar(
+            actor=self.manager,
+            description='Despesa aberta na interface',
+            category='Operacional',
+            amount='50.00',
+            due_date=date(2026, 11, 20),
+            reason='Criar aberta na interface',
+            idempotency_key='despesa-view-aberta',
+        ).conta
+        criar_conta_pagar(
+            actor=self.manager,
+            description='Despesa vencida na interface',
+            category='Operacional',
+            amount='60.00',
+            due_date=date(2026, 11, 5),
+            reason='Criar vencida na interface',
+            idempotency_key='despesa-view-vencida',
+        )
+        paid = criar_conta_pagar(
+            actor=self.manager,
+            description='Despesa paga na interface',
+            category='Operacional',
+            amount='70.00',
+            due_date=date(2026, 11, 6),
+            reason='Criar paga na interface',
+            idempotency_key='despesa-view-paga',
+        ).conta
+        self.client.force_login(self.manager)
+        self.client.post(
+            reverse('financeiro:conta_pagar_pagamento', args=(paid.pk,)),
+            {
+                'conta_id': self.account.pk,
+                'valor': '70.00',
+                'data_pagamento': '2026-11-06',
+                'motivo': 'Pagar na interface',
+                'chave_idempotencia': 'pagamento-view-paga',
+            },
+        )
+
+        response = self.client.get(reverse('financeiro:painel'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Contas a pagar')
+        self.assertContains(response, open_payable.descricao)
+        self.assertContains(response, 'Despesa vencida na interface')
+        self.assertContains(response, 'Despesa paga na interface')
+
+    def test_manager_can_create_purchase_payable_pay_and_reverse_from_interface(self):
+        """Given compra recebida; When opera na tela; Then mantém vínculos e saldo."""
+        order = self._create_purchase()
+        self.client.force_login(self.manager)
+        create_response = self.client.post(
+            reverse('financeiro:conta_pagar_compra'),
+            {
+                'pedido_id': order.pk,
+                'valor': '24.68',
+                'data_vencimento': '2026-11-20',
+                'motivo': 'Confirmar compra pela interface',
+                'chave_idempotencia': 'obrigacao-view-compra',
+            },
+        )
+        payable = ContaPagar.objects.get(origem_pedido=order)
+        payment_response = self.client.post(
+            reverse('financeiro:conta_pagar_pagamento', args=(payable.pk,)),
+            {
+                'conta_id': self.account.pk,
+                'valor': '24.68',
+                'data_pagamento': '2026-11-06',
+                'motivo': 'Pagar compra pela interface',
+                'chave_idempotencia': 'pagamento-view-compra',
+            },
+        )
+        payment = PagamentoContaPagar.objects.get(conta_pagar=payable)
+        reversal_response = self.client.post(
+            reverse('financeiro:conta_pagar_estorno', args=(payment.pk,)),
+            {
+                'data_movimento': '2026-11-06',
+                'motivo': 'Estornar pagamento pela interface',
+                'chave_idempotencia': 'estorno-view-compra',
+            },
+        )
+        payable.refresh_from_db()
+        self.assertEqual(create_response.status_code, 302)
+        self.assertEqual(payment_response.status_code, 302)
+        self.assertEqual(reversal_response.status_code, 302)
+        self.assertEqual(payable.situacao, ContaPagar.Situacao.ABERTA)
+        self.assertEqual(calcular_saldo(self.account), Decimal('500.00'))
+
+    def test_vendor_direct_posts_to_payable_actions_are_forbidden(self):
+        """Given vendedor; When forja POST; Then as escritas retornam 403."""
+        payable = criar_conta_pagar(
+            actor=self.manager,
+            description='Despesa protegida',
+            category='Operacional',
+            amount='120.00',
+            due_date=date(2026, 11, 6),
+            reason='Criar despesa protegida',
+            idempotency_key='despesa-view-protegida',
+        ).conta
+        self.client.force_login(self.seller)
+        response = self.client.post(
+            reverse('financeiro:conta_pagar_nova'),
+            {
+                'descricao': 'Despesa indevida',
+                'categoria': 'Operacional',
+                'valor': '10.00',
+                'data_vencimento': '2026-11-06',
+                'motivo': 'Tentativa de vendedor',
+                'chave_idempotencia': 'despesa-view-vendedor',
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(ContaPagar.objects.count(), 1)
+        self.assertEqual(payable.situacao, ContaPagar.Situacao.ABERTA)

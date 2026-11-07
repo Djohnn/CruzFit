@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load static %}
+{% block 'title' %}{{ titulo }} | Financeiro{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'financeiro/css/financeiro.css' %}">{% endblock %}
+{% block 'body' %}
+<main class="finance-page"><div class="finance-shell finance-form-shell">
+  <a class="finance-back-link" href="{% url 'financeiro:painel' %}">← Voltar ao Financeiro</a>
+  <header class="finance-heading finance-heading-compact"><div><p class="finance-kicker">Operação auditada</p><h1>{{ titulo }}</h1><p>Obrigação, pagamento e estorno ficam registrados separadamente no histórico.</p></div></header>
+  {% if messages %}<div class="finance-messages" aria-live="polite">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+  <form class="finance-form" method="post" novalidate>
+    {% csrf_token %}<input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+    {% if acao == 'conta_pagar_nova' %}
+      <div class="finance-form-grid">
+        <div class="form-group"><label for="id_descricao">Descrição</label><input id="id_descricao" class="form-control" name="descricao" value="{{ descricao }}" maxlength="160" required></div>
+        <div class="form-group"><label for="id_categoria">Categoria</label><input id="id_categoria" class="form-control" name="categoria" value="{{ categoria }}" maxlength="80" required></div>
+        <div class="form-group"><label for="id_valor">Valor</label><div class="finance-input-prefix"><span>R$</span><input id="id_valor" class="form-control" name="valor" value="{{ valor }}" inputmode="decimal" required></div></div>
+        <div class="form-group"><label for="id_vencimento">Vencimento</label><input id="id_vencimento" class="form-control" type="date" name="data_vencimento" value="{{ data_vencimento }}" required></div>
+        <div class="form-group finance-form-wide"><label for="id_motivo">Motivo</label><textarea id="id_motivo" class="form-control" name="motivo" maxlength="500" required>{{ motivo }}</textarea></div>
+      </div>
+    {% elif acao == 'conta_pagar_compra' %}
+      <div class="finance-form-grid">
+        <div class="form-group finance-form-wide"><label for="id_pedido">Pedido totalmente recebido</label><select id="id_pedido" class="form-control" name="pedido_id" required><option value="">Selecione</option>{% for pedido in pedidos %}<option value="{{ pedido.pk }}" {% if pedido.pk|stringformat:'s' == pedido_id|stringformat:'s' %}selected{% endif %}>#{{ pedido.pk }} · {{ pedido.fornecedor_nome }} · R$ {{ pedido.total_contratado|floatformat:2 }}</option>{% endfor %}</select><small>Pedidos parciais só aparecem depois da última entrega.</small></div>
+        <div class="form-group"><label for="id_valor">Valor confirmado</label><div class="finance-input-prefix"><span>R$</span><input id="id_valor" class="form-control" name="valor" value="{{ valor }}" inputmode="decimal" required></div></div>
+        <div class="form-group"><label for="id_vencimento">Vencimento</label><input id="id_vencimento" class="form-control" type="date" name="data_vencimento" value="{{ data_vencimento }}" required></div>
+        <div class="form-group finance-form-wide"><label for="id_motivo">Conferência do gerente</label><textarea id="id_motivo" class="form-control" name="motivo" maxlength="500" required>{{ motivo }}</textarea></div>
+      </div>
+    {% elif acao == 'conta_pagar_pagamento' %}
+      <div class="finance-original"><span>Obrigação</span><strong>{{ conta_pagar.descricao }} · R$ {{ conta_pagar.valor|floatformat:2 }}</strong><small>Vencimento {{ conta_pagar.data_vencimento|date:"d/m/Y" }}</small></div>
+      <div class="finance-form-grid">
+        <div class="form-group"><label for="id_conta">Conta financeira</label><select id="id_conta" class="form-control" name="conta_id" required><option value="">Selecione</option>{% for conta in contas %}<option value="{{ conta.pk }}" {% if conta.pk|stringformat:'s' == conta_id|stringformat:'s' %}selected{% endif %}>{{ conta.nome }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label for="id_valor">Valor pago</label><div class="finance-input-prefix"><span>R$</span><input id="id_valor" class="form-control" name="valor" value="{{ valor }}" inputmode="decimal" required></div></div>
+        <div class="form-group"><label for="id_data">Data efetiva</label><input id="id_data" class="form-control" type="date" name="data_pagamento" value="{{ data_pagamento }}" required><small>Movimentos anteriores ao corte são recusados.</small></div>
+        <div class="form-group finance-form-wide"><label for="id_motivo">Motivo</label><textarea id="id_motivo" class="form-control" name="motivo" maxlength="500" required>{{ motivo }}</textarea></div>
+      </div>
+    {% else %}
+      <div class="finance-original"><span>Pagamento original</span><strong>{{ pagamento.conta_pagar.descricao }} · R$ {{ pagamento.valor|floatformat:2 }}</strong><small>{{ pagamento.data_pagamento|date:"d/m/Y" }} · {{ pagamento.conta.nome }}</small></div>
+      <div class="finance-form-grid">
+        <div class="form-group"><label for="id_data">Data do estorno</label><input id="id_data" class="form-control" type="date" name="data_movimento" value="{{ data_movimento }}" required></div>
+        <div class="form-group finance-form-wide"><label for="id_motivo">Motivo</label><textarea id="id_motivo" class="form-control" name="motivo" maxlength="500" required>{{ motivo }}</textarea></div>
+      </div>
+    {% endif %}
+    <div class="finance-form-actions"><a class="btn btn-outline-light" href="{% url 'financeiro:painel' %}">Cancelar</a><button class="btn btn-primary" type="submit">Confirmar operação</button></div>
+  </form>
+</div></main>
+{% endblock %}

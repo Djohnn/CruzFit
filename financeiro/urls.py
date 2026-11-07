@@ -13,4 +13,16 @@ urlpatterns = [
     path('estornos/<int:pk>/', views.estorno, name='estorno'),
     path('recebimentos/pix/', views.pix_confirmacao, name='pix_confirmacao'),
     path('recebimentos/cartao/', views.cartao_liquidacao, name='cartao_liquidacao'),
+    path('contas-pagar/nova/', views.conta_pagar_nova, name='conta_pagar_nova'),
+    path('contas-pagar/compras/', views.conta_pagar_compra, name='conta_pagar_compra'),
+    path(
+        'contas-pagar/<int:pk>/pagar/',
+        views.conta_pagar_pagamento,
+        name='conta_pagar_pagamento',
+    ),
+    path(
+        'contas-pagar/pagamentos/<int:pk>/estornar/',
+        views.conta_pagar_estorno,
+        name='conta_pagar_estorno',
+    ),
 ]
