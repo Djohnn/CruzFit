@@ -6,6 +6,12 @@ app_name = 'financeiro'
 
 urlpatterns = [
     path('', views.painel, name='painel'),
+    path('fechamentos/', views.fechamento_mensal, name='fechamento_mensal'),
+    path(
+        'fechamentos/<int:pk>/reabrir/',
+        views.fechamento_reabrir,
+        name='fechamento_reabrir',
+    ),
     path('contas/nova/', views.conta_nova, name='conta_nova'),
     path('contas/<int:pk>/', views.conta_detalhe, name='conta_detalhe'),
     path('aportes/', views.aporte, name='aporte'),

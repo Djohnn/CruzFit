@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 from functools import wraps
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseForbidden
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from .models import (
     ContaFinanceira,
     ContaPagar,
+    FechamentoMensal,
     LancamentoFinanceiro,
     PagamentoContaPagar,
 )
@@ -27,6 +30,7 @@ from .queries import (
 from .services import (
     FinanceOperationError,
     calcular_saldo,
+    confirmar_fechamento_mensal,
     confirmar_pix,
     criar_conta_financeira,
     criar_conta_pagar,
@@ -37,6 +41,9 @@ from .services import (
     listar_contas_pagar,
     listar_pedidos_elegiveis_conta_pagar,
     pagar_conta_pagar,
+    periodo_mensal,
+    previsualizar_fechamento,
+    reabrir_fechamento_mensal,
     registrar_aporte,
     transferir_entre_contas,
 )
@@ -114,6 +121,89 @@ def painel(request: HttpRequest) -> HttpResponse:
         'contas_pagar_pagas': payables['pagas'],
         'pedidos_contas_pagar': listar_pedidos_elegiveis_conta_pagar(),
     })
+
+
+@gerente_required
+@require_http_methods(['GET', 'POST'])
+def fechamento_mensal(request: HttpRequest) -> HttpResponse:
+    """Prévia e confirmação do fechamento mensal para gerentes."""
+    requested_month = request.POST.get('mes') or request.GET.get('mes')
+    if not requested_month:
+        requested_month = date.today().replace(day=1).isoformat()[:7]
+    requested_margin = request.POST.get('margem') or request.GET.get('margem') or '0.00'
+    try:
+        preview = previsualizar_fechamento(
+            month=requested_month,
+            margin=requested_margin,
+        )
+        if request.method == 'POST':
+            result = confirmar_fechamento_mensal(
+                actor=request.user,
+                month=requested_month,
+                margin=requested_margin,
+                preview_signature=request.POST.get('assinatura_previa', ''),
+                reason=request.POST.get('motivo', ''),
+                idempotency_key=request.POST.get('chave_idempotencia', ''),
+            )
+            messages.success(
+                request,
+                'Fechamento mensal confirmado.' if result.created
+                else 'Esse fechamento mensal já estava confirmado.',
+            )
+            return redirect(
+                f"{reverse('financeiro:fechamento_mensal')}?mes={requested_month}&margem={requested_margin}",
+            )
+    except FinanceOperationError as error:
+        messages.error(request, str(error))
+        return render(request, 'financeiro/fechamento_form.html', {
+            'preview': None,
+            'month_value': requested_month,
+            'margin_value': requested_margin,
+            'history': FechamentoMensal.objects.filter(
+                mes_referencia=periodo_mensal(requested_month)[0],
+            ).order_by('-versao'),
+            'chave_idempotencia': request.POST.get('chave_idempotencia', uuid.uuid4().hex),
+        }, status=400)
+
+    month_date = periodo_mensal(requested_month)[0]
+    return render(request, 'financeiro/fechamento_form.html', {
+        'preview': preview,
+        'month_value': month_date.strftime('%Y-%m'),
+        'margin_value': preview.margem,
+        'saldo_disponivel': sum(
+            (account.saldo_final for account in preview.contas),
+            Decimal('0.00'),
+        ),
+        'history': FechamentoMensal.objects.filter(
+            mes_referencia=month_date,
+        ).prefetch_related('contas__conta').order_by('-versao'),
+        'chave_idempotencia': request.POST.get('chave_idempotencia', uuid.uuid4().hex),
+    })
+
+
+@gerente_required
+@require_http_methods(['POST'])
+def fechamento_reabrir(request: HttpRequest, pk: int) -> HttpResponse:
+    fechamento = get_object_or_404(FechamentoMensal, pk=pk)
+    try:
+        result = reabrir_fechamento_mensal(
+            actor=request.user,
+            fechamento=fechamento,
+            reason=request.POST.get('motivo', ''),
+            idempotency_key=request.POST.get('chave_idempotencia', ''),
+        )
+    except FinanceOperationError as error:
+        messages.error(request, str(error))
+        return redirect(
+            f"{reverse('financeiro:fechamento_mensal')}?mes={fechamento.mes_referencia:%Y-%m}",
+        )
+    messages.success(
+        request,
+        'Fechamento reaberto.' if result.created else 'Essa reabertura já estava registrada.',
+    )
+    return redirect(
+        f"{reverse('financeiro:fechamento_mensal')}?mes={fechamento.mes_referencia:%Y-%m}",
+    )
 
 
 @gerente_required

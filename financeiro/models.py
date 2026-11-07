@@ -606,6 +606,147 @@ class EstornoPagamentoContaPagar(models.Model):
         return f'Estorno do pagamento #{self.pagamento_id}'
 
 
+class FechamentoMensal(models.Model):
+    """Snapshot versionado da posição financeira ao fim de um mês."""
+
+    class Situacao(models.TextChoices):
+        CONFIRMADO = 'CONFIRMADO', 'Confirmado'
+        REABERTO = 'REABERTO', 'Reaberto'
+
+    class Classificacao(models.TextChoices):
+        MAL = 'MAL', 'Mal'
+        NO_LIMITE = 'NO_LIMITE', 'No limite'
+        BEM = 'BEM', 'Bem'
+
+    mes_referencia = models.DateField()
+    versao = models.PositiveIntegerField()
+    situacao = models.CharField(
+        max_length=10,
+        choices=Situacao.choices,
+        default=Situacao.CONFIRMADO,
+    )
+    vigente = models.BooleanField(default=True)
+    margem = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
+    entradas_operacionais_liquidas = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+    )
+    obrigacoes_vencimento_mes = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+    )
+    pagamentos_efetivos = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+    )
+    obrigacoes_pagas = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+    )
+    obrigacoes_abertas = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+    )
+    vencidas_anteriores = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+    )
+    cartao_a_receber = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+    )
+    cobertura = models.DecimalField(max_digits=14, decimal_places=2)
+    classificacao = models.CharField(
+        max_length=10,
+        choices=Classificacao.choices,
+    )
+    assinatura_previa = models.CharField(max_length=64)
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='fechamentos_mensais_financeiros',
+    )
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    confirmado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-mes_referencia', '-versao', '-pk')
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(margem__gte=0),
+                name='financeiro_fechamento_margem_nao_negativa',
+            ),
+            models.UniqueConstraint(
+                fields=('mes_referencia',),
+                condition=models.Q(vigente=True),
+                name='financeiro_fechamento_vigente_unico_mes',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'Fechamento {self.mes_referencia:%Y-%m} v{self.versao}'
+
+
+class FechamentoMensalConta(models.Model):
+    """Saldos imutáveis de cada conta no snapshot mensal."""
+
+    fechamento = models.ForeignKey(
+        FechamentoMensal,
+        on_delete=models.PROTECT,
+        related_name='contas',
+    )
+    conta = models.ForeignKey(
+        ContaFinanceira,
+        on_delete=models.PROTECT,
+        related_name='fechamentos_mensais',
+    )
+    saldo_inicial = models.DecimalField(max_digits=14, decimal_places=2)
+    saldo_final = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        ordering = ('conta__nome', 'conta_id')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('fechamento', 'conta'),
+                name='financeiro_fechamento_conta_unico',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.fechamento} — {self.conta}'
+
+
+class ReaberturaFechamentoMensal(models.Model):
+    """Motivo auditável para encerrar a vigência de um fechamento."""
+
+    fechamento = models.OneToOneField(
+        FechamentoMensal,
+        on_delete=models.PROTECT,
+        related_name='reabertura',
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='reaberturas_fechamentos_mensais',
+    )
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+
+    def __str__(self) -> str:
+        return f'Reabertura de {self.fechamento}'
+
+
 class EventoAuditoriaFinanceiro(models.Model):
     acao = models.CharField(max_length=80)
     responsavel = models.ForeignKey(

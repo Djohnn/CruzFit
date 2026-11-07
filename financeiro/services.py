@@ -26,9 +26,12 @@ from .models import (
     EstornoPagamentoContaPagar,
     EstornoRecebimentoCartao,
     EventoAuditoriaFinanceiro,
+    FechamentoMensal,
+    FechamentoMensalConta,
     LancamentoFinanceiro,
     LiquidacaoCartao,
     PagamentoContaPagar,
+    ReaberturaFechamentoMensal,
     RecebimentoPixFinanceiro,
     RecebivelCartao,
     TransferenciaFinanceira,
@@ -105,9 +108,57 @@ class EstornoPagamentoContaPagarResult:
     created: bool
 
 
+@dataclass(frozen=True)
+class FechamentoContaPreview:
+    conta_id: int
+    nome: str
+    saldo_inicial: Decimal
+    saldo_final: Decimal
+
+
+@dataclass(frozen=True)
+class FechamentoObrigacaoPreview:
+    conta_pagar_id: int
+    descricao: str
+    valor: Decimal
+    data_vencimento: date
+    situacao: str
+
+
+@dataclass(frozen=True)
+class FechamentoMensalPreview:
+    mes_referencia: date
+    margem: Decimal
+    entradas_operacionais_liquidas: Decimal
+    obrigacoes_vencimento_mes: Decimal
+    pagamentos_efetivos: Decimal
+    obrigacoes_pagas: Decimal
+    obrigacoes_abertas: Decimal
+    vencidas_anteriores: Decimal
+    cartao_a_receber: Decimal
+    cobertura: Decimal
+    classificacao: str
+    contas: tuple[FechamentoContaPreview, ...]
+    obrigacoes: tuple[FechamentoObrigacaoPreview, ...]
+    assinatura: str
+
+
+@dataclass(frozen=True)
+class FechamentoMensalResult:
+    fechamento: FechamentoMensal
+    created: bool
+
+
+@dataclass(frozen=True)
+class ReaberturaFechamentoMensalResult:
+    reabertura: ReaberturaFechamentoMensal
+    created: bool
+
+
 ESTORNO_MAX_ATTEMPTS = 5
 RECEBIMENTO_MAX_ATTEMPTS = 5
 CONTA_PAGAR_MAX_ATTEMPTS = 5
+FECHAMENTO_MAX_ATTEMPTS = 5
 
 
 def _is_recoverable_sqlite_lock(error: OperationalError) -> bool:
@@ -226,6 +277,17 @@ def _payable_payment(value: PagamentoContaPagar | int) -> PagamentoContaPagar:
         ) from error
 
 
+def _monthly_closing(value: FechamentoMensal | int) -> FechamentoMensal:
+    if isinstance(value, FechamentoMensal):
+        if not value.pk:
+            raise FinanceOperationError('Selecione um fechamento mensal válido.')
+        return value
+    try:
+        return FechamentoMensal.objects.get(pk=int(value))
+    except (FechamentoMensal.DoesNotExist, TypeError, ValueError) as error:
+        raise FinanceOperationError('Selecione um fechamento mensal válido.') from error
+
+
 def _audit(
     *,
     action: str,
@@ -262,6 +324,8 @@ def _assert_key_available(key: str, current_model: Any) -> None:
         RecebivelCartao,
         DepositoCartao,
         EstornoRecebimentoCartao,
+        FechamentoMensal,
+        ReaberturaFechamentoMensal,
         EventoAuditoriaFinanceiro,
     ):
         if model is current_model:
@@ -867,6 +931,536 @@ def calcular_saldo(account: ContaFinanceira | int) -> Decimal:
         direcao=LancamentoFinanceiro.Direcao.DEBITO,
     ).aggregate(total=Sum('valor'))['total'] or Decimal('0.00')
     return (resolved.saldo_inicial + credits - debits).quantize(Decimal('0.01'))
+
+
+def periodo_mensal(month: object) -> tuple[date, date]:
+    """Normalizar mês para o primeiro e o último dia, ambos inclusivos."""
+    if isinstance(month, date):
+        reference = month
+    else:
+        raw = str(month or '').strip()
+        try:
+            reference = date.fromisoformat(
+                f'{raw}-01' if len(raw) == 7 else raw,
+            )
+        except ValueError as error:
+            raise FinanceOperationError(
+                'Informe o mês de referência no formato AAAA-MM.',
+            ) from error
+    try:
+        first = date(reference.year, reference.month, 1)
+        if first.month == 12:
+            next_month = date(first.year + 1, 1, 1)
+        else:
+            next_month = date(first.year, first.month + 1, 1)
+    except ValueError as error:
+        raise FinanceOperationError(
+            'Informe um mês de referência válido.',
+        ) from error
+    return first, next_month.fromordinal(next_month.toordinal() - 1)
+
+
+def _round_money(value: Decimal | None) -> Decimal:
+    return (value or Decimal('0.00')).quantize(Decimal('0.01'))
+
+
+def _payable_state_as_of(
+    payable: ContaPagar,
+    end_date: date,
+) -> tuple[str, list[tuple[date, object, int, str]]]:
+    events: list[tuple[date, object, int, str]] = []
+    payments = PagamentoContaPagar.objects.filter(
+        conta_pagar_id=payable.pk,
+    ).select_related('conta').order_by('pk')
+    for payment in payments:
+        if payment.data_pagamento > end_date:
+            continue
+        if payment.data_pagamento < payment.conta.data_corte_financeiro:
+            continue
+        events.append((
+            payment.data_pagamento,
+            payment.criada_em,
+            payment.pk,
+            'PAGA',
+        ))
+        refund = EstornoPagamentoContaPagar.objects.filter(
+            pagamento_id=payment.pk,
+        ).first()
+        if refund is not None and refund.data_movimento <= end_date:
+            events.append((
+                refund.data_movimento,
+                refund.criada_em,
+                refund.pk,
+                'ABERTA',
+            ))
+    events.sort(key=lambda event: (event[0], event[1], event[2]))
+    state = 'ABERTA'
+    for _event_date, _created_at, _event_id, state_change in events:
+        state = state_change
+    return state, events
+
+
+def _fechamento_classificacao(coverage: Decimal, margin: Decimal) -> str:
+    if coverage < 0:
+        return 'MAL'
+    if coverage > 0 and coverage >= margin:
+        return 'BEM'
+    return 'NO_LIMITE'
+
+
+def previsualizar_fechamento(
+    *,
+    month: object,
+    margin: object,
+) -> FechamentoMensalPreview:
+    """Reconstruir a posição do mês pelas datas efetivas dos eventos."""
+    start_date, end_date = periodo_mensal(month)
+    normalized_margin = _money(margin, 'a margem')
+    accounts = list(
+        ContaFinanceira.objects.filter(ativo=True).order_by('nome', 'pk'),
+    )
+    account_ids = [account.pk for account in accounts]
+    cutover = min(
+        (account.data_corte_financeiro for account in accounts),
+        default=end_date,
+    )
+    ledgers = list(
+        LancamentoFinanceiro.objects.filter(
+            conta_id__in=account_ids,
+            data_movimento__lte=end_date,
+        ).select_related('conta').order_by('pk'),
+    )
+    ledgers = [
+        ledger for ledger in ledgers
+        if ledger.data_movimento >= ledger.conta.data_corte_financeiro
+    ]
+    ledger_ids = [ledger.pk for ledger in ledgers]
+    pix_ledger_ids = set(
+        RecebimentoPixFinanceiro.objects.filter(
+            lancamento_id__in=ledger_ids,
+        ).values_list('lancamento_id', flat=True),
+    )
+    deposit_ledger_ids = set(
+        DepositoCartao.objects.filter(
+            lancamento_id__in=ledger_ids,
+        ).values_list('lancamento_id', flat=True),
+    )
+    refund_ledger_ids = set(
+        EstornoRecebimentoCartao.objects.filter(
+            lancamento_id__in=ledger_ids,
+        ).values_list('lancamento_id', flat=True),
+    )
+
+    account_previews: list[FechamentoContaPreview] = []
+    for account in accounts:
+        opening = account.saldo_inicial
+        ending = account.saldo_inicial
+        for ledger in ledgers:
+            if ledger.conta_id != account.pk:
+                continue
+            if ledger.data_movimento < start_date:
+                opening += (
+                    ledger.valor
+                    if ledger.direcao == LancamentoFinanceiro.Direcao.CREDITO
+                    else -ledger.valor
+                )
+            if ledger.data_movimento <= end_date:
+                ending += (
+                    ledger.valor
+                    if ledger.direcao == LancamentoFinanceiro.Direcao.CREDITO
+                    else -ledger.valor
+                )
+        account_previews.append(FechamentoContaPreview(
+            conta_id=account.pk,
+            nome=account.nome,
+            saldo_inicial=_round_money(opening),
+            saldo_final=_round_money(ending),
+        ))
+
+    month_ledgers = [
+        ledger for ledger in ledgers
+        if start_date <= ledger.data_movimento <= end_date
+    ]
+    operational_credits = sum(
+        (
+            ledger.valor for ledger in month_ledgers
+            if ledger.direcao == LancamentoFinanceiro.Direcao.CREDITO
+            and ledger.pk in pix_ledger_ids | deposit_ledger_ids
+        ),
+        Decimal('0.00'),
+    )
+    operational_refunds = sum(
+        (
+            ledger.valor for ledger in month_ledgers
+            if ledger.direcao == LancamentoFinanceiro.Direcao.DEBITO
+            and ledger.pk in refund_ledger_ids
+        ),
+        Decimal('0.00'),
+    )
+    operational_net = _round_money(operational_credits - operational_refunds)
+
+    payables = list(
+        ContaPagar.objects.filter(
+            data_vencimento__lte=end_date,
+        ).order_by('data_vencimento', 'pk'),
+    )
+    obligation_previews: list[FechamentoObrigacaoPreview] = []
+    obligations_due_month = Decimal('0.00')
+    effective_payments = Decimal('0.00')
+    paid_obligations = Decimal('0.00')
+    open_obligations = Decimal('0.00')
+    previous_overdue = Decimal('0.00')
+    payable_signature_rows: list[list[object]] = []
+    for payable in payables:
+        state, events = _payable_state_as_of(payable, end_date)
+        if start_date <= payable.data_vencimento <= end_date:
+            obligations_due_month += payable.valor
+        if state == 'PAGA':
+            paid_obligations += payable.valor
+        else:
+            open_obligations += payable.valor
+            if payable.data_vencimento < start_date:
+                previous_overdue += payable.valor
+        for event_date, _created_at, event_id, state_change in events:
+            if state_change == 'PAGA':
+                payment = PagamentoContaPagar.objects.get(pk=event_id)
+                if start_date <= event_date <= end_date:
+                    effective_payments += payment.valor
+        obligation_previews.append(FechamentoObrigacaoPreview(
+            conta_pagar_id=payable.pk,
+            descricao=payable.descricao,
+            valor=_round_money(payable.valor),
+            data_vencimento=payable.data_vencimento,
+            situacao=state,
+        ))
+        payable_signature_rows.append([
+            payable.pk,
+            payable.descricao,
+            payable.categoria,
+            str(payable.valor),
+            payable.data_vencimento.isoformat(),
+            state,
+            [
+                [event_date.isoformat(), event_id, state_change]
+                for event_date, _created_at, event_id, state_change in events
+            ],
+        ])
+
+    card_receivables = list(
+        RecebivelCartao.objects.filter(
+            data_aprovacao__lte=end_date,
+        ).order_by('pk'),
+    )
+    card_a_receber = Decimal('0.00')
+    card_signature_rows: list[list[object]] = []
+    for receivable in card_receivables:
+        if receivable.data_aprovacao < cutover:
+            continue
+        liquidation = LiquidacaoCartao.objects.filter(
+            recebivel_id=receivable.pk,
+        ).select_related('deposito').first()
+        deposit_date = liquidation.deposito.data_deposito if liquidation else None
+        cancellation_date = receivable.cancelado_em if receivable.cancelado else None
+        if (
+            (cancellation_date is not None and cancellation_date <= end_date)
+            or (deposit_date is not None and deposit_date <= end_date)
+        ):
+            continue
+        card_a_receber += receivable.valor_bruto
+        card_signature_rows.append([
+            receivable.pk,
+            str(receivable.valor_bruto),
+            receivable.data_aprovacao.isoformat(),
+            cancellation_date.isoformat() if cancellation_date else None,
+            deposit_date.isoformat() if deposit_date else None,
+        ])
+
+    obligations_due_month = _round_money(obligations_due_month)
+    effective_payments = _round_money(effective_payments)
+    paid_obligations = _round_money(paid_obligations)
+    open_obligations = _round_money(open_obligations)
+    previous_overdue = _round_money(previous_overdue)
+    card_a_receber = _round_money(card_a_receber)
+    coverage = _round_money(operational_net - obligations_due_month)
+    classification = _fechamento_classificacao(coverage, normalized_margin)
+
+    ledger_signature_rows = [
+        [
+            ledger.pk,
+            ledger.conta_id,
+            ledger.direcao,
+            str(ledger.valor),
+            ledger.data_movimento.isoformat(),
+            ledger.descricao,
+            ledger.motivo,
+            ledger.estorno_de_id,
+        ]
+        for ledger in ledgers
+    ]
+    signature = _signature([
+        'FECHAMENTO_MENSAL',
+        start_date.isoformat(),
+        end_date.isoformat(),
+        str(normalized_margin),
+        [
+            [item.conta_id, item.nome, str(item.saldo_inicial), str(item.saldo_final)]
+            for item in account_previews
+        ],
+        ledger_signature_rows,
+        payable_signature_rows,
+        card_signature_rows,
+        str(operational_net),
+        str(obligations_due_month),
+        str(effective_payments),
+        str(paid_obligations),
+        str(open_obligations),
+        str(previous_overdue),
+        str(card_a_receber),
+        str(coverage),
+        classification,
+    ])
+    return FechamentoMensalPreview(
+        mes_referencia=start_date,
+        margem=normalized_margin,
+        entradas_operacionais_liquidas=operational_net,
+        obrigacoes_vencimento_mes=obligations_due_month,
+        pagamentos_efetivos=effective_payments,
+        obrigacoes_pagas=paid_obligations,
+        obrigacoes_abertas=open_obligations,
+        vencidas_anteriores=previous_overdue,
+        cartao_a_receber=card_a_receber,
+        cobertura=coverage,
+        classificacao=classification,
+        contas=tuple(account_previews),
+        obrigacoes=tuple(obligation_previews),
+        assinatura=signature,
+    )
+
+
+def previsualizar_fechamento_mensal(
+    *,
+    month: object,
+    margin: object,
+) -> FechamentoMensalPreview:
+    return previsualizar_fechamento(month=month, margin=margin)
+
+
+def confirmar_fechamento_mensal(
+    *,
+    actor: Any,
+    month: object,
+    margin: object,
+    preview_signature: object,
+    reason: object,
+    idempotency_key: object,
+) -> FechamentoMensalResult:
+    """Persistir uma versão mensal somente após recalcular a prévia na transação."""
+    _require_manager(actor)
+    start_date, _end_date = periodo_mensal(month)
+    normalized_margin = _money(margin, 'a margem')
+    normalized_preview_signature = _required_text(
+        preview_signature,
+        'a assinatura da prévia',
+        64,
+    )
+    normalized_reason = _required_text(reason, 'um motivo', 500)
+    key = _key(idempotency_key)
+    signature = _signature([
+        'CONFIRMAR_FECHAMENTO_MENSAL',
+        actor.pk,
+        start_date.isoformat(),
+        str(normalized_margin),
+        normalized_preview_signature,
+        normalized_reason,
+    ])
+
+    for attempt in range(FECHAMENTO_MAX_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                existing = FechamentoMensal.objects.filter(
+                    chave_idempotencia=key,
+                ).first()
+                if existing:
+                    if existing.assinatura != signature:
+                        raise _conflicting_key()
+                    return FechamentoMensalResult(existing, created=False)
+                _assert_key_available(key, FechamentoMensal)
+
+                versions = list(
+                    FechamentoMensal.objects.select_for_update().filter(
+                        mes_referencia=start_date,
+                    ).order_by('-versao', '-pk'),
+                )
+                if any(version.vigente for version in versions):
+                    raise FinanceOperationError(
+                        'Esse mês já possui um fechamento vigente; reabra-o antes de corrigir.',
+                    )
+                preview = previsualizar_fechamento(
+                    month=start_date,
+                    margin=normalized_margin,
+                )
+                if preview.assinatura != normalized_preview_signature:
+                    raise FinanceOperationError(
+                        'A prévia mudou; confira os dados novamente antes de confirmar.',
+                    )
+                version = versions[0].versao + 1 if versions else 1
+                fechamento = FechamentoMensal.objects.create(
+                    mes_referencia=start_date,
+                    versao=version,
+                    situacao=FechamentoMensal.Situacao.CONFIRMADO,
+                    vigente=True,
+                    margem=preview.margem,
+                    entradas_operacionais_liquidas=preview.entradas_operacionais_liquidas,
+                    obrigacoes_vencimento_mes=preview.obrigacoes_vencimento_mes,
+                    pagamentos_efetivos=preview.pagamentos_efetivos,
+                    obrigacoes_pagas=preview.obrigacoes_pagas,
+                    obrigacoes_abertas=preview.obrigacoes_abertas,
+                    vencidas_anteriores=preview.vencidas_anteriores,
+                    cartao_a_receber=preview.cartao_a_receber,
+                    cobertura=preview.cobertura,
+                    classificacao=preview.classificacao,
+                    assinatura_previa=preview.assinatura,
+                    responsavel=actor,
+                    motivo=normalized_reason,
+                    chave_idempotencia=key,
+                    assinatura=signature,
+                )
+                FechamentoMensalConta.objects.bulk_create([
+                    FechamentoMensalConta(
+                        fechamento=fechamento,
+                        conta_id=account_preview.conta_id,
+                        saldo_inicial=account_preview.saldo_inicial,
+                        saldo_final=account_preview.saldo_final,
+                    )
+                    for account_preview in preview.contas
+                ])
+                _audit(
+                    action='CONFIRMAR_FECHAMENTO_MENSAL',
+                    actor=actor,
+                    reason=normalized_reason,
+                    key=key,
+                    signature=signature,
+                    data={
+                        'fechamento_id': fechamento.pk,
+                        'mes_referencia': start_date.isoformat(),
+                        'versao': version,
+                        'assinatura_previa': preview.assinatura,
+                        'classificacao': preview.classificacao,
+                    },
+                )
+                return FechamentoMensalResult(fechamento, created=True)
+        except IntegrityError as error:
+            existing = FechamentoMensal.objects.filter(
+                chave_idempotencia=key,
+            ).first()
+            if existing:
+                if existing.assinatura != signature:
+                    raise _conflicting_key() from error
+                return FechamentoMensalResult(existing, created=False)
+            if FechamentoMensal.objects.filter(
+                mes_referencia=start_date,
+                vigente=True,
+            ).exists():
+                raise FinanceOperationError(
+                    'Esse mês já possui um fechamento vigente; reabra-o antes de corrigir.',
+                ) from error
+            raise
+        except OperationalError as error:
+            if (
+                not _is_recoverable_sqlite_lock(error)
+                or attempt + 1 >= FECHAMENTO_MAX_ATTEMPTS
+            ):
+                raise
+            sleep(0.01 * (attempt + 1))
+    raise AssertionError('A confirmação do fechamento mensal terminou sem resultado.')
+
+
+def reabrir_fechamento_mensal(
+    *,
+    actor: Any,
+    fechamento: FechamentoMensal | int,
+    reason: object,
+    idempotency_key: object,
+) -> ReaberturaFechamentoMensalResult:
+    """Encerrar a vigência de um fechamento e registrar o motivo em auditoria."""
+    _require_manager(actor)
+    resolved = _monthly_closing(fechamento)
+    normalized_reason = _required_text(reason, 'um motivo', 500)
+    key = _key(idempotency_key)
+    signature = _signature([
+        'REABRIR_FECHAMENTO_MENSAL',
+        actor.pk,
+        resolved.pk,
+        normalized_reason,
+    ])
+
+    for attempt in range(FECHAMENTO_MAX_ATTEMPTS):
+        try:
+            with transaction.atomic():
+                existing = ReaberturaFechamentoMensal.objects.filter(
+                    chave_idempotencia=key,
+                ).first()
+                if existing:
+                    if existing.assinatura != signature:
+                        raise _conflicting_key()
+                    return ReaberturaFechamentoMensalResult(existing, created=False)
+                _assert_key_available(key, ReaberturaFechamentoMensal)
+                locked = FechamentoMensal.objects.select_for_update().get(
+                    pk=resolved.pk,
+                )
+                existing_for_closing = ReaberturaFechamentoMensal.objects.filter(
+                    fechamento_id=locked.pk,
+                ).first()
+                if existing_for_closing is not None or not locked.vigente:
+                    raise FinanceOperationError('Esse fechamento já foi reaberto.')
+                if locked.situacao != FechamentoMensal.Situacao.CONFIRMADO:
+                    raise FinanceOperationError('Esse fechamento não está confirmado.')
+                locked.vigente = False
+                locked.situacao = FechamentoMensal.Situacao.REABERTO
+                locked.save(update_fields=('vigente', 'situacao'))
+                reabertura = ReaberturaFechamentoMensal.objects.create(
+                    fechamento=locked,
+                    responsavel=actor,
+                    motivo=normalized_reason,
+                    chave_idempotencia=key,
+                    assinatura=signature,
+                )
+                _audit(
+                    action='REABRIR_FECHAMENTO_MENSAL',
+                    actor=actor,
+                    reason=normalized_reason,
+                    key=key,
+                    signature=signature,
+                    data={
+                        'fechamento_id': locked.pk,
+                        'mes_referencia': locked.mes_referencia.isoformat(),
+                        'versao': locked.versao,
+                    },
+                )
+                return ReaberturaFechamentoMensalResult(reabertura, created=True)
+        except FechamentoMensal.DoesNotExist as error:
+            raise FinanceOperationError('Selecione um fechamento mensal válido.') from error
+        except IntegrityError as error:
+            existing = ReaberturaFechamentoMensal.objects.filter(
+                chave_idempotencia=key,
+            ).first()
+            if existing:
+                if existing.assinatura != signature:
+                    raise _conflicting_key() from error
+                return ReaberturaFechamentoMensalResult(existing, created=False)
+            if ReaberturaFechamentoMensal.objects.filter(
+                fechamento_id=resolved.pk,
+            ).exists():
+                raise FinanceOperationError('Esse fechamento já foi reaberto.') from error
+            raise
+        except OperationalError as error:
+            if (
+                not _is_recoverable_sqlite_lock(error)
+                or attempt + 1 >= FECHAMENTO_MAX_ATTEMPTS
+            ):
+                raise
+            sleep(0.01 * (attempt + 1))
+    raise AssertionError('A reabertura do fechamento mensal terminou sem resultado.')
 
 
 def registrar_aporte(
