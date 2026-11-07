@@ -1,10 +1,10 @@
 # Relatório de auditoria — Financeiro Etapa 2
 
-Data: 2026-11-07  
-Branch: `codex/financeiro`  
-Worktree: `C:\desenvolvimento\Contruct\.worktrees\financeiro`  
-Base confirmada: `517b4e9b3526a87558a428d734e1b1bf973a5792`  
-Commit de implementação: `0ae700d` (`feat: implementa recebimentos financeiros`)  
+Data: 2026-11-07
+Branch: `codex/financeiro`
+Worktree: `C:\desenvolvimento\Contruct\.worktrees\financeiro`
+Base confirmada: `517b4e9b3526a87558a428d734e1b1bf973a5792`
+Commit de implementação: `0ae700d` (`feat: implementa recebimentos financeiros`)
 Integração, push e implantação: não executados.
 
 ## Etapa 0 e orientação
