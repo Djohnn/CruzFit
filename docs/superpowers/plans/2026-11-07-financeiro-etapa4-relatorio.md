@@ -8,7 +8,7 @@ Worktree: `C:\desenvolvimento\Contruct\.worktrees\financeiro`
 
 Base solicitada: `98255829d382dc24200027bf0bb8b8bad781f5c0`
 
-SHA da implementação congelada: `071f63e` (`feat: implement fechamento mensal`)
+SHAs da implementação congelada: `071f63e` (`feat: implement fechamento mensal`) e `d6c08f3` (`fix: bloqueia correcoes em mes fechado`).
 
 Commits de documentação anteriores desta entrega:
 
@@ -26,6 +26,7 @@ Não houve merge, push ou implantação. A `main`, as demais worktrees e os dado
 - Assinatura determinística da prévia com mês, margem, identidade e dados dos lançamentos, obrigações, pagamentos, estornos, cartões, saldos e totais. Trocar um lançamento mantendo o total altera a assinatura.
 - Confirmação transacional com recálculo dentro da transação, proteção contra prévia obsoleta, idempotência, auditoria e uma versão vigente por mês.
 - Reabertura transacional e auditada, preservando os valores da versão anterior e permitindo nova versão posterior.
+- Bloqueio server-side de correções com data dentro de mês fechado; o replay idempotente é avaliado antes do bloqueio e a escrita só volta a ser aceita após reabertura explícita.
 - Interface gerencial com cobertura, situação das obrigações e saldo disponível em áreas separadas, além do histórico e da ação de reabertura.
 - Bloqueio server-side de escrita por vendedor.
 
@@ -68,11 +69,26 @@ Os erros eram APIs ausentes de prévia/confirmação/reabertura; as duas falhas 
 
 Após a criação dos modelos, o RED funcional permaneceu em 12 testes, com os mesmos 10 erros de serviços e 2 falhas de rotas. A implementação só foi iniciada depois desse registro.
 
+Na revisão final, a regressão de correção retroativa também foi registrada antes do ajuste:
+
+```text
+Ran 1 test in 0.851s
+FAILED (failures=1)
+AssertionError: FinanceOperationError not raised
+```
+
+Depois do ajuste `d6c08f3`:
+
+```text
+Ran 1 test in 0.851s
+OK
+```
+
 ## Evidência funcional
 
 ```text
 Etapa 4 focada:
-Ran 14 tests in 11.851s
+Ran 15 tests in 12.702s
 OK
 
 Concorrência de confirmações:
@@ -80,15 +96,15 @@ Ran 1 test in 0.567s
 OK
 
 Recorte focado Financeiro/Compras:
-Ran 80 tests in 91.230s
+Ran 81 tests in 96.234s
 OK
 
 Recorte serial comparável:
-Ran 213 tests in 92.135s
+Ran 214 tests in 97.850s
 OK
 
 Suíte ampla serial:
-Ran 486 tests in 258.982s
+Ran 487 tests in 274.563s
 OK
 ```
 
@@ -105,6 +121,7 @@ A regressão comprova:
 - Chave com dados diferentes é conflito sem gravação.
 - Duas confirmações simultâneas criam uma única versão vigente e um único snapshot de conta.
 - Vendedor não confirma nem reabre pelo serviço ou POST direto.
+- Correção retroativa datada em mês fechado é rejeitada sem lançamento; após reabertura explícita, a mesma data é aceita.
 
 Smoke de migração no banco descartável:
 
@@ -123,6 +140,7 @@ O resultado representa obrigações abertas em novembro, pagas em dezembro e rea
 | Saldo disponível separado | PASS | DTO e interface separam saldo por conta, cobertura e situação das obrigações |
 | Confirmação transacional e prévia obsoleta | PASS | Recalculo dentro da transação; prévia alterada é rejeitada sem snapshot |
 | Histórico, reabertura e nova versão | PASS | Versão anterior preservada como REABERTO; nova confirmação incrementa `versao` |
+| Correções retroativas em mês fechado | PASS | Mês vigente rejeita novo movimento datado no mês; após reabertura o movimento é aceito, sem gravação no primeiro pedido |
 | Idempotência e concorrência | PASS | Replay, conflito, segunda reabertura e duas conexões SQLite cobertos |
 | Permissões e auditoria | PASS | Gerente/superusuário no servidor; vendedor retorna 403; evento de auditoria gravado |
 | Migração em cópia descartável | PASS | `manage.py migrate --settings=qa_settings` aplicou 0005; smoke histórico OK |
@@ -141,7 +159,7 @@ O resultado representa obrigações abertas em novembro, pagas em dezembro e rea
 
 - `financeiro/models.py`: snapshots mensais, saldos por conta e reaberturas auditadas.
 - `financeiro/migrations/0005_fechamentomensal_fechamentomensalconta_and_more.py`: schema e unicidades.
-- `financeiro/services.py`: prévia histórica, assinatura, confirmação, concorrência e reabertura.
+- `financeiro/services.py`: prévia histórica, assinatura, confirmação, concorrência, reabertura e bloqueio de correções retroativas.
 - `financeiro/views.py`: prévia, confirmação e reabertura gerencial.
 - `financeiro/urls.py`: rotas `fechamento_mensal` e `fechamento_reabrir`.
 - `financeiro/templates/financeiro/fechamento_form.html`: interface do demonstrativo e histórico.
