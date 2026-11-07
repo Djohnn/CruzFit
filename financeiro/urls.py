@@ -11,4 +11,6 @@ urlpatterns = [
     path('aportes/', views.aporte, name='aporte'),
     path('transferencias/', views.transferencia, name='transferencia'),
     path('estornos/<int:pk>/', views.estorno, name='estorno'),
+    path('recebimentos/pix/', views.pix_confirmacao, name='pix_confirmacao'),
+    path('recebimentos/cartao/', views.cartao_liquidacao, name='cartao_liquidacao'),
 ]

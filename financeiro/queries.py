@@ -4,7 +4,9 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
-from .models import ContaFinanceira, LancamentoFinanceiro
+from caixa.models import PagamentoVenda
+
+from .models import ContaFinanceira, LancamentoFinanceiro, RecebivelCartao
 from .services import calcular_saldo
 
 
@@ -14,9 +16,36 @@ def listar_contas() -> list[dict[str, object]]:
         rows.append({
             'conta': conta,
             'saldo': calcular_saldo(conta),
-            'receita_operacional': Decimal('0.00'),
+            'receita_operacional': conta.receita_operacional(),
         })
     return rows
+
+
+def pix_pendentes():
+    return PagamentoVenda.objects.filter(
+        forma='PIX',
+        recebimento_pix_financeiro__isnull=True,
+    ).select_related('recebimento__venda').order_by('recebimento__criada_em', 'pk')
+
+
+def recebiveis_cartao_pendentes():
+    return RecebivelCartao.objects.filter(
+        cancelado=False,
+        liquidacao__isnull=True,
+    ).select_related(
+        'pagamento_origem__recebimento__venda',
+    ).order_by('data_aprovacao', 'pk')
+
+
+def receita_operacional_consolidada() -> Decimal:
+    total = sum(
+        (
+            conta.receita_operacional()
+            for conta in ContaFinanceira.objects.filter(ativo=True)
+        ),
+        Decimal('0.00'),
+    )
+    return total.quantize(Decimal('0.01'))
 
 
 def historico_conta(conta: ContaFinanceira):

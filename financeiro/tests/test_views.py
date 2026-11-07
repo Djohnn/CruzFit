@@ -5,12 +5,19 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from caixa.models import SessaoCaixa
+from caixa.services import abrir_sessao, registrar_recebimento
+from estoque.models import Categoria, Produto
 from financeiro.models import (
     AporteFinanceiro,
+    DepositoCartao,
     EstornoFinanceiro,
+    RecebimentoPixFinanceiro,
+    RecebivelCartao,
     TransferenciaFinanceira,
 )
 from financeiro.services import calcular_saldo, criar_conta_financeira, registrar_aporte
+from vendas.services import registrar_venda
 
 User = get_user_model()
 CUTOVER = date(2026, 11, 6)
@@ -32,6 +39,40 @@ class FinanceViewTests(TestCase):
             reason='Conta para teste da interface',
             idempotency_key='conta-interface',
         ).conta
+
+    def create_payment(self, form, amount='50.00', key='venda-view-recebimento'):
+        session = SessaoCaixa.objects.filter(aberta=True).first()
+        if session is None:
+            session = abrir_sessao(
+                actor=self.manager,
+                fundo_inicial='0.00',
+                motivo='Sessão para recebimento da interface',
+                idempotency_key=f'sessao-{key}',
+            ).sessao
+        category = Categoria.objects.create(titulo=f'Categoria {key}')
+        product = Produto.objects.create(
+            nome=f'Produto {key}',
+            categoria=category,
+            quantidade='5.00',
+            preco_compra='10.00',
+            preco_venda=amount,
+        )
+        sale = registrar_venda(
+            actor=self.manager,
+            product_ids=[str(product.pk)],
+            quantities=['1.00'],
+            payment_method=form,
+            idempotency_key=key,
+        ).sale
+        receipt = registrar_recebimento(
+            actor=self.manager,
+            sessao=session,
+            venda=sale,
+            pagamentos=[{'forma': form, 'valor_aplicado': amount}],
+            motivo='Recebimento para teste da interface',
+            idempotency_key=f'recebimento-{key}',
+        ).recebimento
+        return receipt.pagamentos.get(forma=form)
 
     def test_manager_can_render_finance_panel_and_account_detail(self):
         """Given gerente; When abre Financeiro; Then vê saldo e histórico."""
@@ -96,6 +137,19 @@ class FinanceViewTests(TestCase):
                     'motivo': 'Estorno indevido',
                 },
             ),
+            self.client.post(
+                reverse('financeiro:pix_confirmacao'),
+                {**common, 'pix_id': 1, 'conta_id': self.account.pk},
+            ),
+            self.client.post(
+                reverse('financeiro:cartao_liquidacao'),
+                {
+                    **common,
+                    'parcelas': '1:0.00',
+                    'conta_id': self.account.pk,
+                    'referencia_operadora': 'VENDEDOR',
+                },
+            ),
         ]
 
         self.assertTrue(all(response.status_code == 403 for response in responses))
@@ -150,3 +204,37 @@ class FinanceViewTests(TestCase):
         self.assertEqual(TransferenciaFinanceira.objects.count(), 1)
         self.assertEqual(EstornoFinanceiro.objects.count(), 1)
         self.assertEqual(calcular_saldo(self.account), Decimal('420.00'))
+
+    def test_manager_can_confirm_pix_and_liquidate_card_from_interface(self):
+        """Given gerente; When usa os recebimentos; Then cria os vínculos financeiros."""
+        self.client.force_login(self.manager)
+        pix = self.create_payment('PIX', amount='50.00', key='venda-view-pix')
+        pix_response = self.client.post(
+            reverse('financeiro:pix_confirmacao'),
+            {
+                'pix_id': pix.pk,
+                'conta_id': self.account.pk,
+                'data_confirmacao': '2026-11-06',
+                'motivo': 'Pix confirmado pela interface',
+                'chave_idempotencia': 'pix-view-interface',
+            },
+        )
+        card = self.create_payment('CARTAO', amount='100.00', key='venda-view-card')
+        receivable = RecebivelCartao.objects.get(pagamento_origem=card)
+        card_response = self.client.post(
+            reverse('financeiro:cartao_liquidacao'),
+            {
+                'parcelas': f'{receivable.pk}:3.00',
+                'conta_id': self.account.pk,
+                'data_deposito': '2026-11-06',
+                'referencia_operadora': 'ADQ-VIEW',
+                'motivo': 'Cartão liquidado pela interface',
+                'chave_idempotencia': 'cartao-view-interface',
+            },
+        )
+
+        self.assertEqual(pix_response.status_code, 302)
+        self.assertEqual(card_response.status_code, 302)
+        self.assertEqual(RecebimentoPixFinanceiro.objects.count(), 1)
+        self.assertEqual(DepositoCartao.objects.count(), 1)
+        self.assertEqual(calcular_saldo(self.account), Decimal('647.00'))

@@ -420,6 +420,21 @@ def registrar_recebimento(
                 )
                 for form, applied, tendered, change in normalized
             ])
+            from financeiro.services import (
+                FinanceOperationError,
+                registrar_recebiveis_cartao,
+            )
+
+            try:
+                registrar_recebiveis_cartao(
+                    actor=actor,
+                    pagamentos=PagamentoVenda.objects.filter(
+                        recebimento_id=receipt.pk,
+                        forma='CARTAO',
+                    ),
+                )
+            except FinanceOperationError as error:
+                raise CaixaOperationError(str(error)) from error
     except IntegrityError as error:
         existing = RecebimentoVenda.objects.filter(chave_idempotencia=key).first()
         if existing:
@@ -794,22 +809,50 @@ def registrar_pendencia_cancelamento(
     *, actor, cancelamento: VendaCancelamento,
 ) -> PendenciaCancelamentoVenda | None:
     """Record the refund obligation alongside a received sale cancellation."""
-    return _register_refund_pending(
+    pending = _register_refund_pending(
         actor=actor,
         source=cancelamento,
         source_kind='cancelamento',
     )
+    from financeiro.services import (
+        FinanceOperationError,
+        cancelar_recebiveis_cartao_por_reversao,
+    )
+
+    try:
+        cancelar_recebiveis_cartao_por_reversao(
+            actor=actor,
+            source=cancelamento,
+            source_kind='cancelamento',
+        )
+    except FinanceOperationError as error:
+        raise CaixaOperationError(str(error)) from error
+    return pending
 
 
 def registrar_pendencia_devolucao(
     *, actor, devolucao: VendaDevolucao,
 ) -> PendenciaDevolucaoVenda | None:
     """Record a net refund obligation alongside a received sale return."""
-    return _register_refund_pending(
+    pending = _register_refund_pending(
         actor=actor,
         source=devolucao,
         source_kind='devolucao',
     )
+    from financeiro.services import (
+        FinanceOperationError,
+        cancelar_recebiveis_cartao_por_reversao,
+    )
+
+    try:
+        cancelar_recebiveis_cartao_por_reversao(
+            actor=actor,
+            source=devolucao,
+            source_kind='devolucao',
+        )
+    except FinanceOperationError as error:
+        raise CaixaOperationError(str(error)) from error
+    return pending
 
 
 def previsualizar_restituicao(
@@ -956,6 +999,22 @@ def registrar_restituicao(
                 )
                 for payment, value in allocations
             ])
+            from financeiro.services import (
+                FinanceOperationError,
+                registrar_estorno_cartao,
+            )
+
+            try:
+                for refund_payment in PagamentoRestituicao.objects.filter(
+                    restituicao_id=refund.pk,
+                ):
+                    registrar_estorno_cartao(
+                        actor=actor,
+                        pagamento_restituicao=refund_payment,
+                        reason=reason,
+                    )
+            except FinanceOperationError as error:
+                raise CaixaOperationError(str(error)) from error
     except IntegrityError as error:
         existing = RestituicaoVenda.objects.filter(chave_idempotencia=key).first()
         if existing and existing.assinatura == signature:
