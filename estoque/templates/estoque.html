@@ -20,6 +20,7 @@
             <a href="{% url 'estoque' %}" class="btn {% if not reposicao %}btn-secondary{% else %}btn-outline-light{% endif %}">Todos</a>
             <a href="{% url 'estoque' %}?reposicao=1" class="btn {% if reposicao %}btn-warning{% else %}btn-outline-light{% endif %}">Reposição</a>
         </header>
+        <p><a href="{% url 'calculadora_markup' %}" class="btn btn-outline-light">Calculadora de markup</a></p>
 
         {% if messages %}
             <div class="feedback-stack" aria-live="polite">

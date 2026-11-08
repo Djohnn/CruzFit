@@ -1,0 +1,56 @@
+.markup-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+    gap: 1.25rem;
+}
+
+.markup-layout > section { margin: 0; }
+.markup-method { margin-top: 1.5rem; }
+.markup-method p { margin: .75rem 0 0; }
+.markup-price {
+    display: grid;
+    gap: .25rem;
+    padding: 1rem 0;
+    color: var(--brand-muted);
+}
+
+.markup-price strong {
+    color: var(--brand-gold-light);
+    font-size: clamp(1.65rem, 4vw, 2.5rem);
+    overflow-wrap: anywhere;
+}
+
+.markup-breakdown {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: .75rem;
+}
+
+.markup-breakdown dt,
+.markup-breakdown dd {
+    padding: .6rem 0;
+    margin: 0;
+    border-top: 1px solid var(--brand-border);
+}
+
+.markup-breakdown dt { font-weight: 500; }
+.markup-breakdown dd { text-align: right; }
+.markup-breakdown small { color: var(--brand-muted); }
+.markup-breakdown dd, .markup-price strong { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 767px) {
+    .markup-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media print {
+    @page { size: A4; margin: 12mm; }
+    body.fundo { background: #fff !important; color: #000 !important; min-width: 0 !important; }
+    .markup-page.container { min-width: 0 !important; max-width: none; }
+    .navbar, .markup-inputs, .markup-page .page-heading a, .markup-print { display: none !important; }
+    .markup-layout { display: block; }
+    .markup-page .markup-result { background: #fff !important; color: #000 !important; box-shadow: none; }
+    .markup-page .markup-price, .markup-page .markup-price strong, .markup-page .markup-breakdown small {
+        color: #000 !important;
+    }
+}

@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from . import fornecedor_views, views
+from . import fornecedor_views, markup, views
 
 urlpatterns = [
     path('fornecedores/', fornecedor_views.listar, name='fornecedores'),
@@ -11,6 +11,7 @@ urlpatterns = [
     path('fornecedores/<int:pk>/inativar/', fornecedor_views.inativar,
          name='fornecedor_inativar'),
     path('', views.estoque, name='estoque'),
+    path('markup/', markup.calculadora_markup, name='calculadora_markup'),
     path('movimentacoes/', views.movimentacoes, name='movimentacoes'),
     path('relatorios/', views.relatorios, name='relatorios'),
     path('relatorios/exportar.csv', views.exportar_relatorio_csv,

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Calculadora de markup | Cruz Fit{% endblock %}
+{% block 'head' %}
+<link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+<link rel="stylesheet" href="{% static 'estoque/css/markup.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+<main class="container inventory-page markup-page">
+    <header class="page-heading">
+        <a href="{% url 'estoque' %}">Voltar ao estoque</a>
+        <h1>Calculadora de markup</h1>
+        <p>Simule o preço de venda com base no custo, nas taxas e na margem desejada.</p>
+    </header>
+    <div class="markup-layout">
+        <section class="surface-section markup-inputs" aria-labelledby="markup-input-title">
+            <h2 id="markup-input-title">Dados da simulação</h2>
+            <p>Informe os percentuais sobre o preço de venda. Campos opcionais em branco valem zero.</p>
+            <form method="post" class="operational-form">
+                {% csrf_token %}
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>
+                {% endif %}
+                <div class="form-grid">
+                    {% for field in form %}
+                        <div class="form-group {% if forloop.first or forloop.last %}form-grid-wide{% endif %}">
+                            {{ field.label_tag }}
+                            {{ field }}
+                            {% if field.errors %}<div role="alert">{{ field.errors }}</div>{% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary">Calcular markup</button>
+            </form>
+            <details class="markup-method">
+                <summary>Como o preço é calculado?</summary>
+                <p>Divida o custo por 1 menos a soma dos percentuais em decimal. O preço sugerido é arredondado para cima para preservar a margem desejada.</p>
+            </details>
+        </section>
+        <section class="surface-section markup-result" aria-labelledby="markup-result-title">
+            <h2 id="markup-result-title">Resultado</h2>
+            {% if resultado %}
+                <div class="markup-price">
+                    <span>Preço de venda sugerido</span>
+                    <strong>R$ {{ resultado.preco|floatformat:2 }}</strong>
+                    <span>{{ resultado.multiplicador_final|floatformat:4 }}× o custo</span>
+                </div>
+                <dl class="markup-breakdown">
+                    <dt>Custo do produto</dt><dd>R$ {{ resultado.custo|floatformat:2 }}</dd>
+                    {% for nome, taxa, valor in resultado.detalhes %}
+                        <dt>{{ nome|cut:" (%)" }} <small>{{ taxa|floatformat:"-2" }}%</small></dt>
+                        <dd>R$ {{ valor|floatformat:2 }}</dd>
+                    {% endfor %}
+                    <dt>Preço base</dt><dd>R$ {{ resultado.preco_base|floatformat:2 }}</dd>
+                    <dt>Receita após taxas variáveis</dt><dd>R$ {{ resultado.receita|floatformat:2 }}</dd>
+                    <dt><strong>Lucro estimado</strong></dt><dd><strong>R$ {{ resultado.lucro|floatformat:2 }}</strong></dd>
+                    <dt>Divisor do markup</dt><dd>{{ resultado.divisor|floatformat:4 }}</dd>
+                    <dt>Multiplicador antes do arredondamento</dt><dd>{{ resultado.multiplicador_base|floatformat:4 }}×</dd>
+                </dl>
+                <p>Estimativa com base nos valores informados.</p>
+                <button type="button" class="btn btn-outline-light markup-print" onclick="window.print()">Imprimir / Salvar PDF</button>
+            {% else %}
+                <p>Preencha o custo e os percentuais e clique em Calcular markup.</p>
+            {% endif %}
+        </section>
+    </div>
+</main>
+{% endblock %}
