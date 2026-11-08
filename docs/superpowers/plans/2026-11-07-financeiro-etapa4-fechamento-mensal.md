@@ -166,7 +166,7 @@ The page must show separate cards/sections for Cobertura, Situação das obriga�
 
 - [ ] Step 3: Run view tests.
 
-Run manage.py test financeiro.tests.test_views.FechamentoMensalViewTests financeiro.tests.test_fechamento_mensal --verbosity 1. Expected: all interface assertions pass.
+Run manage.py test financeiro.tests.test_fechamento_mensal.FechamentoMensalViewTests financeiro.tests.test_fechamento_mensal --verbosity 1. Expected: all interface assertions pass.
 
 ### Task 6: Validate migration, browser and Impeccable separately
 
