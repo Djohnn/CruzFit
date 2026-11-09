@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!form) return;
     const items = document.getElementById('sale-items');
     const payments = document.getElementById('payment-lines');
+    const paymentMethods = document.querySelectorAll('[data-payment-method]');
     const search = document.getElementById('checkout-search');
     const results = document.getElementById('checkout-results');
     const catalog = JSON.parse(document.getElementById('sale-product-catalog').textContent);
@@ -107,7 +108,7 @@ document.addEventListener('DOMContentLoaded', function () {
             : shortCash ? 'O valor recebido em dinheiro é menor que o valor a pagar.'
             : totals.total === paid && selected.length ? 'Pagamento completo. Revise para confirmar.' : '';
         document.getElementById('checkout-empty').hidden = Boolean(items.querySelector('[data-sale-row]:not([hidden])'));
-        document.getElementById('add-payment').disabled = rows.length >= 3;
+        document.getElementById('add-payment').disabled = rows.length >= paymentMethods.length;
         return totals;
     }
     function changed(rebalance) { invalidateReview(); updateTotals(rebalance); }
@@ -226,7 +227,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function addPayment(method) {
         let row = paymentRows().find(candidate => !candidate.querySelector('select').value);
         if (!row) {
-            if (paymentRows().length >= 3) return;
+            if (paymentRows().length >= paymentMethods.length) return;
             row = paymentTemplate.cloneNode(true);
             resetIds(row, ++paymentIndex);
             row.querySelectorAll('input, select').forEach(field => { field.value = ''; });
@@ -241,7 +242,7 @@ document.addEventListener('DOMContentLoaded', function () {
         changed(false);
     }
     document.getElementById('add-payment').addEventListener('click', () => addPayment(''));
-    document.querySelectorAll('[data-payment-method]').forEach(button => {
+    paymentMethods.forEach(button => {
         button.addEventListener('click', function () {
             const row = paymentRows().find(candidate => candidate.querySelector('select').value === button.dataset.paymentMethod);
             if (row) row.querySelector('[name="valor_aplicado"]').focus();

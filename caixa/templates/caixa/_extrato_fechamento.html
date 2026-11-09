@@ -1,0 +1,68 @@
+<div class="closing-breakdown">
+    <section aria-labelledby="closing-payments-heading">
+        <h2 id="closing-payments-heading">Vendas e devoluções por forma de pagamento</h2>
+        <p class="section-help">Confira o Pix no banco e o cartão na maquininha, usando o período da sessão. Só o dinheiro entra na contagem da gaveta.</p>
+        <div class="table-responsive">
+            <table class="closing-payments" aria-labelledby="closing-payments-heading">
+                <thead>
+                    <tr>
+                        <th scope="col">Forma</th>
+                        <th scope="col">Vendido</th>
+                        <th scope="col">Devolvido</th>
+                        <th scope="col">Após devoluções</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for linha in extrato.pagamentos %}
+                    <tr>
+                        <th scope="row">{{ linha.forma }}{% if linha.detalhes %} · total{% endif %}</th>
+                        <td>R$ {{ linha.vendas|floatformat:"2g" }}</td>
+                        <td>R$ {{ linha.devolucoes|floatformat:"2g" }}</td>
+                        <td><strong>R$ {{ linha.liquido|floatformat:"2g" }}</strong></td>
+                    </tr>
+                    {% for detalhe in linha.detalhes %}
+                    <tr class="closing-payment-detail">
+                        <th scope="row">{{ detalhe.forma }}</th>
+                        <td>R$ {{ detalhe.vendas|floatformat:"2g" }}</td>
+                        <td>R$ {{ detalhe.devolucoes|floatformat:"2g" }}</td>
+                        <td>R$ {{ detalhe.liquido|floatformat:"2g" }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="section-help closing-card-note">Crédito e débito já estão incluídos no total de cartão. Os valores são anteriores às taxas da maquininha.</p>
+    </section>
+
+    <section aria-labelledby="closing-cash-heading">
+        <h2 id="closing-cash-heading">Como o sistema calculou o dinheiro da gaveta</h2>
+        <dl class="closing-cash-lines">
+            <div><dt>Dinheiro da abertura</dt><dd>R$ {{ sessao.fundo_inicial|floatformat:"2g" }}</dd></div>
+            <div><dt>Vendas em dinheiro, descontado o troco</dt><dd>+ R$ {{ extrato.vendas_dinheiro|floatformat:"2g" }}</dd></div>
+            <div><dt>Reforço de caixa (dinheiro colocado)</dt><dd>+ R$ {{ extrato.reforcos|floatformat:"2g" }}</dd></div>
+            <div><dt>Retirada de dinheiro (sangria)</dt><dd>− R$ {{ extrato.sangrias|floatformat:"2g" }}</dd></div>
+            <div><dt>Devoluções pagas em dinheiro</dt><dd>− R$ {{ extrato.devolucoes_dinheiro|floatformat:"2g" }}</dd></div>
+            <div class="closing-cash-total"><dt>Dinheiro esperado na gaveta</dt><dd>R$ {{ esperado|floatformat:"2g" }}</dd></div>
+        </dl>
+    </section>
+</div>
+<section class="closing-movements" aria-labelledby="closing-movements-heading">
+    <h2 id="closing-movements-heading">Reforços e retiradas da sessão</h2>
+    {% if extrato.movimentos %}
+    <ul class="closing-movement-list">
+        {% for tipo, movimento in extrato.movimentos %}
+        <li>
+            <div>
+                <strong>{{ tipo }}</strong>
+                <span class="section-help"> · {{ movimento.criada_em|date:"d/m/Y H:i" }}</span>
+                <p>{{ movimento.motivo }}</p>
+            </div>
+            <strong class="closing-amount">R$ {{ movimento.valor|floatformat:"2g" }}</strong>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="section-help">Nenhum reforço ou retirada registrado nesta sessão.</p>
+    {% endif %}
+</section>

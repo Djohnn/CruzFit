@@ -2,16 +2,117 @@
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from urllib.parse import urlencode
 
 from django.core.paginator import Page, Paginator
-from django.db.models import BigIntegerField, Case, CharField, F, QuerySet, Value, When
+from django.db.models import (
+    BigIntegerField,
+    Case,
+    CharField,
+    F,
+    QuerySet,
+    Sum,
+    Value,
+    When,
+)
 from django.db.models.functions import Cast, Concat
 
-from .models import RecebimentoVenda, SangriaCaixa, SessaoCaixa, SuprimentoCaixa
+from .models import (
+    FechamentoCaixa,
+    PagamentoRestituicao,
+    PagamentoVenda,
+    RecebimentoVenda,
+    SangriaCaixa,
+    SessaoCaixa,
+    SuprimentoCaixa,
+)
 
 HISTORY_PER_PAGE = 20
 HISTORY_TYPES = {"", "RECEBIMENTO", "SUPRIMENTO", "SANGRIA"}
+
+
+@dataclass(frozen=True)
+class TotalPagamentoFechamento:
+    forma: str
+    vendas: Decimal
+    devolucoes: Decimal
+    liquido: Decimal
+    detalhes: tuple["TotalPagamentoFechamento", ...] = ()
+
+
+@dataclass(frozen=True)
+class ExtratoFechamento:
+    pagamentos: tuple[TotalPagamentoFechamento, ...]
+    vendas_dinheiro: Decimal
+    devolucoes_dinheiro: Decimal
+    reforcos: Decimal
+    sangrias: Decimal
+    movimentos: tuple[tuple[str, SangriaCaixa | SuprimentoCaixa], ...]
+
+
+def extrato_fechamento(
+    sessao: SessaoCaixa, fechamento: FechamentoCaixa | None = None,
+) -> ExtratoFechamento:
+    vendas = PagamentoVenda.objects.filter(recebimento__sessao=sessao)
+    devolucoes = PagamentoRestituicao.objects.filter(restituicao__sessao=sessao)
+    reforcos = SuprimentoCaixa.objects.filter(sessao=sessao)
+    sangrias = SangriaCaixa.objects.filter(sessao=sessao)
+    if fechamento:
+        corte = fechamento.fechada_em
+        vendas = vendas.filter(recebimento__criada_em__lte=corte)
+        devolucoes = devolucoes.filter(restituicao__criada_em__lte=corte)
+        reforcos = reforcos.filter(criada_em__lte=corte)
+        sangrias = sangrias.filter(criada_em__lte=corte)
+
+    vendidos = {
+        (forma, modalidade): total
+        for forma, modalidade, total in vendas.order_by().values('forma', 'modalidade_cartao')
+        .annotate(total=Sum('valor_aplicado')).values_list('forma', 'modalidade_cartao', 'total')
+    }
+    devolvidos = {
+        (forma, modalidade): total
+        for forma, modalidade, total in devolucoes.order_by()
+        .values('pagamento_original__forma', 'pagamento_original__modalidade_cartao')
+        .annotate(total=Sum('valor'))
+        .values_list('pagamento_original__forma', 'pagamento_original__modalidade_cartao', 'total')
+    }
+    totais_gravados = fechamento.totais_por_forma if fechamento else {}
+    zero = Decimal('0.00')
+    pagamentos = []
+    for codigo, forma in PagamentoVenda.FORMA_PAGAMENTO_CHOICES:
+        vendido = vendidos.get((codigo, ''), zero)
+        devolvido = devolvidos.get((codigo, ''), zero)
+        detalhes = []
+        if codigo == 'CARTAO':
+            if vendido or devolvido:
+                detalhes.append(TotalPagamentoFechamento(
+                    'Sem modalidade informada', vendido, devolvido, vendido - devolvido,
+                ))
+            for modalidade, label in PagamentoVenda.MODALIDADES_CARTAO:
+                subtotal = vendidos.get((codigo, modalidade), zero)
+                restituidas = devolvidos.get((codigo, modalidade), zero)
+                detalhes.append(TotalPagamentoFechamento(
+                    label, subtotal, restituidas, subtotal - restituidas,
+                ))
+                vendido += subtotal
+                devolvido += restituidas
+        liquido = Decimal(totais_gravados.get(codigo, vendido - devolvido))
+        pagamentos.append(TotalPagamentoFechamento(forma, vendido, devolvido, liquido, tuple(detalhes)))
+
+    movimentos: list[tuple[str, SangriaCaixa | SuprimentoCaixa]] = [
+        ('Reforço', item) for item in reforcos
+    ]
+    movimentos.extend(('Sangria', item) for item in sangrias)
+    movimentos.sort(key=lambda entrada: entrada[1].criada_em)
+    return ExtratoFechamento(
+        pagamentos=tuple(pagamentos),
+        vendas_dinheiro=vendidos.get(('DINHEIRO', ''), zero),
+        devolucoes_dinheiro=devolvidos.get(('DINHEIRO', ''), zero),
+        reforcos=sum((item.valor for tipo, item in movimentos if tipo == 'Reforço'), zero),
+        sangrias=sum((item.valor for tipo, item in movimentos if tipo == 'Sangria'), zero),
+        movimentos=tuple(movimentos),
+    )
 
 
 class CaixaQueryError(ValueError):

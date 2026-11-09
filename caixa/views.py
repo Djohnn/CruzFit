@@ -20,7 +20,7 @@ from .models import (
     SessaoCaixa,
     SuprimentoCaixa,
 )
-from .queries import CaixaQueryError, historico_sessao
+from .queries import CaixaQueryError, extrato_fechamento, historico_sessao
 from .services import (
     CaixaOperationError,
     abrir_sessao,
@@ -209,6 +209,7 @@ def fechar(request):
         'chave_idempotencia': uuid.uuid4().hex,
         'sessao_versao': session.versao if session else '',
         'resumo': previsualizar_fechamento(session) if session else None,
+        'extrato': extrato_fechamento(session) if session else None,
     }
     if request.method == 'POST':
         context.update({
@@ -257,7 +258,8 @@ def fechamento_detalhe(request, pk):
         return HttpResponseNotFound('Fechamento não encontrado.')
     return render(request, 'caixa/fechamento_detalhe.html', {
         'fechamento': fechamento,
-        'totais_por_forma': fechamento.totais_por_forma.items(),
+        'extrato': extrato_fechamento(fechamento.sessao, fechamento),
+        'diferenca_absoluta': abs(fechamento.diferenca),
     })
 
 

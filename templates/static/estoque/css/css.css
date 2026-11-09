@@ -47,6 +47,16 @@
     margin-top: auto;
 }
 
+.consultation-product-grid .card-img-top,
+.consultation-product-grid .card-image-placeholder {
+    height: 130px;
+}
+
+.consultation-product-grid .card-img-top {
+    object-fit: contain;
+    background-color: var(--brand-surface-raised);
+}
+
 .product-stock-summary,
 .product-price {
     display: flex;

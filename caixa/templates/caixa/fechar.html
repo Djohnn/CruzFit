@@ -7,28 +7,15 @@
 {% block 'body' %}
 <main class="container cash-page">
     <header class="page-heading cash-page-heading">
-        <div><h1>Conferir e fechar caixa</h1><p>Compare o dinheiro contado com o esperado e revise os pagamentos líquidos desta sessão.</p></div>
+        <div><h1>Conferir e fechar caixa</h1><p>Conte as notas e moedas da gaveta e confira os pagamentos da sessão.</p></div>
         <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
     </header>
 
     {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
 
     {% if sessao %}
-    <section class="surface-section cash-form-surface close-surface" aria-labelledby="close-session-heading">
-        <h2 id="close-session-heading">Sessão #{{ sessao.pk }}</h2>
-        <dl class="cash-session-facts close-summary">
-            <div><dt>Fundo inicial</dt><dd>R$ {{ sessao.fundo_inicial|floatformat:2 }}</dd></div>
-            <div><dt>Dinheiro esperado</dt><dd>R$ {{ resumo.dinheiro_esperado|floatformat:2 }}</dd></div>
-        </dl>
-
-        <div class="refund-allocation close-form-totals" aria-labelledby="close-form-heading">
-            <h3 id="close-form-heading">Totais líquidos por forma</h3>
-            <ul>
-            {% for forma, valor in resumo.totais_por_forma.items %}
-                <li><span>{% if forma == 'DINHEIRO' %}Dinheiro{% elif forma == 'PIX' %}Pix{% else %}Cartão{% endif %}</span><strong>R$ {{ valor|floatformat:2 }}</strong></li>
-            {% endfor %}
-            </ul>
-        </div>
+    <section class="surface-section close-surface" aria-labelledby="close-session-heading">
+        <h2 id="close-session-heading">Sessão #{{ sessao.pk }} <span class="closing-session-date">· aberta em {{ sessao.aberta_em|date:"d/m/Y H:i" }}</span></h2>
 
         {% if resumo.pendencias_pendentes %}
             <div class="alert alert-warning" role="alert">
@@ -36,19 +23,21 @@
             </div>
         {% endif %}
 
-        <form method="post" class="operational-form close-form" novalidate>
+        <form method="post" class="operational-form close-form" data-esperado="{{ resumo.dinheiro_esperado|floatformat:'2u' }}">
             {% csrf_token %}
             <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
             <input type="hidden" name="sessao_versao" value="{{ sessao_versao }}">
+            <p class="closing-expected">Dinheiro esperado na gaveta <strong class="closing-amount">R$ {{ resumo.dinheiro_esperado|floatformat:"2g" }}</strong></p>
             <div class="form-group">
-                <label for="close-cash-count">Dinheiro contado (R$)</label>
-                <input id="close-cash-count" class="form-control" type="number" name="dinheiro_contado" min="0" step="0.01" inputmode="decimal" value="{{ dinheiro_contado }}" required aria-describedby="close-cash-help">
-                <small id="close-cash-help" class="section-help">O esperado inclui fundo inicial, dinheiro recebido, suprimentos, sangrias e restituições em dinheiro.</small>
+                <label for="close-cash-count">Quanto dinheiro você contou? (R$)</label>
+                <input id="close-cash-count" class="form-control" type="text" name="dinheiro_contado" inputmode="decimal" value="{{ dinheiro_contado }}" required aria-describedby="close-cash-help close-cash-difference">
+                <small id="close-cash-help" class="section-help">Digite o total de notas e moedas. Exemplo: 155,50.</small>
+                <p id="close-cash-difference" class="closing-difference" role="status"></p>
             </div>
             <div class="form-group">
-                <label for="close-reason">Justificativa da diferença</label>
+                <label for="close-reason">Motivo da falta ou sobra</label>
                 <textarea id="close-reason" class="form-control" name="justificativa" rows="3" maxlength="500" aria-describedby="close-reason-help">{{ justificativa }}</textarea>
-                <small id="close-reason-help" class="section-help">Obrigatória quando o valor contado for diferente do esperado.</small>
+                <small id="close-reason-help" class="section-help">Preencha se faltar ou sobrar dinheiro. Se os valores baterem, pode deixar em branco.</small>
             </div>
             <div class="cash-actions">
                 <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Cancelar</a>
@@ -56,6 +45,10 @@
             </div>
         </form>
     </section>
+    <section class="surface-section close-surface" aria-label="Detalhes dos valores da sessão">
+        {% include "caixa/_extrato_fechamento.html" with esperado=resumo.dinheiro_esperado %}
+    </section>
+    <script src="{% static 'caixa/js/conferencia_fechamento.js' %}" defer></script>
     {% else %}
     <section class="surface-section cash-empty" aria-labelledby="close-empty-heading">
         <h2 id="close-empty-heading">Nenhuma sessão aberta</h2>

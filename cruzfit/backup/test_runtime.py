@@ -10,13 +10,17 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from cruzfit.backup.contracts import BackupConfig, VolumeIdentity
+from django.db.migrations.loader import MigrationLoader
+
+from cruzfit.backup.contracts import BackupConfig, DestinationError, VolumeIdentity
 from cruzfit.backup.runtime import (
     RuntimeOperationError,
     runtime_start,
     runtime_stop,
 )
+from cruzfit.backup.services import create_backup, verify_backup
 from cruzfit.backup.windows import OperationLock
 
 
@@ -117,6 +121,7 @@ class RuntimeTests(unittest.TestCase):
         self.database = self.project / "db.sqlite3"
         with closing(sqlite3.connect(self.database)) as database:
             database.execute("CREATE TABLE exemplo (valor TEXT)")
+            database.execute("CREATE TABLE caixa_sessaocaixa (aberta BOOLEAN NOT NULL)")
             database.commit()
         self.config = BackupConfig(
             version=1,
@@ -174,6 +179,92 @@ class RuntimeTests(unittest.TestCase):
 
         self.assertEqual(events, ["backup", "migrate", "runserver", "ready"])
         self.assertTrue(process.waited)
+
+    def test_start_current_database_skips_backup_and_migrate(self):
+        """Given schema atualizado; When iniciar; Then apenas iniciar o servidor."""
+        process = FakeProcess()
+        with closing(sqlite3.connect(self.database)) as database, database:
+            database.execute("INSERT INTO caixa_sessaocaixa VALUES (1)")
+            database.execute(
+                "CREATE TABLE django_migrations (app TEXT, name TEXT, applied DATETIME)"
+            )
+            database.executemany(
+                "INSERT INTO django_migrations VALUES (?, ?, CURRENT_TIMESTAMP)",
+                MigrationLoader(None).graph.nodes,
+            )
+        runtime_start(
+            project_root=self.project,
+            config=self.config,
+            operation_id="runtime-daily",
+            reason="abertura",
+            process_inspector=FakeInspector(project_process=process),
+            backup_creator=lambda **_kwargs: self.fail("backup na abertura"),
+            command_runner=lambda *_args, **_kwargs: self.fail("migração na abertura"),
+            process_launcher=_fake_launcher(process),
+            readiness_checker=lambda: True,
+        )
+        self.assertTrue(process.waited)
+        with closing(sqlite3.connect(self.database)) as database:
+            self.assertEqual(
+                database.execute("SELECT aberta FROM caixa_sessaocaixa").fetchone(), (1,)
+            )
+
+    def test_stop_requires_closed_cash_and_then_backs_up_stopped_server(self):
+        """Given caixa aberto; When parar; Then manter servidor até fechar o caixa."""
+        process = FakeProcess()
+        command = [sys.executable, str(self.project / "manage.py"), "runserver",
+                   "127.0.0.1:15001", "--noreload"]
+        _equip_fake_process(process, command)
+        state = _write_modern_runtime_state(
+            self.project, process, command, self.config.installation_id
+        )
+        inspector = FakeInspector(project_process=process)
+        with closing(sqlite3.connect(self.database)) as database, database:
+            database.execute("INSERT INTO caixa_sessaocaixa VALUES (1)")
+
+        with self.assertRaisesRegex(RuntimeOperationError, "caixa aberto"):
+            runtime_stop(project_root=self.project, process_inspector=inspector)
+        self.assertTrue(state.exists())
+        self.assertEqual(inspector.terminated, [])
+
+        with closing(sqlite3.connect(self.database)) as database, database:
+            database.execute("UPDATE caixa_sessaocaixa SET aberta = 0")
+
+        def backup(**kwargs):
+            self.assertEqual(inspector.terminated, [process])
+            self.assertFalse(state.exists())
+            self.assertEqual(kwargs["source_db"], self.database)
+            return create_backup(
+                **kwargs, volume_provider=lambda _path: self.config.volume_identity
+            )
+
+        with (
+            patch(
+                "cruzfit.backup.runtime.validate_configured_destination",
+                side_effect=DestinationError("Dispositivo ausente"),
+            ),
+            self.assertRaisesRegex(DestinationError, "Dispositivo ausente"),
+        ):
+            runtime_stop(
+                project_root=self.project,
+                config=self.config,
+                process_inspector=inspector,
+                backup_creator=backup,
+            )
+        self.assertEqual(inspector.terminated, [])
+
+        with patch("cruzfit.backup.runtime.validate_configured_destination"):
+            archive = runtime_stop(
+                project_root=self.project,
+                config=self.config,
+                process_inspector=inspector,
+                backup_creator=backup,
+            )
+        self.assertEqual(archive.parent, self.external)
+        verification = verify_backup(
+            archive, expected_installation_id=self.config.installation_id, project_root=self.project
+        )
+        self.assertEqual(verification.manifest.reason, "Encerramento do sistema")
 
     def test_server_child_failure_does_not_run_or_open_server(self):
         """CT-BKP-08: Given backup falha; When iniciar; Then migrate/servidor não executam."""

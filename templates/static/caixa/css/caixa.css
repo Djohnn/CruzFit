@@ -116,11 +116,30 @@
 .refund-history-row p { margin: 0; color: var(--brand-muted, #c8b995); }
 .refund-history-row .refund-complete { color: #8ee2ac; font-weight: 700; }
 .refund-history-row .refund-pending-status { color: var(--brand-gold-light, #ffd978); font-weight: 700; }
-.close-summary { margin-bottom: 1.25rem; }
-.close-form-totals { max-width: 40rem; }
-.close-form { margin-top: 1.5rem; }
+.closing-session-date { font-size: 1rem; font-weight: 400; color: var(--cash-muted); }
+.close-form { max-width: 36rem; margin-top: 1.25rem; }
 .close-form .form-group { margin-bottom: 1.25rem; }
-.close-result-facts div:nth-child(3) dd { color: var(--brand-gold-light, #ffd978); }
+.closing-expected { display: flex; justify-content: space-between; gap: .75rem; padding-bottom: .75rem; border-bottom: 1px solid var(--cash-border); }
+.closing-amount, .closing-cash-lines dd { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.closing-difference { margin: .5rem 0 0; font-weight: 700; }
+.closing-difference:empty { margin: 0; }
+.closing-difference[data-divergencia], .cash-page .closing-cash-total dd { color: var(--brand-gold-light, #ffd978); }
+.closing-breakdown { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.75rem; }
+.closing-breakdown h2, .closing-movements h2 { font-size: 1.2rem; }
+.closing-payments { width: 100%; font-variant-numeric: tabular-nums; }
+.closing-payments :is(th, td) { padding: .5rem .25rem; border-bottom: 1px solid var(--cash-border); }
+.closing-payments :is(th, td):not(:first-child) { text-align: right; }
+.closing-payments td { white-space: nowrap; }
+.closing-payments .closing-payment-detail th { padding-inline-start: 1rem; font-weight: 500; }
+.closing-card-note { margin: .75rem 0 0; }
+.closing-cash-lines { max-width: 38rem; margin-bottom: 0; }
+.closing-cash-lines > div { padding: .4rem 0; }
+.closing-cash-lines > .closing-cash-total { margin-top: .25rem; padding-top: .75rem; border-top: 1px solid var(--cash-border); }
+.closing-cash-lines .closing-cash-total dd { white-space: normal; text-align: right; }
+.closing-movements { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--cash-border); }
+.closing-movement-list { margin: 0; padding: 0; list-style: none; }
+.closing-movement-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid var(--cash-border); }
+.closing-movement-list li p { margin: .25rem 0 0; overflow-wrap: anywhere; }
 .close-justification { margin: 1.25rem 0; padding: 1rem; border: 1px solid var(--cash-border, rgba(232, 174, 54, .3)); border-radius: 10px; background: var(--cash-raised, #241b0d); }
 .receipt-payments { display: grid; gap: .25rem; padding-left: 1.25rem; }
 .receipt-payments li { padding: .5rem 0; border-bottom: 1px solid var(--brand-border, rgba(232, 174, 54, .3)); }
@@ -138,6 +157,7 @@
 }
 
 @media (max-width: 767.98px) {
+    .closing-breakdown { grid-template-columns: minmax(0, 1fr); }
     .cash-page .cash-page-heading,
     .cash-page .section-heading-row,
     .cash-page .cash-session { align-items: stretch; flex-direction: column; }

@@ -19,22 +19,23 @@ remoto.
 Não configure uma pasta dentro do projeto, de `media/` ou uma unidade ausente.
 Uma troca de letra ou dispositivo exige reconfiguração explícita.
 
-## Abertura e backup automático
+## Abertura e encerramento
 
-Use `INICIAR_CRUZ_FIT.bat`. O supervisor:
+Use `INICIAR_CRUZ_FIT.bat` para abrir. Com o banco atualizado, a abertura
+dispensa o dispositivo externo. Quando houver migrações pendentes, o sistema
+exige um backup validado antes de aplicá-las. Na primeira instalação, o banco
+é criado pela migração e recebe um backup inicial antes de liberar o uso.
 
-1. adquire o lock do sistema operacional;
-2. verifica recuperação pendente, processo existente e destino externo;
-3. cria e valida o backup completo quando `db.sqlite3` já existe;
-4. executa `migrate --noinput`;
-5. inicia o servidor com `--noreload` e só libera o navegador após readiness.
+No fim do expediente, feche o Caixa no sistema, conecte o dispositivo externo
+e execute `PARAR_CRUZ_FIT.bat`. Se o Caixa estiver aberto ou o destino estiver
+indisponível, o servidor continua em execução e o comando mostra o motivo.
+Com o Caixa fechado e o destino disponível, o comando encerra o servidor,
+gera o backup de banco e imagens e mostra o caminho do ZIP validado.
 
-Se o dispositivo estiver ausente, trocado, dentro do projeto, em `media/`,
-for um link/junction/reparse point, estiver sem espaço ou se qualquer validação
-falhar, migração e servidor não são executados.
-
-Na primeira instalação, o banco é criado pela migração e um backup inicial
-validado é publicado antes de liberar o uso.
+Se o backup falhar depois da parada, corrija o problema e execute
+`PARAR_CRUZ_FIT.bat` novamente. Em uma queda de energia, o último ZIP validado
+é a cópia disponível. Ao reiniciar, confira se o Caixa ficou aberto e faça
+o fechamento normalmente.
 
 O supervisor grava diagnóstico persistente em
 `.backup/logs/supervisor.log`. Esse arquivo registra falhas de preflight,
@@ -42,7 +43,7 @@ backup, migração e readiness sem registrar senhas ou dados de registros.
 
 ## Backup manual
 
-Pare o sistema com `PARAR_CRUZ_FIT.bat` e execute `BACKUP_CRUZ_FIT.bat`.
+Com o servidor parado, execute `BACKUP_CRUZ_FIT.bat` para uma cópia adicional.
 Backup manual e restauração são recusados enquanto o servidor Cruz Fit estiver
 ativo; o sistema não encerra processos externos automaticamente.
 Informe o motivo. A operação exige `operation_id`, valida inventário, hashes,
@@ -81,10 +82,9 @@ Pacotes com migração futura ou desconhecida são rejeitados antes do
 
 ## Rotina recomendada e limites
 
-Faça um backup manual após encerrar o expediente. A cópia automática da
-abertura protege o estado anterior às migrações e à sessão, mas não substitui
-uma cópia após alterações feitas durante a sessão. Use uma segunda mídia
-periodicamente para proteger contra perda física do dispositivo principal.
+Confira a mensagem de backup validado ao encerrar o expediente. Use uma
+segunda mídia periodicamente para proteger contra perda física do dispositivo
+principal.
 
 Não há retenção automática: o Cruz Fit nunca exclui backups existentes.
 Também não há interface web, nuvem, agendador ou backup incremental nesta

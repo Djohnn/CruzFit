@@ -14,22 +14,20 @@
     {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
 
     <section class="surface-section close-receipt" aria-labelledby="close-receipt-heading">
-        <h2 id="close-receipt-heading">Conferência final</h2>
-        <dl class="cash-session-facts close-result-facts">
-            <div><dt>Dinheiro esperado</dt><dd>R$ {{ fechamento.dinheiro_esperado|floatformat:2 }}</dd></div>
-            <div><dt>Dinheiro contado</dt><dd>R$ {{ fechamento.dinheiro_contado|floatformat:2 }}</dd></div>
-            <div><dt>Diferença</dt><dd>R$ {{ fechamento.diferenca|floatformat:2 }}</dd></div>
+        <h2 id="close-receipt-heading">Conferência da gaveta</h2>
+        <p class="section-help">Sessão aberta em {{ fechamento.sessao.aberta_em|date:"d/m/Y H:i" }}.</p>
+        <dl class="closing-cash-lines">
+            <div><dt>Dinheiro esperado na gaveta</dt><dd>R$ {{ fechamento.dinheiro_esperado|floatformat:"2g" }}</dd></div>
+            <div><dt>Dinheiro contado</dt><dd>R$ {{ fechamento.dinheiro_contado|floatformat:"2g" }}</dd></div>
+            <div class="closing-cash-total">
+                <dt>Resultado da contagem</dt>
+                <dd>{% if fechamento.diferenca < 0 %}Falta de R$ {{ diferenca_absoluta|floatformat:"2g" }} na gaveta{% elif fechamento.diferenca > 0 %}Sobra de R$ {{ diferenca_absoluta|floatformat:"2g" }} na gaveta{% else %}Sem diferença na gaveta{% endif %}</dd>
+            </div>
         </dl>
-        <div class="refund-allocation close-form-totals" aria-labelledby="close-snapshot-heading">
-            <h3 id="close-snapshot-heading">Snapshot líquido por forma</h3>
-            <ul>
-            {% for forma, valor in totais_por_forma %}
-                <li><span>{% if forma == 'DINHEIRO' %}Dinheiro{% elif forma == 'PIX' %}Pix{% else %}Cartão{% endif %}</span><strong>R$ {{ valor|floatformat:2 }}</strong></li>
-            {% endfor %}
-            </ul>
-        </div>
-        {% if fechamento.justificativa %}<p class="close-justification"><strong>Justificativa:</strong> {{ fechamento.justificativa }}</p>{% endif %}
-        <p class="section-help">Fechamento imutável · chave {{ fechamento.chave_idempotencia }}</p>
+        {% if fechamento.justificativa %}<p class="close-justification"><strong>Motivo informado:</strong> {{ fechamento.justificativa }}</p>{% endif %}
+    </section>
+    <section class="surface-section close-receipt" aria-label="Detalhes dos valores da sessão">
+        {% include "caixa/_extrato_fechamento.html" with sessao=fechamento.sessao esperado=fechamento.dinheiro_esperado %}
     </section>
 </main>
 {% endblock %}

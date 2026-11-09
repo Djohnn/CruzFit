@@ -13,6 +13,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
 from caixa.models import (
+    PagamentoVenda,
     PendenciaCancelamentoVenda,
     PendenciaDevolucaoVenda,
     RecebimentoVenda,
@@ -87,6 +88,14 @@ def registrar_venda(request):
                         for field in ('forma', 'valor_aplicado', 'valor_entregue')
                     )
                 ]
+            if (
+                any(line['forma'].strip().upper() == 'CARTAO' for line in payments or [])
+                or (
+                    action not in {'revisar', 'confirmar'}
+                    and request.POST.get('forma_pagamento', '').strip().upper() == 'CARTAO'
+                )
+            ):
+                raise CaixaOperationError('Selecione cartão de crédito ou débito.')
             if action in {'revisar', 'confirmar'}:
                 if not session:
                     raise CaixaOperationError('Abra uma sessão de caixa antes de registrar a venda.')
@@ -248,7 +257,7 @@ def registrar_venda(request):
             'linhas': linhas or [{'produto': '', 'quantidade': '1'}],
             'desconto': posted.get('desconto', '0'),
             'forma_pagamento': posted.get('forma_pagamento', ''),
-            'formas_pagamento': Venda.MEIOS_PAGAMENTO_CHOICES,
+            'formas_pagamento': PagamentoVenda.FORMAS_CHECKOUT,
             'chave_idempotencia': posted.get('chave_idempotencia') or uuid.uuid4().hex,
             'sessao_caixa': session,
             'preview': preview,

@@ -68,7 +68,7 @@
                 </div>
             </div>
             {% if produtos %}
-                <div class="product-grid">
+                <div class="product-grid consultation-product-grid">
                     {% for produto in produtos %}
                         <article class="bg-card">
                             {% if produto|get_first_image %}
@@ -77,12 +77,26 @@
                                 <div class="card-image-placeholder" role="img" aria-label="Produto sem imagem">Sem imagem</div>
                             {% endif %}
                             <div class="card-body">
-                                <h3 class="card-title">{{ produto.variacao_label }}</h3>
-                                <span class="badge badge-info">{{ produto.categoria|default:'Sem categoria' }}</span>
-                                {% if produto.codigo_barras %}
-                                    <div class="product-barcode">Código de barras: {{ produto.codigo_barras }}</div>
+                                <h3 class="card-title text-center">{{ produto.nome }}</h3>
+                                {% if produto.modelo or produto.cor or produto.tamanho or produto.tecido %}
+                                    <ul class="list-unstyled mb-2">
+                                        {% if produto.modelo %}<li>Modelo: {{ produto.modelo }}</li>{% endif %}
+                                        {% if produto.cor %}<li>Cor: {{ produto.cor }}</li>{% endif %}
+                                        {% if produto.tamanho %}<li>Tamanho: {{ produto.get_tamanho_display }}</li>{% endif %}
+                                        {% if produto.tecido %}<li>Tecido: {{ produto.tecido }}</li>{% endif %}
+                                    </ul>
                                 {% endif %}
-                                <a href="{% url 'produto' produto.slug %}" class="btn btn-primary card-action">Ver detalhes</a>
+                                <span class="badge badge-info">{{ produto.categoria|default:'Sem categoria' }}</span>
+                                {% if produto.ficha_id %}
+                                    <span class="badge badge-warning">Tem variações</span>
+                                {% endif %}
+                                {% if produto.codigo_barras %}
+                                    <div class="product-barcode text-center">
+                                        <span class="d-block">Código de barras:</span>
+                                        <span class="d-block">{{ produto.codigo_barras }}</span>
+                                    </div>
+                                {% endif %}
+                                <a href="{% url 'produto' produto.slug %}" class="btn btn-primary btn-sm card-action align-self-center">Ver detalhes</a>
                             </div>
                         </article>
                     {% endfor %}

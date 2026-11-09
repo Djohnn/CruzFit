@@ -1,0 +1,12 @@
+{% if sessao.fechamento_atrasado %}
+<div class="alert alert-warning" role="alert">
+    <strong>Fechamento de caixa pendente.</strong>
+    O caixa está aberto desde {{ sessao.aberta_em|date:"d/m/Y H:i" }}.
+    As novas vendas continuam vinculadas a essa sessão.
+    {% if request.user.is_superuser or request.user.cargo == 'G' %}
+        <a href="{% url 'caixa:fechar' %}" class="alert-link">Conferir e fechar caixa</a>.
+    {% else %}
+        Solicite ao gerente a conferência e o fechamento.
+    {% endif %}
+</div>
+{% endif %}

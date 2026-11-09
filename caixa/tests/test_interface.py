@@ -1,11 +1,13 @@
 """Given/When/Then contracts for Caixa and split-payment screens."""
 
 import json
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from caixa.models import PagamentoVenda, RecebimentoVenda, SessaoCaixa
 from caixa.services import abrir_sessao
@@ -48,6 +50,74 @@ class CaixaInterfaceTests(TestCase):
             "valor_entregue": ["50.00", ""],
             "chave_idempotencia": key,
         }
+
+    def test_aviso_de_fechamento_em_sessao_de_dia_anterior(self):
+        sessao = self.open_session()
+        self.assertFalse(sessao.fechamento_atrasado)
+        SessaoCaixa.objects.filter(pk=sessao.pk).update(
+            aberta_em=timezone.now() - timedelta(days=3),
+        )
+        sessao.refresh_from_db()
+        self.assertTrue(sessao.fechamento_atrasado)
+        for route in ('home', 'caixa:painel', 'vendas:registrar_venda'):
+            self.assertContains(self.client.get(reverse(route)), 'Fechamento de caixa pendente.')
+        sessao.aberta = False
+        self.assertFalse(sessao.fechamento_atrasado)
+
+    def test_cartao_exige_modalidade_e_separa_credito_de_debito_no_fechamento(self):
+        """Uma venda pode usar os dois cartões, mantendo um total agregado."""
+        self.open_session()
+        url = reverse("vendas:registrar_venda")
+        self.assertContains(self.client.get(url), "Cartão de crédito")
+        self.assertContains(self.client.get(url), "Cartão de débito")
+        payload = self.payment_payload()
+        payload.update(forma_parcela=["CARTAO"], valor_aplicado=["100"], valor_entregue=[""])
+        self.assertContains(self.client.post(url, payload), "crédito ou débito")
+        self.assertFalse(Venda.objects.exists())
+
+        payload.update(
+            forma_parcela=["CARTAO_CREDITO", "CARTAO_DEBITO"],
+            valor_aplicado=["70", "30"],
+            valor_entregue=["", ""],
+        )
+        review = self.client.post(url, payload)
+        self.assertContains(review, "Confira a venda")
+        payload.update(
+            acao="confirmar",
+            revisao_confirmada="1",
+            total_confirmado="100.00",
+            assinatura_revisao=review.context["assinatura_revisao"],
+        )
+        altered = dict(payload, forma_parcela=["CARTAO_DEBITO", "CARTAO_CREDITO"])
+        self.assertContains(self.client.post(url, altered), "mudaram após a revisão")
+        self.assertFalse(Venda.objects.exists())
+        self.assertEqual(self.client.post(url, payload).status_code, 302)
+
+        self.assertEqual(Venda.objects.get().forma_pagamento, "CARTAO")
+        response = self.client.get(reverse("caixa:fechar"))
+        cartao = response.context["extrato"].pagamentos[2]
+        self.assertEqual(cartao.vendas, Decimal("100"))
+        self.assertEqual(
+            [(linha.forma, linha.vendas) for linha in cartao.detalhes],
+            [("Crédito", Decimal("70")), ("Débito", Decimal("30"))],
+        )
+        self.assertContains(response, "Cartão · total")
+        self.assertEqual(
+            list(PagamentoVenda.objects.order_by("modalidade_cartao").values_list(
+                "forma", "modalidade_cartao", "valor_aplicado",
+            )),
+            [("CARTAO", "CREDITO", Decimal("70")), ("CARTAO", "DEBITO", Decimal("30"))],
+        )
+        fechamento = self.client.post(reverse("caixa:fechar"), {
+            "dinheiro_contado": "100",
+            "chave_idempotencia": "fechamento-modalidades",
+            "sessao_versao": response.context["sessao_versao"],
+        })
+        self.assertEqual(fechamento.status_code, 302)
+        detail = self.client.get(fechamento.url)
+        self.assertContains(detail, "Cartão · total")
+        self.assertContains(detail, "Sem diferença na gaveta")
+        self.assertEqual(detail.context["fechamento"].totais_por_forma["CARTAO"], "100.00")
 
     def test_telas_do_caixa_abrem_e_navegacao_mostra_contexto(self):
         """Given usuário autenticado; When abrir Caixa; Then mostrar início e navegação própria."""

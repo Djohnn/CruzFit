@@ -258,6 +258,7 @@ class FechamentoCaixaTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertContains(response, "justificativa", status_code=400)
+        self.assertContains(response, "Falta R$ 1,00 na gaveta", status_code=400)
         self.assertContains(response, 'value="99.00"', status_code=400)
         self.assertTrue(SessaoCaixa.objects.get(pk=self.session.pk).aberta)
 
@@ -278,9 +279,45 @@ class FechamentoCaixaTests(TestCase):
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(response.url)
         self.assertEqual(detail.status_code, 200)
-        self.assertContains(detail, "Snapshot líquido por forma")
+        self.assertContains(detail, "Vendas e devoluções por forma de pagamento")
+        self.assertContains(detail, "Sem diferença na gaveta")
         self.assertContains(detail, "R$ 100,00")
         self.assertFalse(SessaoCaixa.objects.get(pk=self.session.pk).aberta)
+
+    def test_extrato_separa_pagamentos_dos_movimentos_de_dinheiro(self):
+        """Given venda mista e movimentos; When fechar; Then explicar origem e sobra."""
+        self.sale(payments=[
+            {"forma": "DINHEIRO", "valor_aplicado": "40.00", "valor_entregue": "50.00"},
+            {"forma": "PIX", "valor_aplicado": "35.00"},
+            {"forma": "CARTAO", "valor_aplicado": "25.00"},
+        ])
+        registrar_suprimento(
+            actor=self.manager, sessao=self.session, valor="30.00",
+            motivo="Notas para troco", idempotency_key="reforco-extrato",
+        )
+        registrar_sangria(
+            actor=self.manager, sessao=self.session, valor="10.00",
+            motivo="Retirada para o cofre", idempotency_key="sangria-extrato",
+        )
+        self.client.force_login(self.manager)
+        preview = self.client.get(reverse("caixa:fechar"))
+        closing = self.close(
+            dinheiro_contado="162.00", justificativa="Sobra após recontagem",
+        ).fechamento
+        detail = self.client.get(reverse("caixa:fechamento_detalhe", args=[closing.pk]))
+        for response in (preview, detail):
+            self.assertContains(response, "Reforço de caixa")
+            self.assertContains(response, "Retirada de dinheiro (sangria)")
+            self.assertContains(response, "Notas para troco")
+            self.assertContains(response, "Retirada para o cofre")
+            self.assertContains(response, "R$ 160,00")
+            self.assertEqual(
+                [(row.forma, row.vendas) for row in response.context["extrato"].pagamentos],
+                [("Dinheiro", Decimal("40")), ("Pix", Decimal("35")), ("Cartão", Decimal("25"))],
+            )
+            self.assertContains(response, "Sem modalidade informada")
+        self.assertContains(detail, "Sobra de R$ 2,00 na gaveta")
+        self.assertContains(detail, "Sobra após recontagem")
 
     def test_vendedor_nao_pode_fechar_pela_tela(self):
         """Given vendedor autenticado; When abrir fechamento; Then negar acesso."""
@@ -293,6 +330,32 @@ class FechamentoCaixaTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertFalse(FechamentoCaixa.objects.exists())
+
+    def test_restituicao_em_cartao_respeita_modalidade_original(self):
+        sale = self.sale(payments=[
+            {"forma": "CARTAO_CREDITO", "valor_aplicado": "65.00"},
+            {"forma": "CARTAO_DEBITO", "valor_aplicado": "35.00"},
+        ])
+        canceled = cancelar_venda(
+            actor=self.manager, sale_id=sale.sale.pk, reason="Devolução do pagamento",
+            idempotency_key="cancelamento-modalidades",
+        )
+        registrar_restituicao(
+            actor=self.manager, sessao=self.session, motivo="Estorno na maquininha",
+            idempotency_key="restituicao-modalidades",
+            pendencia_cancelamento=canceled.operation.pendencia_restituicao_caixa,
+            confirmacao_manual=True,
+        )
+        closing = self.close().fechamento
+        self.client.force_login(self.manager)
+        detail = self.client.get(reverse("caixa:fechamento_detalhe", args=[closing.pk]))
+        self.assertEqual(detail.status_code, 200)
+        card = detail.context["extrato"].pagamentos[2]
+        self.assertEqual((card.vendas, card.devolucoes, card.liquido), (100, 100, 0))
+        self.assertEqual(
+            [(row.forma, row.devolucoes) for row in card.detalhes],
+            [("Crédito", Decimal("65.00")), ("Débito", Decimal("35.00"))],
+        )
 
 
 class RestituicaoFechamentoProjectionTests(TestCase):
@@ -363,3 +426,11 @@ class RestituicaoFechamentoProjectionTests(TestCase):
         self.assertEqual(result.fechamento.totais_por_forma, {
             "DINHEIRO": "-40.00", "PIX": "-60.00", "CARTAO": "0.00",
         })
+        self.client.force_login(manager)
+        detail = self.client.get(reverse("caixa:fechamento_detalhe", args=[result.fechamento.pk]))
+        self.assertEqual(detail.status_code, 200)
+        extrato = detail.context["extrato"]
+        self.assertEqual(extrato.vendas_dinheiro, Decimal("0.00"))
+        self.assertEqual(extrato.devolucoes_dinheiro, Decimal("40.00"))
+        self.assertEqual(extrato.pagamentos[1].devolucoes, Decimal("60.00"))
+        self.assertEqual(extrato.pagamentos[1].liquido, Decimal("-60.00"))

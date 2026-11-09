@@ -7,12 +7,46 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
-from caixa.models import RecebimentoVenda
+from caixa.models import PagamentoVenda, RecebimentoVenda
+from caixa.services import abrir_sessao, finalizar_venda
 from estoque.models import Categoria, Produto
 from vendas.services import cancelar_venda, devolver_venda, registrar_venda
 
 
 class MigracaoLegadoCaixaTests(TransactionTestCase):
+    def test_pagamento_legado_em_cartao_preserva_id_valor_e_modalidade_vazia(self):
+        manager = get_user_model().objects.create_user(username='gerente-cartao-legado', cargo='G')
+        session = abrir_sessao(
+            actor=manager, fundo_inicial='0', motivo='Abertura', idempotency_key='caixa-cartao',
+        ).sessao
+        product = Produto.objects.create(
+            nome='Produto legado', categoria=Categoria.objects.create(titulo='Cartão legado'),
+            quantidade='2.00', preco_compra='20.00', preco_venda='40.00',
+        )
+        receipt = finalizar_venda(
+            actor=manager, sessao=session, product_ids=[str(product.pk)], quantities=['1'],
+            pagamentos=[{'forma': 'CARTAO', 'valor_aplicado': '40.00'}],
+            motivo='Venda legada', idempotency_key='venda-cartao-legada',
+        ).recebimento
+        payment_id = receipt.pagamentos.get().pk
+
+        executor = MigrationExecutor(connection)
+        latest = executor.loader.graph.leaf_nodes()
+        previous = [('caixa', '0006_cortecaixa_cortecaixa_caixa_corte_unico_codigo')]
+        try:
+            executor.migrate(previous)
+            old_payment = executor.loader.project_state(previous).apps.get_model(
+                'caixa', 'PagamentoVenda',
+            )
+            self.assertEqual(old_payment.objects.get(pk=payment_id).forma, 'CARTAO')
+        finally:
+            MigrationExecutor(connection).migrate(latest)
+
+        payment = PagamentoVenda.objects.get(pk=payment_id)
+        self.assertEqual(payment.recebimento_id, receipt.pk)
+        self.assertEqual(payment.valor_aplicado, Decimal('40.00'))
+        self.assertEqual(payment.modalidade_cartao, '')
+
     def test_migrar_legado_preserva_vendas_reversoes_totais_ids_e_saldo(self):
         """Given legado com desconto/cancelamento/devolução; When migrar ida/volta; Then preservar."""
         manager = get_user_model().objects.create_user(

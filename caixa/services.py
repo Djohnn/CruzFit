@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, OperationalError, connections, transaction
 from django.db.models import F, Sum
+from django.utils.formats import number_format
 
 from vendas.models import Venda, VendaCancelamento, VendaDevolucao
 
@@ -204,7 +205,7 @@ def _normalize_payments(
     if isinstance(payments, (str, bytes)) or not isinstance(payments, Iterable):
         raise CaixaOperationError('Informe as parcelas de pagamento da venda.')
 
-    allowed_forms = dict(PagamentoVenda.FORMA_PAGAMENTO_CHOICES)
+    allowed_forms = dict(PagamentoVenda.FORMAS_CHECKOUT) | {'CARTAO': 'Cartão'}
     grouped: dict[str, list[Decimal]] = {}
     for line in payments:
         if not isinstance(line, Mapping):
@@ -258,10 +259,11 @@ def previsualizar_recebimento(*, payments: object, total: object) -> Recebimento
     applied = sum((line[1] for line in normalized), Decimal('0.00'))
     tendered = sum((line[2] for line in normalized), Decimal('0.00'))
     change = sum((line[3] for line in normalized), Decimal('0.00'))
+    labels = dict(PagamentoVenda.FORMAS_CHECKOUT) | {'CARTAO': 'Cartão'}
     return RecebimentoPreview(
         pagamentos=tuple({
             'forma': form,
-            'forma_label': dict(PagamentoVenda.FORMA_PAGAMENTO_CHOICES)[form],
+            'forma_label': labels[form],
             'valor_aplicado': amount,
             'valor_entregue': amount_tendered,
             'troco': amount_change,
@@ -413,7 +415,8 @@ def registrar_recebimento(
             PagamentoVenda.objects.bulk_create([
                 PagamentoVenda(
                     recebimento=receipt,
-                    forma=form,
+                    forma='CARTAO' if form in PagamentoVenda.OPCOES_CARTAO else form,
+                    modalidade_cartao=PagamentoVenda.OPCOES_CARTAO.get(form, ''),
                     valor_aplicado=applied,
                     valor_entregue=tendered,
                     troco=change,
@@ -600,8 +603,10 @@ def fechar_sessao(
                 )
             difference = (counted - preview.dinheiro_esperado).quantize(Decimal('0.01'))
             if difference and not reason:
+                amount = number_format(abs(difference), decimal_pos=2, force_grouping=True)
+                description = 'Falta' if difference < 0 else 'Sobra de'
                 raise CaixaOperationError(
-                    'Informe uma justificativa para a diferença de caixa.',
+                    f'{description} R$ {amount} na gaveta. Informe uma justificativa.',
                 )
 
             claimed = SessaoCaixa.objects.filter(
@@ -1162,12 +1167,12 @@ def _sale_payment_summary(
     payments: list[Mapping[str, object]] | None,
     legacy_payment_method: str | None,
 ) -> str:
-    allowed_forms = dict(PagamentoVenda.FORMA_PAGAMENTO_CHOICES)
+    allowed_forms = dict(PagamentoVenda.FORMAS_CHECKOUT) | {'CARTAO': 'Cartão'}
     if payments is None:
         method = (legacy_payment_method or '').strip().upper()
         if method and method not in allowed_forms:
             raise CaixaOperationError('Selecione uma forma de pagamento válida.')
-        return method or 'SEM_PAGAMENTO'
+        return 'CARTAO' if method in PagamentoVenda.OPCOES_CARTAO else method or 'SEM_PAGAMENTO'
 
     forms: set[str] = set()
     for line in payments:
@@ -1176,7 +1181,7 @@ def _sale_payment_summary(
         form = str(line.get('forma') or '').strip().upper()
         if form not in allowed_forms:
             raise CaixaOperationError('Selecione uma forma de pagamento válida.')
-        forms.add(form)
+        forms.add('CARTAO' if form in PagamentoVenda.OPCOES_CARTAO else form)
     if len(forms) == 1:
         return next(iter(forms))
     return 'MISTO' if forms else 'SEM_PAGAMENTO'

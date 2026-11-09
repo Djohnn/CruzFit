@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 
 class SessaoCaixa(models.Model):
@@ -39,6 +40,13 @@ class SessaoCaixa(models.Model):
 
     def __str__(self):
         return f'Caixa #{self.pk}'
+
+    @property
+    def fechamento_atrasado(self):
+        return bool(
+            self.aberta and self.aberta_em
+            and timezone.localdate(self.aberta_em) < timezone.localdate()
+        )
 
 
 class RecebimentoVenda(models.Model):
@@ -84,11 +92,26 @@ class PagamentoVenda(models.Model):
         ('PIX', 'Pix'),
         ('CARTAO', 'Cartão'),
     )
+    MODALIDADES_CARTAO = (
+        ('CREDITO', 'Crédito'),
+        ('DEBITO', 'Débito'),
+    )
+    OPCOES_CARTAO = {
+        'CARTAO_CREDITO': 'CREDITO',
+        'CARTAO_DEBITO': 'DEBITO',
+    }
+    FORMAS_CHECKOUT = (
+        ('DINHEIRO', 'Dinheiro'),
+        ('PIX', 'Pix'),
+        ('CARTAO_CREDITO', 'Cartão de crédito'),
+        ('CARTAO_DEBITO', 'Cartão de débito'),
+    )
 
     recebimento = models.ForeignKey(
         RecebimentoVenda, on_delete=models.PROTECT, related_name='pagamentos',
     )
     forma = models.CharField(max_length=10, choices=FORMA_PAGAMENTO_CHOICES)
+    modalidade_cartao = models.CharField(max_length=7, choices=MODALIDADES_CARTAO, blank=True)
     valor_aplicado = models.DecimalField(max_digits=12, decimal_places=2)
     valor_entregue = models.DecimalField(max_digits=12, decimal_places=2)
     troco = models.DecimalField(max_digits=12, decimal_places=2)
@@ -97,8 +120,15 @@ class PagamentoVenda(models.Model):
         ordering = ('forma', 'pk')
         constraints = [
             models.UniqueConstraint(
-                fields=('recebimento', 'forma'),
-                name='caixa_pg_forma_por_receb',
+                fields=('recebimento', 'forma', 'modalidade_cartao'),
+                name='caixa_pg_forma_modalidade_unica',
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(modalidade_cartao='')
+                    | models.Q(forma='CARTAO', modalidade_cartao__in=('CREDITO', 'DEBITO'))
+                ),
+                name='caixa_pg_modalidade_valida',
             ),
             models.CheckConstraint(
                 check=models.Q(valor_aplicado__gt=0),

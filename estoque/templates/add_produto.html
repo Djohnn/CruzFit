@@ -5,6 +5,7 @@
 {% block 'head' %}
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
     <script src="{% static 'estoque/ganho_produto.js' %}" defer></script>
+    <script src="{% static 'estoque/gerar_codigo_barras.js' %}" defer></script>
 
 {% endblock  %}
 {% block 'body' %}
@@ -158,12 +159,14 @@
                             <div class="form-group form-grid-wide">{% include "_ganho_produto.html" %}</div>
                             <div class="form-group">{{ form.estoque_minimo.label_tag }}{{ form.estoque_minimo }}{{ form.estoque_minimo.errors }}</div>
                             <div class="form-group form-grid-wide">{{ form.codigo_barras.label_tag }}{{ form.codigo_barras }}{{ form.codigo_barras.errors }}</div>
+                            <div class="form-grid-wide"><button type="button" class="btn btn-outline-light" data-remove-variation>Remover variação</button></div>
                         </div>
                     {% endfor %}
                 </div>
                 <template id="variation-empty-row">{% with form=variacao_formset.empty_form %}<div class="variation-row form-grid" data-variation-row>
                     <div class="form-group">{{ form.cor.label_tag }}{{ form.cor }}</div><div class="form-group">{{ form.tamanho.label_tag }}{{ form.tamanho }}</div><div class="form-group">{{ form.quantidade.label_tag }}{{ form.quantidade }}</div><div class="form-group">{{ form.preco_compra.label_tag }}{{ form.preco_compra }}</div><div class="form-group">{{ form.preco_venda.label_tag }}{{ form.preco_venda }}</div><div class="form-group">{{ form.estoque_minimo.label_tag }}{{ form.estoque_minimo }}</div><div class="form-group form-grid-wide">{{ form.codigo_barras.label_tag }}{{ form.codigo_barras }}</div>
                     <div class="form-group form-grid-wide">{% include "_ganho_produto.html" %}</div>
+                    <div class="form-grid-wide"><button type="button" class="btn btn-outline-light" data-remove-variation>Remover variação</button></div>
                 </div>{% endwith %}</template>
                 <div class="form-group form-grid-wide"><label for="variation-reason">Motivo do cadastro</label><textarea id="variation-reason" class="form-control" name="motivo" rows="3" maxlength="500" required>{{ form_data.motivo|default:'' }}</textarea></div>
                 <div class="form-actions"><button class="btn btn-outline-light" id="hide-variation-registration" type="button">Voltar ao cadastro simples</button><button class="btn btn-success" type="submit">Cadastrar ficha</button></div>
@@ -220,73 +223,41 @@
                 const emptyVariation = document.getElementById('variation-empty-row');
                 const totalVariations = document.getElementById('id_variacoes-TOTAL_FORMS');
                 if (variationRows && addVariation && emptyVariation && totalVariations) {
+                    const syncVariationRows = function () {
+                        const rows = variationRows.querySelectorAll('[data-variation-row]');
+                        rows.forEach(function (row, index) {
+                            row.querySelectorAll('[name], [id], [for], [aria-describedby]').forEach(function (element) {
+                                for (const attribute of ['name', 'id', 'for', 'aria-describedby']) {
+                                    const value = element.getAttribute(attribute);
+                                    if (value) {
+                                        element.setAttribute(attribute, value.replace(/variacoes-\d+-/g, 'variacoes-' + index + '-'));
+                                    }
+                                }
+                            });
+                            row.querySelector('[data-remove-variation]').disabled = rows.length <= 1;
+                        });
+                        totalVariations.value = String(rows.length);
+                    };
+                    variationRows.addEventListener('click', function (event) {
+                        const button = event.target.closest('[data-remove-variation]');
+                        if (!button || button.disabled) return;
+                        button.closest('[data-variation-row]').remove();
+                        syncVariationRows();
+                        addVariation.focus();
+                    });
                     addVariation.addEventListener('click', function () {
                         const index = Number(totalVariations.value);
                         const html = emptyVariation.innerHTML.replaceAll('__prefix__', String(index));
                         variationRows.insertAdjacentHTML('beforeend', html);
-                        totalVariations.value = String(index + 1);
+                        syncVariationRows();
                         variationRows.lastElementChild.querySelector('input,select').focus();
                     });
+                    syncVariationRows();
                 }
                 const categoryForm = document.getElementById('category-form');
                 const categorySelect = document.getElementById('product-category');
                 const categoryModal = document.getElementById('category-modal');
                 const feedback = document.getElementById('category-feedback');
-                const barcodeInput = document.getElementById('product-barcode');
-                const barcodeButton = document.getElementById('generate-barcode');
-                const barcodeFeedback = document.getElementById('barcode-feedback');
-
-                if (barcodeInput && barcodeButton && barcodeFeedback) {
-                    const showBarcodeFeedback = function (message, className) {
-                        barcodeFeedback.className = className;
-                        barcodeFeedback.textContent = message;
-                        barcodeFeedback.hidden = false;
-                    };
-
-                    barcodeButton.addEventListener('click', async function () {
-                        barcodeButton.disabled = true;
-                        barcodeButton.setAttribute('aria-busy', 'true');
-                        showBarcodeFeedback('Gerando código...', 'barcode-feedback');
-
-                        try {
-                            const response = await fetch(barcodeButton.dataset.generateUrl, {
-                                method: 'GET',
-                                headers: {'Accept': 'application/json'},
-                            });
-                            let data = {};
-                            try {
-                                data = await response.json();
-                            } catch (error) {
-                                data = {};
-                            }
-
-                            if (!response.ok) {
-                                throw new Error(data.error || 'Não foi possível gerar o código.');
-                            }
-                            if (
-                                typeof data.codigo_barras !== 'string'
-                                || !/^\d{13}$/.test(data.codigo_barras)
-                            ) {
-                                throw new Error('O servidor retornou um código inválido.');
-                            }
-
-                            barcodeInput.value = data.codigo_barras;
-                            showBarcodeFeedback(
-                                'Código gerado. Confirme os dados antes de cadastrar.',
-                                'barcode-feedback barcode-feedback-success',
-                            );
-                            barcodeInput.focus();
-                        } catch (error) {
-                            showBarcodeFeedback(
-                                error.message || 'Não foi possível gerar o código.',
-                                'alert alert-danger barcode-feedback',
-                            );
-                        } finally {
-                            barcodeButton.disabled = false;
-                            barcodeButton.removeAttribute('aria-busy');
-                        }
-                    });
-                }
 
                 if (!categoryForm || !categorySelect || !categoryModal || !feedback) {
                     return;

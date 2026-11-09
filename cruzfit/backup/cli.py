@@ -163,8 +163,10 @@ def main(
         if arguments.command == "runtime":
             config = load_config(default_config_path(root))
             if arguments.runtime_command == "stop":
-                runtime_stop(project_root=root, installation_id=config.installation_id)
-                print("Servidor Cruz Fit encerrado")
+                archive = runtime_stop(
+                    project_root=root, config=config, process_inspector=process_inspector, port=port
+                )
+                print(f"Servidor Cruz Fit encerrado. Backup validado: {archive}")
                 return 0
             metadata = _required_metadata(arguments)
             if metadata is None:

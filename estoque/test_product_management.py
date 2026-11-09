@@ -59,6 +59,10 @@ class ProductManagementTests(TestCase):
                 self.assertIn("form-control", field.widget.attrs.get("class", ""))
                 self.assertContains(response, f'name="{name}"', count=1)
         self.assertContains(response, "Preços e reposição", count=1)
+        self.assertContains(response, 'aria-controls="edit-product-barcode"')
+        self.assertContains(response, f'data-generate-url="{reverse("gerar_codigo_barras")}"')
+        self.assertContains(response, 'estoque/gerar_codigo_barras.js')
+        self.assertContains(response, 'Gerar código')
 
     def test_stock_shows_management_or_conversion_action(self):
         """Given produtos simples e vinculados; Then exibir ação correta."""

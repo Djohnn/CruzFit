@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import time
 import urllib.request
-from contextlib import contextmanager
+import uuid
+from contextlib import ExitStack, closing, contextmanager
 from pathlib import Path
 from typing import Any, Callable, Sequence, TextIO
 
-from .contracts import BackupConfig, BackupError, LockError
+from django.db import DEFAULT_DB_ALIAS, connections
+from django.db.backends.sqlite3.base import DatabaseWrapper
+from django.db.migrations.executor import MigrationExecutor
+
+from .config import validate_configured_destination
+from .contracts import BackupConfig, BackupError, BackupResult, LockError
 from .recovery import recover_pending
 from .services import create_backup
 from .windows import OperationLock, WindowsProcessInspector
@@ -396,12 +403,17 @@ def _cleanup_started_process(
 
 
 @contextmanager
-def _runtime_lock(project_root: Path):
-    lock = OperationLock(_backup_dir(project_root) / "operation.lock")
-    try:
-        lock.acquire()
-    except LockError as exc:
-        raise RuntimeOperationError(str(exc)) from exc
+def _runtime_lock(project_root: Path, *, filename: str = "operation.lock", wait: float = 0):
+    lock = OperationLock(_backup_dir(project_root) / filename)
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            lock.acquire()
+            break
+        except LockError as exc:
+            if time.monotonic() >= deadline:
+                raise RuntimeOperationError(str(exc)) from exc
+            time.sleep(0.1)
     try:
         yield lock
     finally:
@@ -427,7 +439,7 @@ def _run_migrations(
 
 def _call_backup(
     *,
-    backup_creator: Callable[..., object],
+    backup_creator: Callable[..., BackupResult],
     source_db: Path,
     media_root: Path,
     config: BackupConfig,
@@ -435,7 +447,7 @@ def _call_backup(
     operation_id: str,
     reason: str,
     lock: OperationLock,
-) -> object:
+) -> BackupResult:
     try:
         return backup_creator(
             source_db=source_db,
@@ -450,6 +462,18 @@ def _call_backup(
         raise RuntimeOperationError(f"Backup obrigatório falhou: {exc}") from exc
 
 
+def _has_pending_migrations(database: Path) -> bool:
+    settings = connections[DEFAULT_DB_ALIAS].settings_dict.copy()
+    settings["NAME"] = f"{database.as_uri()}?mode=ro"
+    connection = DatabaseWrapper(settings, alias=DEFAULT_DB_ALIAS)
+    try:
+        executor = MigrationExecutor(connection)
+        executor.loader.check_consistent_history(connection)
+        return bool(executor.migration_plan(executor.loader.graph.leaf_nodes()))
+    finally:
+        connection.close()
+
+
 def _prepare_database_locked(
     *,
     project_root: Path,
@@ -459,13 +483,16 @@ def _prepare_database_locked(
     lock: OperationLock,
     python_executable: Path,
     command_runner: Callable[..., object],
-    backup_creator: Callable[..., object],
+    backup_creator: Callable[..., BackupResult],
     log_stream: TextIO | None = None,
+    only_if_pending: bool = False,
 ) -> None:
     recover_pending(project_root)
     database = project_root / "db.sqlite3"
     media_root = project_root / "media"
     existed = database.exists()
+    if existed and only_if_pending and not _has_pending_migrations(database):
+        return
     if existed:
         _call_backup(
             backup_creator=backup_creator,
@@ -504,7 +531,7 @@ def prepare_database(
     reason: str,
     python_executable: Path | None = None,
     command_runner: Callable[..., object] = subprocess.run,
-    backup_creator: Callable[..., object] = create_backup,
+    backup_creator: Callable[..., BackupResult] = create_backup,
     process_inspector: Any | None = None,
     port: int = PORT,
 ) -> None:
@@ -519,7 +546,9 @@ def prepare_database(
                 port=port,
                 installation_id=config.installation_id,
             )
-            with _runtime_lock(project_root) as lock:
+            with _runtime_lock(project_root) as lock, _runtime_lock(
+                project_root, filename="shutdown.lock"
+            ):
                 _prepare_database_locked(
                     project_root=project_root,
                     config=config,
@@ -558,12 +587,12 @@ def runtime_start(
     python_executable: Path | None = None,
     port: int = PORT,
     command_runner: Callable[..., object] = subprocess.run,
-    backup_creator: Callable[..., object] = create_backup,
+    backup_creator: Callable[..., BackupResult] = create_backup,
     process_launcher: Callable[..., object] = subprocess.Popen,
     process_inspector: Any | None = None,
     readiness_checker: Callable[[], bool] | None = None,
 ) -> int:
-    """Executa backup, migrações e servidor mantendo o lock até o fim do filho."""
+    """Inicia o servidor e protege o banco antes de aplicar migrações pendentes."""
     project_root = Path(project_root).resolve()
     inspector = process_inspector or WindowsProcessInspector()
     executable = python_executable or Path(sys.executable)
@@ -577,7 +606,8 @@ def runtime_start(
                 port=port,
                 installation_id=config.installation_id,
             )
-            with _runtime_lock(project_root) as lock:
+            with _runtime_lock(project_root) as lock, ExitStack() as startup:
+                startup.enter_context(_runtime_lock(project_root, filename="shutdown.lock"))
                 ensure_server_not_active(
                     project_root=project_root,
                     process_inspector=inspector,
@@ -594,6 +624,7 @@ def runtime_start(
                     command_runner=command_runner,
                     backup_creator=backup_creator,
                     log_stream=log_stream,
+                    only_if_pending=True,
                 )
                 command = [
                     str(executable),
@@ -631,7 +662,9 @@ def runtime_start(
                         raise RuntimeOperationError("O servidor não confirmou readiness")
                 else:
                     _default_readiness(port)
+                startup.close()
                 return_code = int(process.wait())
+                _clear_state(project_root)
         except Exception as exc:
             if process is not None:
                 try:
@@ -644,14 +677,32 @@ def runtime_start(
                 except RuntimeOperationError as cleanup_error:
                     _log_event(log_stream, f"Falha ao limpar processo iniciado: {cleanup_error}")
                     raise cleanup_error from exc
-            _clear_state(project_root)
+                _clear_state(project_root)
             _log_event(log_stream, f"Falha de inicialização/readiness: {exc}")
             if isinstance(exc, RuntimeOperationError):
                 raise
             raise RuntimeOperationError("Falha ao iniciar o servidor Cruz Fit") from exc
         else:
-            _clear_state(project_root)
             return return_code
+
+
+@contextmanager
+def _require_closed_cash(project_root: Path):
+    # Reserve the SQLite writer until the server stops, so a concurrent request
+    # cannot reopen Caixa between the check and process termination.
+    database = (project_root / "db.sqlite3").as_uri()
+    try:
+        with closing(sqlite3.connect(f"{database}?mode=rw", uri=True)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM caixa_sessaocaixa WHERE aberta = 1 LIMIT 1"
+            ).fetchone():
+                raise RuntimeOperationError(
+                    "Há um caixa aberto. Feche o caixa no Cruz Fit e tente encerrar novamente."
+                )
+            yield
+    except sqlite3.Error as exc:
+        raise RuntimeOperationError("Não foi possível verificar se o caixa está fechado") from exc
 
 
 def runtime_stop(
@@ -660,10 +711,53 @@ def runtime_stop(
     process_inspector: Any | None = None,
     port: int = PORT,
     installation_id: str | None = None,
-) -> None:
-    """Para somente o processo registrado e identificado desta instalação."""
+    config: BackupConfig | None = None,
+    backup_creator: Callable[..., BackupResult] = create_backup,
+) -> Path | None:
+    """Encerra o servidor e, quando configurado, publica o backup de encerramento."""
     project_root = Path(project_root).resolve()
     inspector = process_inspector or WindowsProcessInspector()
+    if config is None:
+        _stop_registered_server(project_root, inspector, port, installation_id)
+        return None
+
+    with _supervisor_log(project_root) as log_stream:
+        try:
+            with _runtime_lock(project_root, filename="shutdown.lock"):
+                _stop_registered_server(project_root, inspector, port, config.installation_id, config)
+                # The startup supervisor releases this lock after its child exits.
+                with _runtime_lock(project_root, wait=5) as lock:
+                    ensure_server_not_active(
+                        project_root=project_root, process_inspector=inspector,
+                        port=port, installation_id=config.installation_id,
+                    )
+                    with _require_closed_cash(project_root):
+                        pass
+                    result = _call_backup(
+                        backup_creator=backup_creator,
+                        source_db=project_root / "db.sqlite3",
+                        media_root=project_root / "media",
+                        config=config,
+                        project_root=project_root,
+                        operation_id=f"shutdown-{uuid.uuid4().hex}",
+                        reason="Encerramento do sistema",
+                        lock=lock,
+                    )
+                    _log_event(log_stream, f"Backup de encerramento validado: {result.archive_path}")
+                    return result.archive_path
+        except BackupError as exc:
+            _log_event(log_stream, f"Falha no encerramento/backup: {exc}")
+            raise
+
+
+def _stop_registered_server(
+    project_root: Path,
+    inspector: Any,
+    port: int,
+    installation_id: str | None,
+    config: BackupConfig | None = None,
+) -> None:
+    """Para somente o processo registrado e identificado desta instalação."""
     state = _read_state(project_root)
     if state is None:
         listeners = inspector.listeners_on_port(port)
@@ -744,13 +838,16 @@ def runtime_stop(
             raise RuntimeOperationError("A identidade do processo mudou antes da parada")
     elif not _is_launched_server_child(current, process, state, project_root):
         raise RuntimeOperationError("A identidade do processo servidor mudou antes da parada")
-    try:
-        inspector.terminate(current)
-    except OSError as exc:
-        raise RuntimeOperationError("Não foi possível encerrar o processo registrado") from exc
     waiter = getattr(inspector, "wait_for_exit", None)
-    if callable(waiter) and not waiter(current, timeout_seconds=30):
-        raise RuntimeOperationError("O servidor não encerrou no prazo")
+    with _require_closed_cash(project_root):
+        if config is not None:
+            validate_configured_destination(config, project_root=project_root)
+        try:
+            inspector.terminate(current)
+        except OSError as exc:
+            raise RuntimeOperationError("Não foi possível encerrar o processo registrado") from exc
+        if callable(waiter) and not waiter(current, timeout_seconds=30):
+            raise RuntimeOperationError("O servidor não encerrou no prazo")
     if target is not process and callable(waiter) and not waiter(process, timeout_seconds=30):
         try:
             inspector.terminate(process)

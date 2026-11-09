@@ -19,7 +19,8 @@ USO DIARIO
 1. Execute INICIAR_CRUZ_FIT.bat.
 2. O navegador abrira automaticamente em:
    http://127.0.0.1:15001/auth/login/
-3. Para parar o sistema, execute PARAR_CRUZ_FIT.bat.
+3. Feche o Caixa, conecte o dispositivo externo e execute PARAR_CRUZ_FIT.bat.
+   Aguarde a confirmacao do backup validado antes de desligar o computador.
 4. Para backup manual, pare o sistema e execute BACKUP_CRUZ_FIT.bat.
 5. Para restaurar, pare o sistema e execute RESTAURAR_BACKUP_CRUZ_FIT.bat.
 
@@ -33,8 +34,8 @@ VENDAS
 DADOS
 - O banco local fica em db.sqlite3.
 - As imagens ficam na pasta media.
-- O INICIAR_CRUZ_FIT.bat faz backup validado antes das migracoes quando o banco
-  ja existe.
+- Com o banco atualizado, a abertura diaria dispensa o dispositivo externo.
+- O backup automatico ocorre ao encerrar o sistema e antes de migracoes pendentes.
 - Para uma copia manual, use BACKUP_CRUZ_FIT.bat com o sistema parado.
 - Consulte docs/BACKUP_E_RESTAURACAO.md antes de restaurar dados.
 - Nao copie a pasta .runtime para outro computador; o instalador cria um ambiente novo.

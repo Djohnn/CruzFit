@@ -18,8 +18,10 @@
 .dashboard svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .dashboard-metric h2 { margin-bottom: .35rem; font-size: 1rem; font-weight: 400; }
 .dashboard-metric strong { font-size: clamp(1.3rem, 2vw, 2rem); font-variant-numeric: tabular-nums; line-height: 1.2; overflow-wrap: anywhere; }
-.dashboard-cash, .dashboard-cash:hover { color: var(--brand-cream); text-decoration: none; }
-.dashboard-cash:hover { border-color: var(--brand-gold); }
+.dashboard-metrics > a.dashboard-metric,
+.dashboard-metrics > a.dashboard-metric:hover { color: var(--brand-cream); text-decoration: none; }
+.dashboard-metrics > a.dashboard-metric:hover { border-color: var(--brand-gold); }
+.dashboard-metrics > a.dashboard-metric:focus-visible { outline: 2px solid var(--brand-gold); outline-offset: 3px; }
 .dashboard-cash-status { font-size: .9rem; color: var(--dashboard-muted); }
 .dashboard-cash-status i { display: inline-block; width: 9px; height: 9px; margin-right: .4rem; border-radius: 50%; background: #48d58b; }
 .dashboard-caption { color: var(--dashboard-muted); font-size: .8rem; margin: .65rem 0 1.5rem; }

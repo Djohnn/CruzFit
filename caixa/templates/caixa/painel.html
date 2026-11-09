@@ -13,6 +13,7 @@
     </header>
     {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
     {% if sessao %}
+    {% include "caixa/_aviso_fechamento.html" with sessao=sessao %}
     <section class="surface-section cash-session" aria-labelledby="session-heading">
         <div><h2 id="session-heading">Sessão #{{ sessao.pk }} aberta</h2><p>Responsável: {{ sessao.responsavel.get_full_name|default:sessao.responsavel.username }} · {{ sessao.aberta_em|date:"d/m/Y H:i" }}</p></div>
         <dl class="cash-session-facts"><div><dt>Fundo inicial</dt><dd>R$ {{ sessao.fundo_inicial|floatformat:2 }}</dd></div><div><dt>Dinheiro esperado</dt><dd>R$ {{ saldo_dinheiro|floatformat:2 }}</dd></div><div><dt>Suprimentos</dt><dd>{{ suprimentos_count }}</dd></div><div><dt>Sangrias</dt><dd>{{ sangrias_count }}</dd></div></dl>
