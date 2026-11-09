@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -154,12 +155,21 @@ def _command_matches_process(
     observed_command = str(getattr(process, "command_line", ""))
     if not executable or not observed_command:
         return False
+    # O redirecionador do venv no Windows pode trocar e colocar aspas no argv[0].
+    observed = re.fullmatch(r'(?:"([^"]+)"|([^"\s]+))\s+(.+)', observed_command)
+    if observed is None:
+        return False
+    argv_executable = observed[1] or observed[2]
     try:
-        if _normalized_path(executable) not in _expected_process_images(command[0]):
+        expected_images = _expected_process_images(command[0])
+        if (
+            _normalized_path(executable) not in expected_images
+            or _normalized_path(argv_executable) not in expected_images
+        ):
             return False
     except (OSError, TypeError, ValueError):
         return False
-    if subprocess.list2cmdline(command).casefold() != observed_command.casefold():
+    if subprocess.list2cmdline(command[1:]).casefold() != observed[3].casefold():
         return False
     if len(command) < 4 or command[2].casefold() != "runserver":
         return False
@@ -465,13 +475,19 @@ def _call_backup(
 def _has_pending_migrations(database: Path) -> bool:
     settings = connections[DEFAULT_DB_ALIAS].settings_dict.copy()
     settings["NAME"] = f"{database.as_uri()}?mode=ro"
-    connection = DatabaseWrapper(settings, alias=DEFAULT_DB_ALIAS)
+    # O MigrationRecorder consulta via ORM usando o alias do wrapper.
+    alias = f"cruzfit_migration_probe_{uuid.uuid4().hex}"
+    connection = DatabaseWrapper(settings, alias=alias)
+    connections[alias] = connection
     try:
         executor = MigrationExecutor(connection)
         executor.loader.check_consistent_history(connection)
         return bool(executor.migration_plan(executor.loader.graph.leaf_nodes()))
     finally:
-        connection.close()
+        try:
+            connection.close()
+        finally:
+            del connections[alias]
 
 
 def _prepare_database_locked(

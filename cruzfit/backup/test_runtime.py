@@ -186,10 +186,11 @@ class RuntimeTests(unittest.TestCase):
         with closing(sqlite3.connect(self.database)) as database, database:
             database.execute("INSERT INTO caixa_sessaocaixa VALUES (1)")
             database.execute(
-                "CREATE TABLE django_migrations (app TEXT, name TEXT, applied DATETIME)"
+                "CREATE TABLE django_migrations ("
+                "id INTEGER PRIMARY KEY, app TEXT, name TEXT, applied DATETIME)"
             )
             database.executemany(
-                "INSERT INTO django_migrations VALUES (?, ?, CURRENT_TIMESTAMP)",
+                "INSERT INTO django_migrations (app, name, applied) VALUES (?, ?, CURRENT_TIMESTAMP)",
                 MigrationLoader(None).graph.nodes,
             )
         runtime_start(
@@ -487,8 +488,14 @@ class RuntimeTests(unittest.TestCase):
 
     def test_stop_terminates_only_verified_listener_child_of_venv_launcher(self):
         """Given shim do venv; When parar; Then encerrar filho servidor e lançador identificados."""
+        venv_python = self.project / ".runtime" / "Scripts" / "python.exe"
+        venv_python.parent.mkdir(parents=True)
+        base_python = self.project / "Python312" / "python.exe"
+        (venv_python.parent.parent / "pyvenv.cfg").write_text(
+            f"home = {base_python.parent}\n", encoding="utf-8"
+        )
         command = [
-            sys.executable,
+            str(venv_python),
             str((self.project / "manage.py").resolve()),
             "runserver",
             "127.0.0.1:15001",
@@ -496,6 +503,8 @@ class RuntimeTests(unittest.TestCase):
         ]
         launcher = _equip_fake_process(FakeProcess(pid=911), command)
         child = _equip_fake_process(FakeProcess(pid=912), command)
+        child.executable_path = str(base_python)
+        child.command_line = subprocess.list2cmdline([str(base_python), *command[1:]])
         child.parent_pid = launcher.pid
         child.creation_time_filetime = launcher.creation_time_filetime + 10_000
         inspector = FakeInspector(
