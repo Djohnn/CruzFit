@@ -14,10 +14,15 @@ from .services import (
     UserOperationError,
     autenticar_por_identificador,
     criar_vendedor,
+    limpar_falhas_login,
+    login_bloqueado,
+    registrar_falha_login,
 )
 from .services import (
     excluir_usuario as excluir_usuario_service,
 )
+
+LOGIN_ERROR_MESSAGE = 'Não foi possível entrar. Verifique seu identificador e senha.'
 
 
 def superuser_required(view_func):
@@ -81,22 +86,29 @@ def login(request):
             return redirect(reverse('home'))
         nome = request.session.pop('login_name', '')
         return render(request, 'login.html', {'nome': nome})
-    
+
     nome = (request.POST.get('identificador') or request.POST.get('nome') or '').strip()
     senha = request.POST.get('senha') or ''
+    if login_bloqueado(request, nome):
+        request.session['login_name'] = nome
+        messages.error(request, LOGIN_ERROR_MESSAGE)
+        return redirect(reverse('login'))
 
     try:
         user = autenticar_por_identificador(request, nome, senha)
-    except AmbiguousIdentifierError as error:
+    except AmbiguousIdentifierError:
+        registrar_falha_login(request, nome)
         request.session['login_name'] = nome
-        messages.error(request, str(error))
+        messages.error(request, LOGIN_ERROR_MESSAGE)
         return redirect(reverse('login'))
 
     if not user:
+        registrar_falha_login(request, nome)
         request.session['login_name'] = nome
-        messages.error(request, 'Não foi possível entrar. Verifique seu nome e senha.')
+        messages.error(request, LOGIN_ERROR_MESSAGE)
         return redirect(reverse('login'))
 
+    limpar_falhas_login(request, nome)
     auth.login(request, user)
     return redirect(reverse('home'))
 

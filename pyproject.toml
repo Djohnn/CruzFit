@@ -1,6 +1,7 @@
 [tool.ruff]
 line-length = 88
 extend-exclude = [
+    ".venv",
     "venv",
     "media",
     "qa-browser-20261102",
@@ -13,4 +14,4 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.mypy]
 python_version = "3.14"
 ignore_missing_imports = true
-exclude = "(^|/)(venv|docs|migrations)(/|$)|(^|/)(test_.*|.*_test)\\.py$"
+exclude = "(^|/)(\\.venv|venv|docs|migrations)(/|$)|(^|/)(test_.*|.*_test)\\.py$"

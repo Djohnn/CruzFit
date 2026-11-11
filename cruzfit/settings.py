@@ -15,6 +15,8 @@ from pathlib import Path
 
 from django.contrib.messages import constants
 
+from cruzfit.security import installation_secret_key_path, load_or_create_secret_key
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,14 +25,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'cruz-fit-local-development-only-change-me',
-)
+if 'DJANGO_SECRET_KEY' in os.environ:
+    SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
+    if not SECRET_KEY:
+        raise RuntimeError('DJANGO_SECRET_KEY must not be empty')
+else:
+    SECRET_KEY = load_or_create_secret_key(installation_secret_key_path(BASE_DIR))
 
 # Cruz Fit is intentionally a local development application. It must not be
 # exposed directly to the internet.
-DEBUG = True
+DEBUG = os.environ.get('CRUZFIT_DEVELOPMENT') == '1'
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
 LOCAL_DEVELOPMENT_ONLY = True

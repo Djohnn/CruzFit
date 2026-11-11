@@ -1,8 +1,10 @@
 
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.contrib.staticfiles.views import serve as serve_static
+from django.http import HttpRequest, HttpResponse
+from django.urls import include, path, re_path
+from django.views.static import serve as serve_media
 
 from usuarios import views as usuario_views
 
@@ -18,5 +20,18 @@ urlpatterns = [
     
 ] 
 
-urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+def serve_local_media(request: HttpRequest, path: str) -> HttpResponse:
+    """Serve a requested media file without enabling Django's debug mode."""
+    return serve_media(
+        request,
+        path,
+        document_root=settings.MEDIA_ROOT,
+        show_indexes=False,
+    )
+
+
+urlpatterns += [
+    re_path(r'^static/(?P<path>.*)$', serve_static, {'insecure': True}),
+    re_path(r'^media/(?P<path>.*)$', serve_local_media),
+]

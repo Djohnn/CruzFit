@@ -757,6 +757,20 @@ def consulta_produto(request):
     produtos = Produto.objects.none()
     consultando = bool(nome or categoria or preco_min or preco_max)
 
+    if categoria:
+        if (
+            not categoria.isascii() or not categoria.isdecimal() or len(categoria) > 19
+            or not 0 < int(categoria) <= 9223372036854775807
+            or not Categoria.objects.filter(pk=int(categoria)).exists()
+        ):
+            messages.error(request, 'Selecione uma categoria válida.')
+            return render(request, 'consulta_produto.html', {
+                'categorias': Categoria.objects.all(),
+                'produtos': produtos,
+                'filtros': filtros,
+                'consultando': consultando,
+            }, status=400)
+
     if consultando:
         produtos = Produto.objects.select_related('categoria').all()
         try:

@@ -1,5 +1,5 @@
 asgiref==3.13.0
-Django==5.0.6
+Django==5.2.19
 django-role-permissions==3.2.0
 Pillow==13.0.0
 sqlparse==0.6.1
