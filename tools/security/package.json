@@ -1,0 +1,10 @@
+{
+  "name": "cruzfit-security-tools",
+  "private": true,
+  "scripts": {
+    "codex-security": "codex-security"
+  },
+  "devDependencies": {
+    "@openai/codex-security": "0.9.1"
+  }
+}
