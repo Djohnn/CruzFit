@@ -8,20 +8,14 @@
 {% endblock %}
 
 {% block 'body' %}
-    <main class="container outflow-page">
+    <main id="conteudo" tabindex="-1" class="container outflow-page">
         <header class="page-heading">
             <p class="eyebrow">Movimentação de estoque</p>
             <h1>Registrar baixa</h1>
             <p>Registre os produtos vendidos e baixe as quantidades do estoque. Esta operação não é um caixa e não registra pagamentos.</p>
         </header>
 
-        {% if messages %}
-            <div class="feedback-stack" aria-live="polite">
-            {% for message in messages %}
-                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
-            {% endfor %}
-            </div>
-        {% endif %}
+        {% include '_mensagens.html' %}
 
         <section class="surface-section" aria-labelledby="outflow-heading">
             <div class="section-heading-row outflow-section-heading">
@@ -133,6 +127,8 @@
         </section>
     </main>
 
+    {{ catalogo|json_script:"baixa-product-catalog" }}
+
     <script>
         window.addEventListener('load', function () {
             const items = document.getElementById('outflow-items');
@@ -145,11 +141,7 @@
             const confirmButton = document.getElementById('confirm-outflow-button');
             const review = document.getElementById('outflow-review');
             const reviewList = document.getElementById('outflow-review-list');
-            const productCatalog = [
-                {% for produto in produtos %}
-                    {id: '{{ produto.id }}', name: '{{ produto.variacao_label|escapejs }}', barcode: '{{ produto.codigo_barras|default:''|escapejs }}', stock: Number('{{ produto.quantidade|floatformat:2|escapejs }}'.replace(',', '.'))}{% if not forloop.last %},{% endif %}
-                {% endfor %}
-            ];
+            const productCatalog = JSON.parse(document.getElementById('baixa-product-catalog').textContent);
 
             if (!items || !addButton || !itemCount || !quantityCount || !quantityMessage || !form || !reviewButton || !confirmButton || !review || !reviewList) {
                 return;

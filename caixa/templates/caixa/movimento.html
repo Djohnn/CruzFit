@@ -6,12 +6,12 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main class="container cash-page">
+<main id="conteudo" tabindex="-1" class="container cash-page">
     <header class="page-heading cash-page-heading">
         <div><h1>{{ heading }}</h1><p>Registre a entrada ou retirada de dinheiro com motivo e autoria.</p></div>
         <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
     </header>
-    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% include '_mensagens.html' %}
     {% if sessao %}
     <section class="surface-section cash-form-surface" aria-labelledby="movement-heading">
         <h2 id="movement-heading">Sessão #{{ sessao.pk }} aberta</h2>

@@ -102,6 +102,10 @@
     gap: 0.5rem;
 }
 
+.product-inactivation-form label {
+    flex: 0 0 100%;
+}
+
 .product-inactivation-form .form-control {
     min-width: min(18rem, 100%);
 }

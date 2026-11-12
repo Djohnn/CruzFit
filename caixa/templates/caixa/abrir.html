@@ -6,12 +6,12 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main class="container cash-page">
+<main id="conteudo" tabindex="-1" class="container cash-page">
     <header class="page-heading">
         <h1>Abrir sessão de caixa</h1>
         <p>Informe o fundo físico inicial e o motivo. A abertura fica vinculada ao seu usuário.</p>
     </header>
-    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% include '_mensagens.html' %}
     <section class="surface-section cash-form-surface" aria-labelledby="cash-open-heading">
         <h2 id="cash-open-heading">Dados da abertura</h2>
         <form method="post" class="operational-form" novalidate>

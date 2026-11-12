@@ -3,7 +3,7 @@
 {% block 'title' %}Fornecedores | Cruz Fit{% endblock %}
 {% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/fornecedores.css' %}">{% endblock %}
 {% block 'body' %}
-<main class="container supplier-page">
+<main id="conteudo" tabindex="-1" class="container supplier-page">
 <header class="page-heading supplier-heading">
 <div><h1>Fornecedores</h1><p>Contatos e origem das mercadorias recebidas.</p></div>
 {% if request.user.is_superuser or request.user.cargo == 'G' %}<a class="btn btn-primary" href="{% url 'fornecedor_novo' %}" data-testid="fornecedor-novo">Cadastrar fornecedor</a>{% endif %}

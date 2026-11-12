@@ -107,6 +107,8 @@ class BrandAndLoginContractTests(unittest.TestCase):
 
         self.assertIn("<main", product_source)
         self.assertIn('role="alert"', product_source)
+        shared_messages = PROJECT_ROOT / "templates" / "_mensagens.html"
+        self.assertIn('role="alert"', shared_messages.read_text(encoding="utf-8"))
         self.assertIn('for="product-name"', product_source)
         self.assertIn('id="product-name"', product_source)
         self.assertIn('accept="image/*"', product_source)
@@ -129,7 +131,7 @@ class BrandAndLoginContractTests(unittest.TestCase):
         self.assertIn("table-responsive", vendor_source)
         self.assertIn("<caption", vendor_source)
         self.assertIn("onsubmit=", vendor_source)
-        self.assertIn('role="alert"', vendor_source)
+        self.assertIn("{% include '_mensagens.html' %}", vendor_source)
         self.assertIn("empty-state", vendor_source)
         self.assertIn("readonly", product_detail_source)
         self.assertNotIn("{{ form }}", product_detail_source)

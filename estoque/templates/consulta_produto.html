@@ -9,7 +9,7 @@
 {% endblock %}
 
 {% block 'body' %}
-    <main class="container inventory-page">
+    <main id="conteudo" tabindex="-1" class="container inventory-page">
         <header class="page-heading">
             <p class="eyebrow">Busca direcionada</p>
             <h1>Consultar produto</h1>
@@ -17,13 +17,7 @@
             <a href="{% url 'estoque' %}" class="btn btn-outline-light">Visualizar estoque completo</a>
         </header>
 
-        {% if messages %}
-            <div class="feedback-stack" aria-live="polite">
-            {% for message in messages %}
-                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
-            {% endfor %}
-            </div>
-        {% endif %}
+        {% include '_mensagens.html' %}
 
         <section class="surface-section" aria-labelledby="product-filter-heading">
             <h2 id="product-filter-heading">Buscar produto</h2>
@@ -72,7 +66,7 @@
                     {% for produto in produtos %}
                         <article class="bg-card">
                             {% if produto|get_first_image %}
-                                <img width="100%" class="card-img-top" src="{{ produto|get_first_image }}" alt="Imagem de {{ produto.nome }}">
+                                <img class="card-img-top" src="{{ produto|get_first_image }}" alt="Imagem de {{ produto.nome }}" loading="lazy" decoding="async">
                             {% else %}
                                 <div class="card-image-placeholder" role="img" aria-label="Produto sem imagem">Sem imagem</div>
                             {% endif %}

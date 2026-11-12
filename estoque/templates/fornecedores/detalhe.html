@@ -3,7 +3,7 @@
 {% block 'title' %}{{ fornecedor.nome }} | Cruz Fit{% endblock %}
 {% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/fornecedores.css' %}">{% endblock %}
 {% block 'body' %}
-<main class="container supplier-page">
+<main id="conteudo" tabindex="-1" class="container supplier-page">
 <header class="page-heading supplier-heading"><div><a href="{% url 'fornecedores' %}">Voltar aos fornecedores</a><h1>{{ fornecedor.nome }}</h1><p>{% if fornecedor.nome_fantasia %}{{ fornecedor.nome_fantasia }} · {% endif %}<span class="supplier-status {% if not fornecedor.ativo %}supplier-status-inactive{% endif %}">{% if fornecedor.ativo %}Ativo{% else %}Inativo{% endif %}</span></p></div>
 {% if request.user.is_superuser or request.user.cargo == 'G' %}<div class="supplier-actions"><a class="btn btn-primary" href="{% url 'fornecedor_editar' fornecedor.pk %}">Editar cadastro</a>{% if fornecedor.ativo %}<a class="btn btn-outline-light" href="{% url 'fornecedor_inativar' fornecedor.pk %}">Inativar fornecedor</a>{% endif %}</div>{% endif %}
 </header>

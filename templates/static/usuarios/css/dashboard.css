@@ -90,3 +90,12 @@
     .dashboard-bars > div { grid-template-columns: 65px minmax(0, 1fr); gap: .5rem; }
     .dashboard-bars dd { grid-template-columns: minmax(0, 1fr) 105px; gap: .6rem; font-size: .85rem; }
 }
+
+.theme-light .dashboard {
+    --dashboard-surface: #ffffff;
+    --dashboard-muted: #526b70;
+}
+.theme-light .dashboard-bar-track { background: #dbe8e9; }
+.theme-light .dashboard-table thead { background: #e8f0f1; }
+.theme-light .dashboard-badge { background: #d9f0ee; color: #0f514d; }
+.theme-light .dashboard-badge-danger { background: #f9d8d4; color: #8b1e16; }

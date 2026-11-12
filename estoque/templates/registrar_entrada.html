@@ -8,20 +8,14 @@
 {% endblock %}
 
 {% block 'body' %}
-    <main class="container inflow-page">
+    <main id="conteudo" tabindex="-1" class="container inflow-page">
         <header class="page-heading">
             <p class="eyebrow">Movimentação de estoque</p>
             <h1>Registrar entrada</h1>
             <p>Registre as mercadorias recebidas e identifique o fornecedor nas compras.</p>
         </header>
 
-        {% if messages %}
-            <div class="feedback-stack" aria-live="polite">
-            {% for message in messages %}
-                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
-            {% endfor %}
-            </div>
-        {% endif %}
+        {% include '_mensagens.html' %}
 
         <section class="surface-section" aria-labelledby="inflow-heading">
             <div class="section-heading-row inflow-section-heading">

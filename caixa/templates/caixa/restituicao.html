@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block 'body' %}
-<main class="container cash-page">
+<main id="conteudo" tabindex="-1" class="container cash-page">
     <header class="page-heading cash-page-heading">
         <div>
             <h1>Restituir venda #{{ pendencia.recebimento.venda_id }}</h1>
@@ -16,11 +16,7 @@
         <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' pendencia.recebimento.venda_id %}">Voltar à venda</a>
     </header>
 
-    {% if messages %}
-        <div class="feedback-stack" aria-live="polite">
-        {% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}
-        </div>
-    {% endif %}
+    {% include '_mensagens.html' %}
 
     <section class="surface-section cash-form-surface refund-surface" aria-labelledby="refund-heading">
         <h2 id="refund-heading">{% if cancelamento %}Cancelamento{% else %}Devolução parcial{% endif %} #{{ pendencia.pk }}</h2>

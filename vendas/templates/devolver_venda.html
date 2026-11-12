@@ -4,9 +4,9 @@
 {% block 'title' %}Devolver venda #{{ venda.pk }} | Cruz Fit{% endblock %}
 {% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">{% endblock %}
 {% block 'body' %}
-<main class="container sale-page">
+<main id="conteudo" tabindex="-1" class="container sale-page">
     <header class="page-heading"><p class="eyebrow">Reversão auditada</p><h1>Devolver itens da venda #{{ venda.pk }}</h1><p>Informe somente a quantidade que retornou. O preço histórico do item será preservado.</p></header>
-    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}</div>{% endif %}
+    {% include '_mensagens.html' %}
     <section class="surface-section reversal-form-section">
         <form method="post" class="operational-form">
             {% csrf_token %}

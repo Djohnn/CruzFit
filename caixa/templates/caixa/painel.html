@@ -6,12 +6,12 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main class="container cash-page">
+<main id="conteudo" tabindex="-1" class="container cash-page">
     <header class="page-heading cash-page-heading">
         <div><h1>Caixa</h1><p>Controle a sessão atual e acompanhe os recebimentos do balcão.</p></div>
         {% if sessao %}<a class="btn btn-primary" href="{% url 'vendas:registrar_venda' %}">Registrar venda</a>{% else %}<a class="btn btn-primary" href="{% url 'caixa:abrir' %}">Abrir sessão</a>{% endif %}
     </header>
-    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% include '_mensagens.html' %}
     {% if sessao %}
     {% include "caixa/_aviso_fechamento.html" with sessao=sessao %}
     <section class="surface-section cash-session" aria-labelledby="session-heading">
@@ -25,7 +25,7 @@
     {% if pendencias_pendentes %}<p class="alert alert-warning" role="status">Há {{ pendencias_pendentes }} restituição(ões) pendente(s) originada(s) nesta sessão. Resolva-as antes do fechamento.</p>{% endif %}
     <section class="surface-section" aria-labelledby="cash-activity-heading">
         <div class="section-heading-row"><div><h2 id="cash-activity-heading">Recebimentos recentes</h2><p class="section-help">Cada linha representa um recebimento confirmado nesta sessão.</p></div></div>
-        {% if recebimentos %}<div class="table-responsive"><table class="table table-dark cash-table"><thead><tr><th>Venda</th><th>Forma</th><th>Total</th><th>Responsável</th><th>Horário</th></tr></thead><tbody>
+        {% if recebimentos %}<div class="table-responsive"><table class="table table-dark cash-table"><thead><tr><th scope="col">Venda</th><th scope="col">Forma</th><th scope="col">Total</th><th scope="col">Responsável</th><th scope="col">Horário</th></tr></thead><tbody>
         {% for recebimento in recebimentos %}<tr><th scope="row"><a href="{% url 'vendas:venda_detalhe' recebimento.venda_id %}">Venda #{{ recebimento.venda_id }}</a></th><td>{% for pagamento in recebimento.pagamentos.all %}{{ pagamento.get_forma_display }}{% if not forloop.last %}, {% endif %}{% empty %}Sem cobrança{% endfor %}</td><td>R$ {{ recebimento.valor_total|floatformat:2 }}</td><td>{{ recebimento.responsavel.get_full_name|default:recebimento.responsavel.username }}</td><td>{{ recebimento.criada_em|date:"d/m/Y H:i" }}</td></tr>{% endfor %}
         </tbody></table></div>{% else %}<p class="cash-empty-state">Nenhum recebimento foi registrado nesta sessão.</p>{% endif %}
     </section>

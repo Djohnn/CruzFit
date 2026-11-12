@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block 'body' %}
-<main class="container report-page">
+<main id="conteudo" tabindex="-1" class="container report-page">
     <header class="page-heading report-heading">
         <div>
             <p class="eyebrow">Rastreabilidade do estoque</p>
@@ -18,13 +18,7 @@
         <a class="btn btn-primary" href="{% url 'exportar_relatorio_csv' %}?relatorio=movimentacoes{% if query_string %}&amp;{{ query_string }}{% endif %}">Exportar CSV</a>
     </header>
 
-    {% if messages %}
-        <div class="feedback-stack" aria-live="polite">
-        {% for message in messages %}
-            <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
-        {% endfor %}
-        </div>
-    {% endif %}
+    {% include '_mensagens.html' %}
 
     <section class="surface-section report-filters" aria-labelledby="movement-filter-heading">
         <div class="section-heading-row">
@@ -107,16 +101,16 @@
                 <table class="table table-dark report-table">
                     <thead>
                         <tr>
-                            <th>Referência</th>
-                            <th>Data</th>
-                            <th>Tipo</th>
-                            <th>Itens</th>
-                            <th>Motivo</th>
-                            <th>Responsável</th>
-                            <th>Fornecedor</th>
-                            <th>Origem vinculada</th>
-                            <th>Observação</th>
-                            <th>Ações</th>
+                            <th scope="col">Referência</th>
+                            <th scope="col">Data</th>
+                            <th scope="col">Tipo</th>
+                            <th scope="col">Itens</th>
+                            <th scope="col">Motivo</th>
+                            <th scope="col">Responsável</th>
+                            <th scope="col">Fornecedor</th>
+                            <th scope="col">Origem vinculada</th>
+                            <th scope="col">Observação</th>
+                            <th scope="col">Ações</th>
                         </tr>
                     </thead>
                     <tbody>

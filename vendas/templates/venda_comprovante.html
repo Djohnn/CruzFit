@@ -143,7 +143,7 @@
 {% endblock %}
 
 {% block 'body' %}
-<main class="container receipt-page">
+<main id="conteudo" tabindex="-1" class="container receipt-page">
     <div class="receipt-actions no-print">
         <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' venda.pk %}">Voltar</a>
         <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir comprovante</button>
@@ -158,7 +158,7 @@
             <p>Cliente: Consumidor final</p>
         </header>
         <table class="receipt-table">
-            <thead><tr><th>Item</th><th>Qtd.</th><th>Total</th></tr></thead>
+            <thead><tr><th scope="col">Item</th><th scope="col">Qtd.</th><th scope="col">Total</th></tr></thead>
             <tbody>
             {% for item in venda.itens.all %}
                 <tr><td>{{ item.produto.nome }}{% if item.produto.cor or item.produto.tamanho %}<small>Cor: {{ item.produto.cor }} · Tamanho: {{ item.produto.get_tamanho_display }}</small>{% endif %}<small>R$ {{ item.preco_unitario|floatformat:2 }} un.</small></td><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.total|floatformat:2 }}</td></tr>

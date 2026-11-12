@@ -92,7 +92,8 @@ class BarcodeFeatureTests(TestCase):
 
         response = self.client.get(reverse("registrar_baixa"))
 
-        self.assertContains(response, "barcode: '4006381333931'")
+        self.assertContains(response, '"barcode": "4006381333931"')
+        self.assertContains(response, 'baixa-product-catalog')
         self.assertContains(response, "const normalizedTerm")
         self.assertContains(response, "normalizedName.includes(normalizedTerm)")
         self.assertContains(response, "normalizedBarcode.includes(normalizedTerm)")

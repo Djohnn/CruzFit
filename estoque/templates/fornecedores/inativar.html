@@ -3,7 +3,7 @@
 {% block 'title' %}Inativar fornecedor | Cruz Fit{% endblock %}
 {% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/fornecedores.css' %}">{% endblock %}
 {% block 'body' %}
-<main class="container supplier-page supplier-form-page">
+<main id="conteudo" tabindex="-1" class="container supplier-page supplier-form-page">
 <header class="page-heading"><a href="{% url 'fornecedor_detalhe' fornecedor.pk %}">Voltar ao fornecedor</a><h1>Inativar fornecedor</h1><p>{{ fornecedor.nome }}</p></header>
 <section class="surface-section" aria-label="Confirmar inativação">
 <p>O fornecedor deixará de aparecer na seleção de novas entradas. Seus dados e o histórico de mercadorias recebidas serão preservados.</p>

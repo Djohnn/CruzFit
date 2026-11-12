@@ -5,13 +5,13 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main class="container cash-page">
+<main id="conteudo" tabindex="-1" class="container cash-page">
     <header class="page-heading cash-page-heading">
         <div><h1>Fechamento da sessão #{{ fechamento.sessao_id }}</h1><p>{{ fechamento.fechada_em|date:"d/m/Y H:i" }} · {{ fechamento.responsavel.get_full_name|default:fechamento.responsavel.username }}</p></div>
         <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
     </header>
 
-    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% include '_mensagens.html' %}
 
     <section class="surface-section close-receipt" aria-labelledby="close-receipt-heading">
         <h2 id="close-receipt-heading">Conferência da gaveta</h2>

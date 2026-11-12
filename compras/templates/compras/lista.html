@@ -5,7 +5,7 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'compras/css/compras.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main class="container compras-page" data-testid="purchase-list">
+<main id="conteudo" tabindex="-1" class="container compras-page" data-testid="purchase-list">
     <header class="page-heading compras-heading">
         <div>
             <p class="eyebrow">Suprimentos</p>
@@ -17,11 +17,7 @@
         {% endif %}
     </header>
 
-    {% if messages %}
-        <div class="feedback-stack" aria-live="polite">
-            {% for message in messages %}<div class="alert {{ message.tags }}" role="status">{{ message }}</div>{% endfor %}
-        </div>
-    {% endif %}
+    {% include '_mensagens.html' %}
 
     <section class="surface-section purchase-filters" aria-labelledby="purchase-filters-heading">
         <div class="section-heading-row">

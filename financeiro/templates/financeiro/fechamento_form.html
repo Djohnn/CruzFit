@@ -3,7 +3,7 @@
 {% block 'title' %}Fechamento mensal | Financeiro{% endblock %}
 {% block 'head' %}<link rel="stylesheet" href="{% static 'financeiro/css/financeiro.css' %}">{% endblock %}
 {% block 'body' %}
-<main class="finance-page" data-testid="monthly-closing">
+<main id="conteudo" tabindex="-1" class="finance-page" data-testid="monthly-closing">
   <div class="finance-shell">
     <header class="finance-heading">
       <div>
@@ -15,7 +15,7 @@
         <a class="btn btn-outline-light" href="{% url 'financeiro:painel' %}">Voltar ao Financeiro</a>
       </div>
     </header>
-    {% if messages %}<div class="finance-messages" aria-live="polite">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+    {% if messages %}<div class="finance-messages" aria-live="polite">{% for message in messages %}<div class="alert alert {{ message.tags|default:'alert-info' }}">{{ message }}</div>{% endfor %}</div>{% endif %}
     <section class="finance-section" aria-labelledby="period-title">
       <div class="finance-section-heading"><div><p class="finance-kicker">Período</p><h2 id="period-title">Prévia do demonstrativo</h2></div></div>
       <form method="get" class="finance-form-grid">

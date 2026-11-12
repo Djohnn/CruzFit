@@ -11,12 +11,12 @@
 {% endblock %}
 
 {% block 'body' %}
-<main class="container sale-page cash-page cash-checkout">
+<main id="conteudo" tabindex="-1" class="container sale-page cash-page cash-checkout">
     <header class="page-heading sale-page-heading">
         <div><h1>Nova venda</h1><p>Consumidor final · adicione os produtos e escolha como receber.</p></div>
         <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>
     </header>
-    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<p class="alert {{ message.tags }}" role="alert">{{ message }}</p>{% endfor %}</div>{% endif %}
+    {% include '_mensagens.html' %}
 
     {% include "caixa/_aviso_fechamento.html" with sessao=sessao_caixa %}
     {% if not sessao_caixa %}
@@ -70,7 +70,7 @@
 
         <section class="surface-section cash-payment-section checkout-payment" aria-labelledby="cash-payments-heading">
             <div class="section-heading-row"><div><h2 id="cash-payments-heading">Pagamento</h2><p class="section-help">Escolha como receber. Você pode combinar as formas de pagamento.</p></div><button id="add-payment" class="btn btn-outline-light" type="button">Adicionar forma</button></div>
-            <div class="checkout-methods" aria-label="Escolher forma de pagamento">
+            <div class="checkout-methods" role="group" aria-label="Escolher forma de pagamento">
                 {% for value, label in formas_pagamento %}<button type="button" class="btn btn-outline-light" data-payment-method="{{ value }}">{{ label }}</button>{% endfor %}
             </div>
             <div id="payment-lines" class="cash-payment-lines">

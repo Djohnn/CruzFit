@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="{% static 'usuarios/css/dashboard.css' %}">
 {% endblock %}
 {% block 'body' %}
-<main class="dashboard">
+<main id="conteudo" tabindex="-1" class="dashboard">
     <header class="dashboard-heading">
         <div><h1>Visão do dia</h1><p>{{ painel.hoje|date:"l, d \d\e F" }}</p></div>
         {% if painel.sessao %}

@@ -5,21 +5,13 @@
 
 {% block 'body' %}
 
-    <main class="container vendor-page">
+    <main id="conteudo" tabindex="-1" class="container vendor-page">
         <header class="page-heading">
             <h1>Vendedores</h1>
             <p>Cadastre e administre os acessos da equipe Cruz Fit.</p>
         </header>
 
-        {% if messages %}
-        <div class="feedback-stack" aria-live="polite">
-            {% for message in messages %}
-                <div class="alert {{ message.tags }}" role="alert">
-                    {{message}}
-                </div>
-            {% endfor %}
-        </div>
-        {% endif %}
+        {% include '_mensagens.html' %}
 
         <section class="surface-section" aria-labelledby="vendor-create-heading">
             <h2 id="vendor-create-heading">Cadastrar vendedor</h2>
@@ -69,7 +61,7 @@
                                     <th scope="row">{{ vendedor.first_name }}</th>
                                     <td>{{ vendedor.last_name }}</td>
                                     <td>{{ vendedor.email }}</td>
-                                    <td>{% if not vendedor.last_login %}Primeiro acesso!{% else %}{{ vendedor.last_login }}{% endif %}</td>
+                                    <td>{% if not vendedor.last_login %}Primeiro acesso!{% else %}{{ vendedor.last_login|date:"d/m/Y H:i" }}{% endif %}</td>
                                     <td>
                                         <form action="{% url 'excluir_usuario' vendedor.id %}" method="POST" class="d-inline" onsubmit="return confirm('Tem certeza que deseja excluir este vendedor?');">
                                             {% csrf_token %}

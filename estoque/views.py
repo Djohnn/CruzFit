@@ -684,7 +684,15 @@ def registrar_baixa(request):
         request,
         'registrar_baixa.html',
         {
-            'produtos': Produto.objects.filter(ativo=True).order_by('nome'),
+            'catalogo': [
+                {
+                    'id': str(produto.pk),
+                    'name': produto.variacao_label,
+                    'barcode': produto.codigo_barras or '',
+                    'stock': float(produto.quantidade or 0),
+                }
+                for produto in Produto.objects.filter(ativo=True).order_by('nome')
+            ],
             'motivo_choices': BaixaEstoque.MOTIVO_CHOICES,
             'chave_idempotencia': uuid.uuid4().hex,
             'historico': BaixaEstoque.objects.prefetch_related(

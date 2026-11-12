@@ -4,9 +4,9 @@
 {% block 'title' %}Devolver ao fornecedor | Cruz Fit{% endblock %}
 {% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">{% endblock %}
 {% block 'body' %}
-<main class="container report-page">
+<main id="conteudo" tabindex="-1" class="container report-page">
     <header class="page-heading"><p class="eyebrow">Devolução auditada</p><h1>Devolver compra #{{ entrada.pk }}</h1><p>Fornecedor: {{ entrada.fornecedor_nome|default:entrada.fornecedor.nome }}. A saída explícita será vinculada a esta compra.</p></header>
-    {% if messages %}<div class="feedback-stack" aria-live="polite">{% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}</div>{% endif %}
+    {% include '_mensagens.html' %}
     <section class="surface-section reversal-form-section">
         <form method="post" class="operational-form">
             {% csrf_token %}<input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
@@ -14,7 +14,7 @@
                 <div class="reversal-line-item"><div><strong>{{ item.produto.nome }}</strong><small>Comprado: {{ item.quantidade|floatformat:2 }}</small></div><input type="hidden" name="item_entrada" value="{{ item.pk }}"><label>Quantidade devolvida<input class="form-control" type="number" name="quantidade" min="0" max="{{ item.quantidade }}" step="0.01" value=""></label></div>
             {% endfor %}
             <div class="form-group"><label for="supplier-return-reason">Motivo obrigatório</label><textarea id="supplier-return-reason" class="form-control" name="motivo" rows="4" required maxlength="500"></textarea></div>
-            <div class="sale-actions-inline"><a class="btn btn-outline-light" href="{% url 'movimentacoes' %}">Voltar</a><button class="btn btn-success" type="submit">Confirmar devolução ao fornecedor</button></div>
+            <div class="sale-actions-inline"><a class="btn btn-outline-light" href="{% url 'movimentacoes' %}">Voltar</a><button class="btn btn-danger" type="submit">Confirmar devolução ao fornecedor</button></div>
         </form>
     </section>
 </main>

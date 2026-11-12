@@ -3,7 +3,7 @@
 {% block 'title' %}{% if fornecedor %}Editar fornecedor{% else %}Cadastrar fornecedor{% endif %} | Cruz Fit{% endblock %}
 {% block 'head' %}<link rel="stylesheet" href="{% static 'estoque/css/fornecedores.css' %}">{% endblock %}
 {% block 'body' %}
-<main class="container supplier-page supplier-form-page">
+<main id="conteudo" tabindex="-1" class="container supplier-page supplier-form-page">
 <header class="page-heading"><a href="{% url 'fornecedores' %}">Voltar aos fornecedores</a><h1>{% if fornecedor %}Editar fornecedor{% else %}Cadastrar fornecedor{% endif %}</h1><p>{% if fornecedor %}Atualize os dados e informe o motivo da alteração. As entradas anteriores manterão os dados do recebimento.{% else %}Informe o nome e acrescente os dados de contato disponíveis. Os demais dados são opcionais.{% endif %}</p></header>
 <section class="surface-section" aria-label="Cadastro do fornecedor">
 <form method="post" class="operational-form" data-testid="fornecedor-form">

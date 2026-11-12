@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block 'body' %}
-<main class="container sale-page">
+<main id="conteudo" tabindex="-1" class="container sale-page">
     <header class="page-heading sale-page-heading">
         <div>
             <p class="eyebrow">Operação local</p>
@@ -26,13 +26,7 @@
         {% endif %}
     </nav>
 
-    {% if messages %}
-        <div class="feedback-stack" aria-live="polite">
-        {% for message in messages %}
-            <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
-        {% endfor %}
-        </div>
-    {% endif %}
+    {% include '_mensagens.html' %}
 
     <section class="surface-section" aria-labelledby="sales-list-heading">
         <div class="section-heading-row">
@@ -45,7 +39,7 @@
         <div class="table-responsive">
             <table class="table table-dark report-table sales-table">
                 <thead>
-                    <tr><th>Venda</th><th>Data</th><th>Itens</th><th>Pagamento</th><th>Total</th><th>Responsável</th><th>Ações</th></tr>
+                    <tr><th scope="col">Venda</th><th scope="col">Data</th><th scope="col">Itens</th><th scope="col">Pagamento</th><th scope="col">Total</th><th scope="col">Responsável</th><th scope="col">Ações</th></tr>
                 </thead>
                 <tbody>
                 {% for venda in vendas %}

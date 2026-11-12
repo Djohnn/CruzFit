@@ -554,3 +554,78 @@ input[type="file"].form-control {
         grid-column: auto;
     }
 }
+
+body.theme-light {
+    --brand-black: #f4f7f8;
+    --brand-black-soft: #ffffff;
+    --brand-surface: #ffffff;
+    --brand-surface-raised: #e8f0f1;
+    --brand-gold: #8a5b08;
+    --brand-gold-light: #8a5b08;
+    --brand-gold-deep: #b8ccce;
+    --brand-cream: #173238;
+    --brand-muted: #526b70;
+    --brand-border: rgba(138, 91, 8, 0.24);
+    --brand-danger: #b42318;
+    --brand-success: #18794e;
+    --brand-info: #1769aa;
+    --brand-warning: #9a6700;
+}
+
+body.theme-light.fundo {
+    background: radial-gradient(circle at 100% 0%, rgba(138, 91, 8, 0.10), transparent 35%), var(--brand-black);
+}
+
+.theme-light .btn-success,
+.theme-light .btn-primary {
+    background: #8a5b08;
+    border-color: #8a5b08;
+    color: #fff;
+}
+
+.theme-light .surface-section {
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 16px 34px rgba(23, 50, 56, 0.10);
+}
+
+.theme-light .login-card {
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 24px 55px rgba(23, 50, 56, 0.14);
+}
+
+.theme-light .table-dark {
+    background-color: var(--brand-surface);
+    color: var(--brand-cream);
+}
+
+.theme-light .table-dark.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(138, 91, 8, 0.05);
+}
+
+.skip-link {
+    position: fixed;
+    top: -3.5rem;
+    left: 1rem;
+    z-index: 2000;
+    padding: 0.55rem 0.9rem;
+    border: 1px solid var(--brand-border);
+    border-radius: 10px;
+    background: var(--brand-surface-raised);
+    color: var(--brand-cream);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.skip-link:hover,
+.skip-link:focus {
+    color: var(--brand-cream);
+    text-decoration: none;
+}
+
+.skip-link:focus {
+    top: 1rem;
+}
+
+@media print {
+    .skip-link { display: none !important; }
+}

@@ -8,20 +8,14 @@
 {% endblock %}
 
 {% block 'body' %}
-    <main class="container inventory-page">
+    <main id="conteudo" tabindex="-1" class="container inventory-page">
         <header class="page-heading">
             <h1>Modelos de etiqueta</h1>
             <p>Configure as dimensões das etiquetas térmicas usadas pelo Cruz Fit.</p>
             <a href="{% url 'estoque' %}" class="btn btn-outline-light">Voltar ao estoque</a>
         </header>
 
-        {% if messages %}
-            <div class="feedback-stack" aria-live="polite">
-                {% for message in messages %}
-                    <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
-                {% endfor %}
-            </div>
-        {% endif %}
+        {% include '_mensagens.html' %}
 
         <section class="surface-section" aria-labelledby="label-template-form-heading">
             <h2 id="label-template-form-heading">Cadastrar modelo</h2>

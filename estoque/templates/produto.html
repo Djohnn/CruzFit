@@ -9,26 +9,20 @@
 {% endblock %}
 
 {% block 'body' %}
-    <main class="container product-detail">
+    <main id="conteudo" tabindex="-1" class="container product-detail">
         <header class="page-heading">
             <h1>{{ produto.nome }}</h1>
             <p>Detalhes do produto no estoque Cruz Fit.</p>
         </header>
 
-        {% if messages %}
-            <div class="feedback-stack" aria-live="polite">
-            {% for message in messages %}
-                <div class="alert {{ message.tags }}" role="alert">{{ message }}</div>
-            {% endfor %}
-            </div>
-        {% endif %}
+        {% include '_mensagens.html' %}
 
         <section class="surface-section" aria-labelledby="product-detail-heading">
             <h2 id="product-detail-heading">Informações do produto</h2>
             <div class="product-detail-grid">
                 <div class="product-image-panel">
                     {% if produto|get_first_image %}
-                        <img src="{{ produto|get_first_image }}" alt="Imagem de {{ produto.nome }}">
+                        <img fetchpriority="high" src="{{ produto|get_first_image }}" alt="Imagem de {{ produto.nome }}">
                     {% else %}
                         <div class="card-image-placeholder" role="img" aria-label="Produto sem imagem">Sem imagem</div>
                     {% endif %}
@@ -103,8 +97,8 @@
                         <form action="{% url 'inativar_produto' produto.slug %}" method="POST" class="product-inactivation-form">
                             {% csrf_token %}
                             <input type="hidden" name="chave_idempotencia" value="{{ inativacao_chave }}">
-                            <label class="sr-only" for="product-inactivation-reason">Motivo da inativação</label>
-                            <input id="product-inactivation-reason" class="form-control" type="text" name="motivo" required maxlength="500" placeholder="Motivo para inativar">
+                            <label for="product-inactivation-reason">Motivo da inativação</label>
+                            <input id="product-inactivation-reason" class="form-control" type="text" name="motivo" required maxlength="500" placeholder="Ex.: produto descontinuado">
                             <button type="submit" class="btn btn-outline-danger">Inativar produto</button>
                         </form>
                     {% endif %}
@@ -115,7 +109,7 @@
         {% if produto.ficha_id %}
             <section class="surface-section" aria-labelledby="variation-grid-heading">
                 <div class="section-heading-row"><div><p class="eyebrow">Ficha de catálogo</p><h2 id="variation-grid-heading">{{ produto.ficha.nome }}</h2><p class="section-help">Total informativo da ficha: <strong>{{ produto.ficha_total|floatformat:2 }}</strong></p></div></div>
-                <div class="table-responsive"><table class="table table-dark"><thead><tr><th>Cor</th><th>Tamanho</th><th>Saldo</th><th>Preço</th><th>Código</th><th></th></tr></thead><tbody>
+                <div class="table-responsive"><table class="table table-dark"><thead><tr><th scope="col">Cor</th><th scope="col">Tamanho</th><th scope="col">Saldo</th><th scope="col">Preço</th><th scope="col">Código</th><th scope="col"></th></tr></thead><tbody>
                     {% for variacao in variacoes %}<tr><td>{{ variacao.cor }}</td><td>{{ variacao.get_tamanho_display }}</td><td>{{ variacao.quantidade|floatformat:2 }}</td><td>R$ {{ variacao.preco_venda|floatformat:2 }}</td><td>{{ variacao.codigo_barras }}</td><td><a class="btn btn-outline-light btn-sm" href="{% url 'produto' variacao.slug %}">Abrir</a></td></tr>{% endfor %}
                 </tbody></table></div>
                 {% if request.user.is_superuser or request.user.cargo == 'G' %}
