@@ -33,11 +33,13 @@ from estoque.services import (
 )
 
 from .models import (
+    ItemTrocaOrigem,
     ItemVenda,
     ItemVendaDevolucao,
     Venda,
     VendaCancelamento,
     VendaDevolucao,
+    VendaTroca,
 )
 
 
@@ -331,6 +333,10 @@ def cancelar_venda(
             raise ReversalOperationError(
                 'Uma venda com devolução parcial não pode ser cancelada integralmente.',
             )
+        if VendaTroca.objects.filter(venda=sale).exists():
+            raise ReversalOperationError(
+                'Uma venda com troca confirmada não pode ser cancelada integralmente.',
+            )
 
         sale_items = list(
             ItemVenda.objects.select_for_update().filter(venda=sale).order_by('pk')
@@ -409,16 +415,35 @@ def devolver_venda(
 
         previous_returns = {
             item_id: (
-                _sum_reversed_quantities(
+                (
+                    _sum_reversed_quantities(
+                        ItemVendaDevolucao.objects.filter(
+                            devolucao__venda=sale,
+                            item_venda_id=item_id,
+                        ).values_list('quantidade', flat=True),
+                    )
+                    + (
+                        ItemTrocaOrigem.objects.filter(
+                            troca__venda=sale,
+                            item_venda_id=item_id,
+                        ).aggregate(total=Sum('quantidade'))['total']
+                        or Decimal('0.00')
+                    )
+                ).quantize(TWO_PLACES),
+                (
                     ItemVendaDevolucao.objects.filter(
                         devolucao__venda=sale,
                         item_venda_id=item_id,
-                    ).values_list('quantidade', flat=True),
+                    ).aggregate(total=Sum('total'))['total']
+                    or Decimal('0.00')
+                )
+                + (
+                    ItemTrocaOrigem.objects.filter(
+                        troca__venda=sale,
+                        item_venda_id=item_id,
+                    ).aggregate(total=Sum('credito_total'))['total']
+                    or Decimal('0.00')
                 ),
-                ItemVendaDevolucao.objects.filter(
-                    devolucao__venda=sale,
-                    item_venda_id=item_id,
-                ).aggregate(total=Sum('total'))['total'] or Decimal('0.00'),
             )
             for item_id in item_ids_set
         }

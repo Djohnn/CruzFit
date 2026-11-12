@@ -13,16 +13,20 @@ from django.db import IntegrityError, OperationalError, connections, transaction
 from django.db.models import F, Sum
 from django.utils.formats import number_format
 
-from vendas.models import Venda, VendaCancelamento, VendaDevolucao
+from vendas.models import Venda, VendaCancelamento, VendaDevolucao, VendaTroca
 
 from .models import (
     CorteCaixa,
     FechamentoCaixa,
     PagamentoRestituicao,
+    PagamentoRestituicaoTroca,
+    PagamentoTroca,
     PagamentoVenda,
     PendenciaCancelamentoVenda,
     PendenciaDevolucaoVenda,
+    RecebimentoTroca,
     RecebimentoVenda,
+    RestituicaoTroca,
     RestituicaoVenda,
     SangriaCaixa,
     SessaoCaixa,
@@ -32,6 +36,12 @@ from .models import (
 
 class CaixaOperationError(ValueError):
     """Pedido inválido ou conflito de operação recuperável pelo operador."""
+
+
+LEGACY_SALE_MESSAGE = (
+    'Esta venda antiga não possui recebimento registrado no Caixa. '
+    'A troca pelo sistema não está disponível.'
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +73,13 @@ class MovimentoCaixaResult:
 class RestituicaoResult:
     restituicao: RestituicaoVenda
     created: bool
+
+
+@dataclass(frozen=True)
+class TrocaCaixaResult:
+    evento: RecebimentoTroca | RestituicaoTroca | None
+    created: bool
+    versao: int
 
 
 @dataclass(frozen=True)
@@ -458,6 +475,333 @@ def registrar_recebimento(
     return RecebimentoResult(receipt, created=True)
 
 
+def _troca_payment_signature(
+    *, operation: str, actor_id: int, session_id: int, troca_id: int,
+    amount: Decimal, reason: str, payments: list[tuple[str, Decimal, Decimal, Decimal]],
+    manual_confirmation: bool = False,
+) -> str:
+    payload = [
+        operation, actor_id, session_id, troca_id, str(amount), reason,
+        [[form, str(applied), str(tendered), str(change)]
+         for form, applied, tendered, change in payments],
+        bool(manual_confirmation),
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8'),
+    ).hexdigest()
+
+
+def _claim_troca_session(session_id: int, expected_version: int) -> int:
+    claimed = SessaoCaixa.objects.filter(
+        pk=session_id,
+        aberta=True,
+        versao=expected_version,
+    ).update(versao=F('versao') + 1)
+    if claimed != 1:
+        raise CaixaOperationError(
+            'O caixa foi alterado ou está fechado. Atualize e tente novamente.',
+        )
+    return expected_version + 1
+
+
+def registrar_troca_sem_diferenca(
+    *, sessao: SessaoCaixa, versao_esperada: int,
+) -> TrocaCaixaResult:
+    """Reserve an open session version without creating a cash movement."""
+    if not isinstance(sessao, SessaoCaixa) or not sessao.pk:
+        raise CaixaOperationError('Selecione uma sessão de caixa válida.')
+    try:
+        with transaction.atomic():
+            version = _claim_troca_session(sessao.pk, versao_esperada)
+    except OperationalError as error:
+        if _is_recoverable_sqlite_lock(error):
+            raise CaixaOperationError(
+                'O caixa está ocupado. Atualize e tente novamente usando a mesma chave.',
+            ) from error
+        raise
+    sessao.versao = version
+    return TrocaCaixaResult(evento=None, created=True, versao=version)
+
+
+def registrar_recebimento_troca(
+    *, actor, sessao: SessaoCaixa, troca: VendaTroca, total: object,
+    pagamentos: Iterable[Mapping[str, object]], motivo: str,
+    idempotency_key: str | None, versao_esperada: int,
+) -> TrocaCaixaResult:
+    """Record only the positive exchange difference in the open session."""
+    _require_manager(actor)
+    key = _required_text(idempotency_key, 'uma chave de operação', 64)
+    reason = _required_text(motivo, 'um motivo', 500)
+    if not isinstance(sessao, SessaoCaixa) or not sessao.pk:
+        raise CaixaOperationError('Selecione uma sessão de caixa válida.')
+    if not isinstance(troca, VendaTroca) or not troca.pk:
+        raise CaixaOperationError('Selecione uma troca confirmada.')
+    amount = _money(total, 'o valor da diferença')
+    if amount <= 0:
+        raise CaixaOperationError('O valor recebido da troca deve ser positivo.')
+    normalized = _normalize_payments(pagamentos, amount)
+    signature = _troca_payment_signature(
+        operation='recebimento-troca',
+        actor_id=actor.pk,
+        session_id=sessao.pk,
+        troca_id=troca.pk,
+        amount=amount,
+        reason=reason,
+        payments=normalized,
+    )
+
+    try:
+        with transaction.atomic():
+            existing = RecebimentoTroca.objects.filter(
+                chave_idempotencia=key,
+            ).first()
+            if existing:
+                if existing.assinatura != signature:
+                    raise CaixaOperationError(
+                        'Essa chave de recebimento da troca já foi usada com outros dados.',
+                    )
+                return TrocaCaixaResult(existing, created=False, versao=versao_esperada)
+            if RecebimentoTroca.objects.filter(troca=troca).exists():
+                raise CaixaOperationError('Essa troca já possui recebimento da diferença.')
+            session = SessaoCaixa.objects.filter(pk=sessao.pk).first()
+            if session is None or not session.aberta:
+                raise CaixaOperationError('A sessão de caixa está fechada.')
+            version = _claim_troca_session(session.pk, versao_esperada)
+            receipt = RecebimentoTroca.objects.create(
+                troca=troca,
+                sessao_id=session.pk,
+                valor_total=amount,
+                responsavel=actor,
+                motivo=reason,
+                chave_idempotencia=key,
+                assinatura=signature,
+            )
+            PagamentoTroca.objects.bulk_create([
+                PagamentoTroca(
+                    recebimento=receipt,
+                    forma='CARTAO' if form in PagamentoVenda.OPCOES_CARTAO else form,
+                    modalidade_cartao=PagamentoVenda.OPCOES_CARTAO.get(form, ''),
+                    valor_aplicado=applied,
+                    valor_entregue=tendered,
+                    troco=change,
+                )
+                for form, applied, tendered, change in normalized
+            ])
+            from financeiro.services import (
+                FinanceOperationError,
+                registrar_recebiveis_cartao,
+            )
+
+            try:
+                registrar_recebiveis_cartao(actor=actor, pagamentos=receipt.pagamentos.filter(forma='CARTAO'))
+            except FinanceOperationError as error:
+                raise CaixaOperationError(str(error)) from error
+    except IntegrityError as error:
+        existing = RecebimentoTroca.objects.filter(chave_idempotencia=key).first()
+        if existing and existing.assinatura == signature:
+            return TrocaCaixaResult(existing, created=False, versao=versao_esperada)
+        raise CaixaOperationError(
+            'Não foi possível registrar o recebimento da troca. Atualize e tente novamente.',
+        ) from error
+    except OperationalError as error:
+        if _is_recoverable_sqlite_lock(error):
+            raise CaixaOperationError(
+                'O caixa está ocupado. Atualize e tente novamente usando a mesma chave.',
+            ) from error
+        raise
+
+    sessao.versao = version
+    return TrocaCaixaResult(receipt, created=True, versao=version)
+
+
+def _troca_remaining_payment_lines(troca: VendaTroca):
+    receipt = RecebimentoVenda.objects.filter(venda_id=troca.venda_id).first()
+    if receipt is None:
+        raise CaixaOperationError(LEGACY_SALE_MESSAGE)
+    payments = list(
+        PagamentoVenda.objects.filter(recebimento=receipt).order_by('pk')
+    )
+    payment_ids = [payment.pk for payment in payments]
+    returned = {
+        row['pagamento_original_id']: row['total'] or Decimal('0.00')
+        for row in PagamentoRestituicao.objects.filter(
+            pagamento_original_id__in=payment_ids,
+        ).values('pagamento_original_id').annotate(total=Sum('valor'))
+    }
+    exchanged = {
+        row['pagamento_original_id']: row['total'] or Decimal('0.00')
+        for row in PagamentoRestituicaoTroca.objects.filter(
+            pagamento_original_id__in=payment_ids,
+        ).values('pagamento_original_id').annotate(total=Sum('valor'))
+    }
+    return [
+        (
+            payment,
+            (
+                payment.valor_aplicado
+                - returned.get(payment.pk, Decimal('0.00'))
+                - exchanged.get(payment.pk, Decimal('0.00'))
+            ).quantize(Decimal('0.01')),
+        )
+        for payment in payments
+        if payment.valor_aplicado > (
+            returned.get(payment.pk, Decimal('0.00'))
+            + exchanged.get(payment.pk, Decimal('0.00'))
+        )
+    ]
+
+
+def _troca_refund_allocations(troca: VendaTroca, amount: Decimal, *, for_update: bool):
+    lines = _troca_remaining_payment_lines(troca)
+    if for_update:
+        locked_ids = [payment.pk for payment, _ in lines]
+        locked = {
+            payment.pk: payment
+            for payment in PagamentoVenda.objects.select_for_update().filter(
+                pk__in=locked_ids,
+            )
+        }
+        lines = [(locked[payment.pk], remaining) for payment, remaining in lines]
+    capacities = [(payment, int(remaining * 100)) for payment, remaining in lines]
+    total_capacity = sum(value for _, value in capacities)
+    amount_cents = int(amount * 100)
+    if not capacities or amount_cents <= 0 or amount_cents > total_capacity:
+        raise CaixaOperationError(
+            'A restituição da troca supera o valor ainda disponível nas formas originais.',
+        )
+    shares: dict[int, int] = {}
+    remainders: dict[int, int] = {}
+    by_id = {payment.pk: payment for payment, _ in capacities}
+    for payment, capacity in capacities:
+        shares[payment.pk], remainders[payment.pk] = divmod(
+            amount_cents * capacity, total_capacity,
+        )
+    cents_left = amount_cents - sum(shares.values())
+    for payment_id in sorted(shares, key=lambda value: (-remainders[value], value))[:cents_left]:
+        shares[payment_id] += 1
+    return [
+        (by_id[payment_id], Decimal(cents) / 100)
+        for payment_id, cents in sorted(shares.items())
+        if cents > 0
+    ]
+
+
+def registrar_restituicao_troca(
+    *, actor, sessao: SessaoCaixa, troca: VendaTroca, total: object,
+    motivo: str, idempotency_key: str | None, confirmacao_manual: bool,
+    versao_esperada: int,
+) -> TrocaCaixaResult:
+    """Refund only the negative exchange difference in original forms."""
+    _require_manager(actor)
+    key = _required_text(idempotency_key, 'uma chave de operação', 64)
+    reason = _required_text(motivo, 'um motivo', 500)
+    if not isinstance(sessao, SessaoCaixa) or not sessao.pk:
+        raise CaixaOperationError('Selecione uma sessão de caixa válida.')
+    if not isinstance(troca, VendaTroca) or not troca.pk:
+        raise CaixaOperationError('Selecione uma troca confirmada.')
+    amount = _money(total, 'o valor da restituição')
+    if amount <= 0:
+        raise CaixaOperationError('O valor restituído da troca deve ser positivo.')
+
+    try:
+        with transaction.atomic():
+            existing = RestituicaoTroca.objects.filter(
+                chave_idempotencia=key,
+            ).first()
+            if existing:
+                if not (
+                    existing.troca_id == troca.pk
+                    and existing.sessao_id == sessao.pk
+                    and existing.responsavel_id == actor.pk
+                    and existing.valor_total == amount
+                    and existing.motivo == reason
+                    and existing.confirmacao_manual == bool(confirmacao_manual)
+                ):
+                    raise CaixaOperationError(
+                        'Essa chave de restituição da troca já foi usada com outros dados.',
+                    )
+                return TrocaCaixaResult(existing, created=False, versao=versao_esperada)
+            if RestituicaoTroca.objects.filter(troca=troca).exists():
+                raise CaixaOperationError('Essa troca já possui restituição da diferença.')
+            allocations = _troca_refund_allocations(troca, amount, for_update=True)
+            has_non_cash = any(payment.forma != 'DINHEIRO' for payment, _ in allocations)
+            if has_non_cash and confirmacao_manual is not True:
+                raise CaixaOperationError(
+                    'A confirmação manual da restituição por Pix ou cartão é obrigatória.',
+                )
+            signature = _troca_payment_signature(
+                operation='restituicao-troca',
+                actor_id=actor.pk,
+                session_id=sessao.pk,
+                troca_id=troca.pk,
+                amount=amount,
+                reason=reason,
+                payments=[
+                    (payment.forma, value, value, Decimal('0.00'))
+                    for payment, value in allocations
+                ],
+                manual_confirmation=bool(confirmacao_manual),
+            )
+            session = SessaoCaixa.objects.filter(pk=sessao.pk).first()
+            if session is None or not session.aberta:
+                raise CaixaOperationError('A sessão de caixa está fechada.')
+            version = _claim_troca_session(session.pk, versao_esperada)
+            cash_amount = sum(
+                (value for payment, value in allocations if payment.forma == 'DINHEIRO'),
+                Decimal('0.00'),
+            ).quantize(Decimal('0.01'))
+            if cash_amount > calcular_saldo_dinheiro(session.pk):
+                raise CaixaOperationError(
+                    'A restituição em dinheiro supera o saldo físico esperado do caixa.',
+                )
+            refund = RestituicaoTroca.objects.create(
+                troca=troca,
+                sessao_id=session.pk,
+                valor_total=amount,
+                responsavel=actor,
+                motivo=reason,
+                confirmacao_manual=bool(confirmacao_manual),
+                chave_idempotencia=key,
+                assinatura=signature,
+            )
+            PagamentoRestituicaoTroca.objects.bulk_create([
+                PagamentoRestituicaoTroca(
+                    restituicao=refund,
+                    pagamento_original=payment,
+                    valor=value,
+                )
+                for payment, value in allocations
+            ])
+            from financeiro.services import (
+                FinanceOperationError,
+                registrar_estorno_cartao,
+                registrar_estorno_pix_troca,
+            )
+
+            try:
+                for payment in refund.pagamentos.select_related('pagamento_original'):
+                    registrar_estorno_cartao(actor=actor, pagamento_restituicao=payment, reason=reason)
+                    registrar_estorno_pix_troca(actor=actor, pagamento_restituicao=payment)
+            except FinanceOperationError as error:
+                raise CaixaOperationError(str(error)) from error
+    except IntegrityError as error:
+        existing = RestituicaoTroca.objects.filter(chave_idempotencia=key).first()
+        if existing and existing.assinatura == signature:
+            return TrocaCaixaResult(existing, created=False, versao=versao_esperada)
+        raise CaixaOperationError(
+            'Não foi possível registrar a restituição da troca. Atualize e tente novamente.',
+        ) from error
+    except OperationalError as error:
+        if _is_recoverable_sqlite_lock(error):
+            raise CaixaOperationError(
+                'O caixa está ocupado. Atualize e tente novamente usando a mesma chave.',
+            ) from error
+        raise
+
+    sessao.versao = version
+    return TrocaCaixaResult(refund, created=True, versao=version)
+
+
 def calcular_saldo_dinheiro(sessao: SessaoCaixa | int) -> Decimal:
     """Apurar dinheiro físico por parcelas líquidas, sem contar troco ou não dinheiro."""
     session_id = sessao.pk if isinstance(sessao, SessaoCaixa) else int(sessao)
@@ -467,6 +811,10 @@ def calcular_saldo_dinheiro(sessao: SessaoCaixa | int) -> Decimal:
         raise CaixaOperationError('Selecione uma sessão de caixa válida.') from error
 
     cash_applied = PagamentoVenda.objects.filter(
+        recebimento__sessao_id=session.pk,
+        forma='DINHEIRO',
+    ).aggregate(total=Sum('valor_aplicado'))['total'] or Decimal('0.00')
+    cash_troca_applied = PagamentoTroca.objects.filter(
         recebimento__sessao_id=session.pk,
         forma='DINHEIRO',
     ).aggregate(total=Sum('valor_aplicado'))['total'] or Decimal('0.00')
@@ -480,7 +828,14 @@ def calcular_saldo_dinheiro(sessao: SessaoCaixa | int) -> Decimal:
         restituicao__sessao_id=session.pk,
         pagamento_original__forma='DINHEIRO',
     ).aggregate(total=Sum('valor'))['total'] or Decimal('0.00')
-    return session.fundo_inicial + cash_applied + supplies - withdrawals - cash_refunds
+    cash_troca_refunds = PagamentoRestituicaoTroca.objects.filter(
+        restituicao__sessao_id=session.pk,
+        pagamento_original__forma='DINHEIRO',
+    ).aggregate(total=Sum('valor'))['total'] or Decimal('0.00')
+    return (
+        session.fundo_inicial + cash_applied + cash_troca_applied + supplies
+        - withdrawals - cash_refunds - cash_troca_refunds
+    )
 
 
 def _pending_refunds_for_session(session_id: int) -> int:
@@ -502,11 +857,23 @@ def _payment_form_totals(session_id: int) -> dict[str, str]:
             recebimento__sessao_id=session_id,
             forma=form,
         ).aggregate(total=Sum('valor_aplicado'))['total'] or Decimal('0.00')
+        received_troca = PagamentoTroca.objects.filter(
+            recebimento__sessao_id=session_id,
+            forma=form,
+        ).aggregate(total=Sum('valor_aplicado'))['total'] or Decimal('0.00')
         returned = PagamentoRestituicao.objects.filter(
             restituicao__sessao_id=session_id,
             pagamento_original__forma=form,
         ).aggregate(total=Sum('valor'))['total'] or Decimal('0.00')
-        totals[form] = str((received - returned).quantize(Decimal('0.01')))
+        returned_troca = PagamentoRestituicaoTroca.objects.filter(
+            restituicao__sessao_id=session_id,
+            pagamento_original__forma=form,
+        ).aggregate(total=Sum('valor'))['total'] or Decimal('0.00')
+        totals[form] = str(
+            (received + received_troca - returned - returned_troca).quantize(
+                Decimal('0.01'),
+            )
+        )
     return totals
 
 
@@ -695,6 +1062,16 @@ def _remaining_payment_lines(receipt: RecebimentoVenda, *, for_update: bool = Fa
         row['pagamento_original_id']: row['total'] or Decimal('0.00')
         for row in refunded_rows
     }
+    for row in PagamentoRestituicaoTroca.objects.filter(
+        pagamento_original_id__in=[payment.pk for payment in payments],
+    ).values('pagamento_original_id').annotate(total=Sum('valor')):
+        pk = row['pagamento_original_id']
+        refunded[pk] = refunded.get(pk, Decimal('0.00')) + row['total']
+    for row in PagamentoRestituicaoTroca.objects.filter(
+        pagamento_original_id__in=[payment.pk for payment in payments],
+    ).values('pagamento_original_id').annotate(total=Sum('valor')):
+        pk = row['pagamento_original_id']
+        refunded[pk] = refunded.get(pk, Decimal('0.00')) + row['total']
     return [
         (payment, (payment.valor_aplicado - refunded.get(payment.pk, Decimal('0.00'))).quantize(Decimal('0.01')))
         for payment in payments

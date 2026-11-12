@@ -148,6 +148,11 @@
         <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' venda.pk %}">Voltar</a>
         <button class="btn btn-primary" type="button" onclick="window.print()">Imprimir comprovante</button>
     </div>
+    {% if messages %}
+    <div class="feedback-stack no-print" aria-live="polite">
+        {% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}
+    </div>
+    {% endif %}
     <article class="receipt-sheet" aria-labelledby="receipt-heading">
         <header class="receipt-header">
             <p class="eyebrow">CRUZFIT</p>
@@ -173,7 +178,51 @@
                 <div><dt>Recebimento</dt><dd>R$ {{ recebimento.valor_total|floatformat:2 }}</dd></div>
             {% else %}<div><dt>Pagamento</dt><dd>{{ venda.get_forma_pagamento_display }}</dd></div>{% endif %}
         </dl>
-        {% if recebimento %}<section aria-labelledby="receipt-payments-heading"><h2 id="receipt-payments-heading">Formas recebidas</h2><ul class="receipt-payments">{% for pagamento in recebimento.pagamentos.all %}<li><strong>{{ pagamento.get_forma_display }}</strong><dl class="receipt-payment-values"><div><dt>Aplicado</dt><dd>R$ {{ pagamento.valor_aplicado|floatformat:2 }}</dd></div>{% if pagamento.forma == 'DINHEIRO' %}<div><dt>Entregue</dt><dd>R$ {{ pagamento.valor_entregue|floatformat:2 }}</dd></div><div><dt>Troco</dt><dd>R$ {{ pagamento.troco|floatformat:2 }}</dd></div>{% endif %}</dl></li>{% empty %}<li>Sem cobrança</li>{% endfor %}</ul></section>{% endif %}
+        {% if recebimento %}<section aria-labelledby="receipt-payments-heading"><h2 id="receipt-payments-heading">Formas recebidas</h2><ul class="receipt-payments">{% for pagamento in recebimento.pagamentos.all %}<li><strong>{{ pagamento.get_forma_display }}{% if pagamento.modalidade_cartao %} · {{ pagamento.get_modalidade_cartao_display }}{% endif %}</strong><dl class="receipt-payment-values"><div><dt>Aplicado</dt><dd>R$ {{ pagamento.valor_aplicado|floatformat:2 }}</dd></div>{% if pagamento.forma == 'DINHEIRO' %}<div><dt>Entregue</dt><dd>R$ {{ pagamento.valor_entregue|floatformat:2 }}</dd></div><div><dt>Troco</dt><dd>R$ {{ pagamento.troco|floatformat:2 }}</dd></div>{% endif %}</dl></li>{% empty %}<li>Sem cobrança</li>{% endfor %}</ul></section>{% endif %}
+        {% if trocas_comprovante %}
+        <section class="receipt-exchanges" aria-labelledby="receipt-exchanges-heading">
+            <h2 id="receipt-exchanges-heading">Trocas vinculadas</h2>
+            {% for row in trocas_comprovante %}
+            <article>
+                <h3>Troca #{{ row.troca.pk }} · {{ row.troca.criada_em|date:"d/m/Y H:i" }}</h3>
+                <p>Crédito R$ {{ row.troca.credito_total|floatformat:2 }} · substitutos R$ {{ row.troca.valor_novos|floatformat:2 }}</p>
+                <table class="receipt-table"><thead><tr><th>Retorno</th><th>Qtd.</th><th>Crédito</th></tr></thead><tbody>{% for item in row.troca.itens_origem.all %}<tr><td>{{ item.produto.nome }}</td><td>{{ item.quantidade|floatformat:2 }}</td><td>R$ {{ item.credito_total|floatformat:2 }}</td></tr>{% endfor %}</tbody></table>
+                <ul class="receipt-payments">{% for item in row.troca.itens_destino.all %}<li><strong>Substituto</strong> {{ item.produto.nome }} · {{ item.quantidade|floatformat:2 }} · R$ {{ item.total|floatformat:2 }}</li>{% endfor %}</ul>
+                {% if row.troca.diferenca > 0 %}<p><strong>Diferença recebida: R$ {{ row.valor_diferenca|floatformat:2 }}</strong></p>{% elif row.troca.diferenca < 0 %}<p><strong>Diferença restituída: R$ {{ row.valor_diferenca|floatformat:2 }}</strong></p>{% else %}<p><strong>Troca direta · sem diferença financeira</strong></p>{% endif %}
+                {% if row.recebimento %}
+                <section aria-labelledby="receipt-exchange-receipt-{{ row.troca.pk }}">
+                    <h4 id="receipt-exchange-receipt-{{ row.troca.pk }}">Recebimento da troca</h4>
+                    <ul class="receipt-payments">
+                        {% for pagamento in row.recebimento.pagamentos.all %}
+                        <li>
+                            <strong>{{ pagamento.get_forma_display }}{% if pagamento.modalidade_cartao %} · {{ pagamento.get_modalidade_cartao_display }}{% endif %}</strong>
+                            <dl class="receipt-payment-values">
+                                <div><dt>Aplicado</dt><dd>R$ {{ pagamento.valor_aplicado|floatformat:2 }}</dd></div>
+                                {% if pagamento.forma == 'DINHEIRO' %}
+                                <div><dt>Entregue</dt><dd>R$ {{ pagamento.valor_entregue|floatformat:2 }}</dd></div>
+                                <div><dt>Troco</dt><dd>R$ {{ pagamento.troco|floatformat:2 }}</dd></div>
+                                {% endif %}
+                            </dl>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <p><strong>Total recebido R$ {{ row.recebimento.valor_total|floatformat:2 }}</strong></p>
+                </section>
+                {% elif row.restituicao %}
+                <section aria-labelledby="receipt-exchange-refund-{{ row.troca.pk }}">
+                    <h4 id="receipt-exchange-refund-{{ row.troca.pk }}">Restituição da troca</h4>
+                    <ul class="receipt-payments">
+                        {% for pagamento in row.restituicao.pagamentos.all %}
+                        <li><strong>{{ pagamento.pagamento_original.get_forma_display }}{% if pagamento.pagamento_original.modalidade_cartao %} · {{ pagamento.pagamento_original.get_modalidade_cartao_display }}{% endif %}</strong> · R$ {{ pagamento.valor|floatformat:2 }}</li>
+                        {% endfor %}
+                    </ul>
+                    <p><strong>Total restituído R$ {{ row.restituicao.valor_total|floatformat:2 }}</strong></p>
+                </section>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </section>
+        {% endif %}
         <footer class="receipt-footer">Responsável: {{ venda.responsavel.get_full_name|default:venda.responsavel.username }}</footer>
     </article>
 </main>

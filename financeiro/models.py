@@ -53,7 +53,8 @@ class ContaFinanceira(models.Model):
         )
         refunds = self.lancamentos.filter(
             direcao=LancamentoFinanceiro.Direcao.DEBITO,
-            estorno_recebimento_cartao__isnull=False,
+        ).filter(
+            Q(estorno_recebimento_cartao__isnull=False) | Q(estorno_pix_troca__isnull=False),
         )
         if start_date is not None:
             credits = credits.filter(data_movimento__gte=start_date)
@@ -235,8 +236,14 @@ class RecebimentoPixFinanceiro(models.Model):
     pagamento_origem = models.OneToOneField(
         'caixa.PagamentoVenda',
         on_delete=models.PROTECT,
+        null=True, blank=True,
         related_name='recebimento_pix_financeiro',
     )
+    pagamento_troca = models.OneToOneField(
+        'caixa.PagamentoTroca', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='recebimento_pix_financeiro',
+    )
+
     conta = models.ForeignKey(
         ContaFinanceira,
         on_delete=models.PROTECT,
@@ -267,6 +274,11 @@ class RecebimentoPixFinanceiro(models.Model):
         ordering = ('-data_confirmacao', '-criada_em', '-pk')
         constraints = [
             models.CheckConstraint(
+                check=(models.Q(pagamento_origem__isnull=False, pagamento_troca__isnull=True)
+                       | models.Q(pagamento_origem__isnull=True, pagamento_troca__isnull=False)),
+                name='financeiro_pix_origem_unica',
+            ),
+            models.CheckConstraint(
                 check=models.Q(valor__gt=0),
                 name='financeiro_pix_valor_positivo',
             ),
@@ -276,14 +288,25 @@ class RecebimentoPixFinanceiro(models.Model):
         return f'Pix de R$ {self.valor}'
 
 
+    @property
+    def pagamento_efetivo(self):
+        return self.pagamento_origem if self.pagamento_origem_id else self.pagamento_troca
+
+
 class RecebivelCartao(models.Model):
     """Parcela aprovada no Caixa e ainda não liquidada no Financeiro."""
 
     pagamento_origem = models.OneToOneField(
         'caixa.PagamentoVenda',
         on_delete=models.PROTECT,
+        null=True, blank=True,
         related_name='recebivel_cartao',
     )
+    pagamento_troca = models.OneToOneField(
+        'caixa.PagamentoTroca', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='recebivel_cartao',
+    )
+
     valor_bruto = models.DecimalField(
         max_digits=14,
         decimal_places=2,
@@ -306,6 +329,11 @@ class RecebivelCartao(models.Model):
         ordering = ('-data_aprovacao', '-criada_em', '-pk')
         constraints = [
             models.CheckConstraint(
+                check=(models.Q(pagamento_origem__isnull=False, pagamento_troca__isnull=True)
+                       | models.Q(pagamento_origem__isnull=True, pagamento_troca__isnull=False)),
+                name='financeiro_cartao_origem_unica',
+            ),
+            models.CheckConstraint(
                 check=models.Q(valor_bruto__gt=0),
                 name='financeiro_recebivel_cartao_positivo',
             ),
@@ -313,6 +341,19 @@ class RecebivelCartao(models.Model):
 
     def __str__(self):
         return f'Cartão a receber de R$ {self.valor_bruto}'
+
+
+    @property
+    def pagamento_efetivo(self):
+        return self.pagamento_origem if self.pagamento_origem_id else self.pagamento_troca
+
+
+    @property
+    def valor_pendente(self) -> Decimal:
+        refunded = self.estornos_recebimento.filter(lancamento__isnull=True).aggregate(total=Sum('valor'))['total'] or Decimal('0.00')
+        return (self.valor_bruto - refunded).quantize(Decimal('0.01'))
+
+
 
 
 class DepositoCartao(models.Model):
@@ -424,8 +465,14 @@ class EstornoRecebimentoCartao(models.Model):
     pagamento_restituicao = models.OneToOneField(
         'caixa.PagamentoRestituicao',
         on_delete=models.PROTECT,
+        null=True, blank=True,
         related_name='estorno_recebimento_cartao',
     )
+    pagamento_restituicao_troca = models.OneToOneField(
+        'caixa.PagamentoRestituicaoTroca', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='estorno_recebimento_cartao',
+    )
+
     recebivel = models.ForeignKey(
         RecebivelCartao,
         on_delete=models.PROTECT,
@@ -457,6 +504,11 @@ class EstornoRecebimentoCartao(models.Model):
     class Meta:
         ordering = ('-data_movimento', '-criada_em', '-pk')
         constraints = [
+            models.CheckConstraint(
+                check=(models.Q(pagamento_restituicao__isnull=False, pagamento_restituicao_troca__isnull=True)
+                       | models.Q(pagamento_restituicao__isnull=True, pagamento_restituicao_troca__isnull=False)),
+                name='financeiro_estorno_cartao_origem_unica',
+            ),
             models.CheckConstraint(
                 check=models.Q(valor__gt=0),
                 name='financeiro_estorno_receb_cartao_positivo',
@@ -765,3 +817,27 @@ class EventoAuditoriaFinanceiro(models.Model):
 
     def __str__(self) -> str:
         return f'{self.acao} ({self.chave_idempotencia})'
+
+
+class EstornoPixTroca(models.Model):
+    """Débito de uma restituição de troca sobre um Pix já confirmado."""
+
+    pagamento_restituicao = models.OneToOneField(
+        'caixa.PagamentoRestituicaoTroca', on_delete=models.PROTECT,
+        related_name='estorno_pix_financeiro',
+    )
+    recebimento_pix = models.ForeignKey(
+        RecebimentoPixFinanceiro, on_delete=models.PROTECT, related_name='estornos_troca',
+    )
+    lancamento = models.OneToOneField(
+        LancamentoFinanceiro, on_delete=models.PROTECT, related_name='estorno_pix_troca',
+    )
+    valor = models.DecimalField(max_digits=14, decimal_places=2)
+    data_movimento = models.DateField()
+    responsavel = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [models.CheckConstraint(check=models.Q(valor__gt=0), name='financeiro_estorno_pix_troca_positivo')]

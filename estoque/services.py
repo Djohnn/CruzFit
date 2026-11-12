@@ -1336,3 +1336,112 @@ def registrar_retorno_venda(
         product.save(update_fields=('quantidade',))
         ItemEntradaEstoque.objects.create(entrada=entry, produto=product, quantidade=quantity)
     return entry
+
+
+def registrar_troca_entrada(
+    *,
+    actor,
+    lines: Sequence[tuple[int, Decimal]],
+    observation: str,
+    idempotency_key: str | None,
+) -> MovementResult:
+    """Return exchanged products with an idempotent, explicit stock entry."""
+    _require_authenticated(actor)
+    key = _parse_idempotency_key(idempotency_key)
+    normalized_lines = sorted(lines)
+    if not normalized_lines:
+        raise StockOperationError('Adicione pelo menos um produto à entrada da troca.')
+
+    with transaction.atomic():
+        existing = EntradaEstoque.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            existing_lines = sorted(
+                (item.produto_id, item.quantidade) for item in existing.itens.all()
+            )
+            if (
+                existing.responsavel_id != actor.pk
+                or existing.motivo != 'DEVOLUCAO'
+                or existing.observacao != observation.strip()
+                or existing_lines != normalized_lines
+            ):
+                raise StockOperationError(
+                    'Essa chave de entrada da troca já foi usada com outros dados.',
+                )
+            return MovementResult(existing, created=False)
+
+        products = _locked_reversal_products(product_id for product_id, _ in normalized_lines)
+        entry = EntradaEstoque.objects.create(
+            motivo='DEVOLUCAO',
+            observacao=observation.strip(),
+            responsavel=actor,
+            chave_idempotencia=key,
+        )
+        for product_id, quantity in normalized_lines:
+            product = products[product_id]
+            product.quantidade += quantity
+            product.save(update_fields=('quantidade',))
+            ItemEntradaEstoque.objects.create(
+                entrada=entry,
+                produto=product,
+                quantidade=quantity,
+            )
+    return MovementResult(entry, created=True)
+
+
+def registrar_troca_baixa(
+    *,
+    actor,
+    lines: Sequence[tuple[int, Decimal]],
+    observation: str,
+    idempotency_key: str | None,
+) -> MovementResult:
+    """Issue substitutes with an idempotent, explicit exchange outflow."""
+    _require_authenticated(actor)
+    key = _parse_idempotency_key(idempotency_key)
+    normalized_lines = sorted(lines)
+    if not normalized_lines:
+        raise StockOperationError('Adicione pelo menos um produto à baixa da troca.')
+
+    with transaction.atomic():
+        existing = BaixaEstoque.objects.select_for_update().filter(
+            chave_idempotencia=key,
+        ).first()
+        if existing:
+            existing_lines = sorted(
+                (item.produto_id, item.quantidade) for item in existing.itens.all()
+            )
+            if (
+                existing.responsavel_id != actor.pk
+                or existing.motivo != 'TROCA'
+                or existing.observacao != observation.strip()
+                or existing_lines != normalized_lines
+            ):
+                raise StockOperationError(
+                    'Essa chave de baixa da troca já foi usada com outros dados.',
+                )
+            return MovementResult(existing, created=False)
+
+        products = _locked_reversal_products(product_id for product_id, _ in normalized_lines)
+        for product_id, quantity in normalized_lines:
+            product = products[product_id]
+            if quantity > product.quantidade:
+                raise StockOperationError(f'Estoque insuficiente para {product.nome}.')
+
+        movement = BaixaEstoque.objects.create(
+            motivo='TROCA',
+            observacao=observation.strip(),
+            responsavel=actor,
+            chave_idempotencia=key,
+        )
+        for product_id, quantity in normalized_lines:
+            product = products[product_id]
+            product.quantidade -= quantity
+            product.save(update_fields=('quantidade',))
+            ItemBaixaEstoque.objects.create(
+                baixa=movement,
+                produto=product,
+                quantidade=quantity,
+            )
+    return MovementResult(movement, created=True)

@@ -31,7 +31,7 @@ from estoque.services import (
 )
 from estoque.views import _selected_reversal_lines, gerente_required
 
-from .models import Venda
+from .models import Venda, VendaTroca
 from .services import SaleOperationError, previsualizar_venda
 from .services import cancelar_venda as cancelar_venda_service
 from .services import devolver_venda as devolver_venda_service
@@ -321,6 +321,9 @@ def venda_detalhe(request, pk):
             ).select_related('sessao', 'responsavel').first(),
             'url_name': 'caixa:restituir_devolucao',
         })
+    trocas = VendaTroca.objects.filter(venda=venda).prefetch_related(
+        'itens_origem__produto', 'itens_destino__produto',
+    )
     return render(
         request, 'venda_detalhe.html', {
             'venda': venda,
@@ -333,6 +336,7 @@ def venda_detalhe(request, pk):
             'cancelamento_pendente': cancelamento_pendente,
             'cancelamento_restituicao': cancelamento_restituicao,
             'devolucoes_pendentes': devolucoes_pendentes,
+            'trocas': trocas,
         },
     )
 
@@ -349,10 +353,29 @@ def venda_comprovante(request, pk):
     recebimento = RecebimentoVenda.objects.filter(venda=venda).prefetch_related(
         'pagamentos',
     ).first()
+    trocas = VendaTroca.objects.filter(venda=venda).prefetch_related(
+        'itens_origem__produto', 'itens_destino__produto',
+        'recebimento_troca__pagamentos',
+        'restituicao_troca__pagamentos__pagamento_original',
+    )
+    trocas_comprovante = [
+        {
+            'troca': troca,
+            'valor_diferenca': abs(troca.diferenca),
+            'recebimento': getattr(troca, 'recebimento_troca', None),
+            'restituicao': getattr(troca, 'restituicao_troca', None),
+        }
+        for troca in trocas
+    ]
     return render(
         request,
         'venda_comprovante.html',
-        {'venda': venda, 'recebimento': recebimento},
+        {
+            'venda': venda,
+            'recebimento': recebimento,
+            'trocas': trocas,
+            'trocas_comprovante': trocas_comprovante,
+        },
     )
 
 

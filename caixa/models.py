@@ -391,6 +391,222 @@ class PagamentoRestituicao(models.Model):
         return f'Restituído {self.valor} via pagamento #{self.pagamento_original_id}'
 
 
+class TrocaCaixaImmutableQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError('Registros financeiros de troca são imutáveis.')
+
+    def delete(self):
+        raise ValidationError('Registros financeiros de troca são imutáveis.')
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError('Registros financeiros de troca são imutáveis.')
+
+
+class TrocaCaixaImmutableManager(models.Manager):
+    def get_queryset(self) -> TrocaCaixaImmutableQuerySet:
+        return TrocaCaixaImmutableQuerySet(
+            self.model, using=self._db, hints=self._hints,
+        )
+
+
+class RecebimentoTroca(models.Model):
+    """Cash receipt for the positive difference of one confirmed exchange."""
+
+    troca = models.OneToOneField(
+        'vendas.VendaTroca', on_delete=models.PROTECT,
+        related_name='recebimento_troca',
+    )
+    sessao = models.ForeignKey(
+        SessaoCaixa, on_delete=models.PROTECT, related_name='recebimentos_troca',
+    )
+    valor_total = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='recebimentos_troca',
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    objects = TrocaCaixaImmutableManager()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(valor_total__gt=0),
+                name='caixa_troca_receb_positivo',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError('Registros financeiros de troca são imutáveis.')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Registros financeiros de troca são imutáveis.')
+
+
+    @property
+    def venda(self):
+        return self.troca.venda
+
+    @property
+    def venda_id(self):
+        return self.troca.venda_id
+
+
+class PagamentoTroca(models.Model):
+    """Payment line for the positive difference of an exchange."""
+
+    FORMA_PAGAMENTO_CHOICES = PagamentoVenda.FORMA_PAGAMENTO_CHOICES
+
+    recebimento = models.ForeignKey(
+        RecebimentoTroca, on_delete=models.PROTECT, related_name='pagamentos',
+    )
+    forma = models.CharField(max_length=10, choices=FORMA_PAGAMENTO_CHOICES)
+    modalidade_cartao = models.CharField(max_length=7, choices=PagamentoVenda.MODALIDADES_CARTAO, blank=True)
+    valor_aplicado = models.DecimalField(max_digits=12, decimal_places=2)
+    valor_entregue = models.DecimalField(max_digits=12, decimal_places=2)
+    troco = models.DecimalField(max_digits=12, decimal_places=2)
+
+    objects = TrocaCaixaImmutableManager()
+
+    class Meta:
+        ordering = ('forma', 'pk')
+        constraints = [
+            models.CheckConstraint(
+                check=(models.Q(modalidade_cartao='') | models.Q(forma='CARTAO', modalidade_cartao__in=('CREDITO', 'DEBITO'))),
+                name='caixa_troca_modalidade_valida',
+            ),
+            models.UniqueConstraint(
+                fields=('recebimento', 'forma', 'modalidade_cartao'),
+                name='caixa_troca_pg_forma_unica',
+            ),
+            models.CheckConstraint(
+                check=models.Q(valor_aplicado__gt=0),
+                name='caixa_troca_pg_aplicado_positivo',
+            ),
+            models.CheckConstraint(
+                check=models.Q(valor_entregue__gte=0),
+                name='caixa_troca_pg_entregue_nao_neg',
+            ),
+            models.CheckConstraint(
+                check=models.Q(troco__gte=0),
+                name='caixa_troca_pg_troco_nao_neg',
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(
+                        forma='DINHEIRO',
+                        valor_entregue=models.F('valor_aplicado') + models.F('troco'),
+                    )
+                    | (
+                        ~models.Q(forma='DINHEIRO')
+                        & models.Q(valor_entregue=models.F('valor_aplicado'), troco=0)
+                    )
+                ),
+                name='caixa_troca_pg_troco_por_forma',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError('Registros financeiros de troca são imutáveis.')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Registros financeiros de troca são imutáveis.')
+
+
+class RestituicaoTroca(models.Model):
+    """Refund record for the negative difference of one exchange."""
+
+    troca = models.OneToOneField(
+        'vendas.VendaTroca', on_delete=models.PROTECT,
+        related_name='restituicao_troca',
+    )
+    sessao = models.ForeignKey(
+        SessaoCaixa, on_delete=models.PROTECT, related_name='restituicoes_troca',
+    )
+    valor_total = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    responsavel = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='restituicoes_troca',
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+    motivo = models.CharField(max_length=500)
+    confirmacao_manual = models.BooleanField(default=False)
+    chave_idempotencia = models.CharField(max_length=64, unique=True)
+    assinatura = models.CharField(max_length=64)
+
+    objects = TrocaCaixaImmutableManager()
+
+    class Meta:
+        ordering = ('-criada_em', '-pk')
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(valor_total__gt=0),
+                name='caixa_troca_restit_positiva',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError('Registros financeiros de troca são imutáveis.')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Registros financeiros de troca são imutáveis.')
+
+
+class PagamentoRestituicaoTroca(models.Model):
+    """Refund line allocated to one original sale payment form."""
+
+    restituicao = models.ForeignKey(
+        RestituicaoTroca, on_delete=models.PROTECT, related_name='pagamentos',
+    )
+    pagamento_original = models.ForeignKey(
+        PagamentoVenda, on_delete=models.PROTECT,
+        related_name='restituicoes_troca',
+    )
+    valor = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+    )
+
+    objects = TrocaCaixaImmutableManager()
+
+    class Meta:
+        ordering = ('pagamento_original_id', 'pk')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('restituicao', 'pagamento_original'),
+                name='caixa_troca_restit_pg_unica',
+            ),
+            models.CheckConstraint(
+                check=models.Q(valor__gt=0),
+                name='caixa_troca_restit_pg_positivo',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError('Registros financeiros de troca são imutáveis.')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError('Registros financeiros de troca são imutáveis.')
+
+
 class FechamentoImutavelQuerySet(models.QuerySet):
     def update(self, **kwargs):
         raise ValidationError('O snapshot de fechamento é imutável.')

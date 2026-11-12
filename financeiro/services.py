@@ -14,7 +14,12 @@ from django.db import IntegrityError, OperationalError, connections, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from caixa.models import PagamentoRestituicao, PagamentoVenda
+from caixa.models import (
+    PagamentoRestituicao,
+    PagamentoRestituicaoTroca,
+    PagamentoTroca,
+    PagamentoVenda,
+)
 from compras.services import PurchaseOperationError, resumo_pedido_para_financeiro
 
 from .models import (
@@ -24,6 +29,7 @@ from .models import (
     DepositoCartao,
     EstornoFinanceiro,
     EstornoPagamentoContaPagar,
+    EstornoPixTroca,
     EstornoRecebimentoCartao,
     EventoAuditoriaFinanceiro,
     FechamentoMensal,
@@ -328,6 +334,7 @@ def _assert_key_available(key: str, current_model: Any) -> None:
         ContaPagar,
         PagamentoContaPagar,
         EstornoPagamentoContaPagar,
+        EstornoPixTroca,
         AporteFinanceiro,
         TransferenciaFinanceira,
         EstornoFinanceiro,
@@ -357,19 +364,36 @@ def _require_operational_actor(actor: Any) -> None:
         )
 
 
-def _payment(value: PagamentoVenda | int) -> PagamentoVenda:
-    if isinstance(value, PagamentoVenda):
+def _payment(value: PagamentoVenda | PagamentoTroca | int | str) -> PagamentoVenda | PagamentoTroca:
+    if isinstance(value, (PagamentoVenda, PagamentoTroca)):
         if not value.pk:
-            raise FinanceOperationError('Selecione um pagamento de venda válido.')
+            raise FinanceOperationError('Selecione um pagamento válido.')
         return value
+    model = PagamentoVenda
+    identifier = str(value)
+    if identifier.startswith('troca-'):
+        model = PagamentoTroca
+        identifier = identifier.removeprefix('troca-')
     try:
-        return PagamentoVenda.objects.get(pk=int(value))
-    except (PagamentoVenda.DoesNotExist, TypeError, ValueError) as error:
-        raise FinanceOperationError('Selecione um pagamento de venda válido.') from error
+        return model.objects.get(pk=int(identifier))
+    except (PagamentoVenda.DoesNotExist, PagamentoTroca.DoesNotExist, TypeError, ValueError) as error:
+        raise FinanceOperationError('Selecione um pagamento válido.') from error
 
 
-def _approval_date(payment: PagamentoVenda) -> date:
-    created_at = payment.recebimento.venda.criada_em
+def _payment_source(payment):
+    field = 'pagamento_troca' if isinstance(payment, PagamentoTroca) else 'pagamento_origem'
+    return {field: payment}
+
+
+def _locked_payment(payment):
+    return type(payment).objects.select_for_update().select_related('recebimento').get(pk=payment.pk)
+
+
+def _approval_date(payment: PagamentoVenda | PagamentoTroca) -> date:
+    created_at = (
+        payment.recebimento.criada_em if isinstance(payment, PagamentoTroca)
+        else payment.recebimento.venda.criada_em
+    )
     if timezone.is_aware(created_at):
         return timezone.localtime(created_at).date()
     return created_at.date()
@@ -378,7 +402,7 @@ def _approval_date(payment: PagamentoVenda) -> date:
 def registrar_recebiveis_cartao(
     *,
     actor: Any,
-    pagamentos: Iterable[PagamentoVenda | int],
+    pagamentos: Iterable[PagamentoVenda | PagamentoTroca | int],
     reason: str = 'Aprovação de cartão no Caixa',
 ) -> tuple[RecebivelCartaoResult, ...]:
     """Criar, uma única vez, os recebíveis das parcelas aprovadas no Caixa."""
@@ -388,14 +412,12 @@ def registrar_recebiveis_cartao(
     with transaction.atomic():
         for raw_payment in pagamentos:
             payment = _payment(raw_payment)
-            locked = PagamentoVenda.objects.select_for_update().select_related(
-                'recebimento__venda',
-            ).get(pk=payment.pk)
+            locked = _locked_payment(payment)
             if locked.forma != 'CARTAO':
                 continue
             value = _money(locked.valor_aplicado, 'o valor bruto do cartão', positive=True)
             approval_date = _approval_date(locked)
-            key = f'cartao-aprovado-{locked.pk}'
+            key = f'cartao-aprovado-{"troca-" if isinstance(locked, PagamentoTroca) else ""}{locked.pk}'
             signature = _signature([
                 'CARTAO_APROVADO', locked.pk, str(value),
                 approval_date.isoformat(), normalized_reason,
@@ -409,7 +431,7 @@ def registrar_recebiveis_cartao(
                 results.append(RecebivelCartaoResult(existing, created=False))
                 continue
             source_existing = RecebivelCartao.objects.filter(
-                pagamento_origem_id=locked.pk,
+                **_payment_source(locked),
             ).first()
             if source_existing:
                 raise FinanceOperationError(
@@ -418,7 +440,7 @@ def registrar_recebiveis_cartao(
             _assert_month_open_for_correction(approval_date)
             _assert_key_available(key, RecebivelCartao)
             receivable = RecebivelCartao.objects.create(
-                pagamento_origem=locked,
+                **_payment_source(locked),
                 valor_bruto=value,
                 data_aprovacao=approval_date,
                 responsavel=actor,
@@ -445,7 +467,7 @@ def registrar_recebiveis_cartao(
 def confirmar_pix(
     *,
     actor: Any,
-    pagamento: PagamentoVenda | int,
+    pagamento: PagamentoVenda | PagamentoTroca | int | str,
     account: ContaFinanceira | int,
     confirmation_date: object,
     reason: object,
@@ -460,7 +482,8 @@ def confirmar_pix(
     key = _key(idempotency_key)
     value = _money(source.valor_aplicado, 'o valor do Pix', positive=True)
     signature = _signature([
-        'CONFIRMAR_PIX', actor.pk, source.pk, resolved.pk, str(value),
+        'CONFIRMAR_PIX_TROCA' if isinstance(source, PagamentoTroca) else 'CONFIRMAR_PIX',
+        actor.pk, source.pk, resolved.pk, str(value),
         movement.isoformat(), normalized_reason,
     ])
 
@@ -475,15 +498,13 @@ def confirmar_pix(
                         raise _conflicting_key()
                     return PixResult(existing, created=False)
                 _assert_key_available(key, RecebimentoPixFinanceiro)
-                locked_payment = PagamentoVenda.objects.select_for_update().select_related(
-                    'recebimento__venda',
-                ).get(pk=source.pk)
+                locked_payment = _locked_payment(source)
                 if locked_payment.forma != 'PIX':
                     raise FinanceOperationError(
                         'O pagamento de origem não é um Pix confirmado.',
                     )
                 source_existing = RecebimentoPixFinanceiro.objects.filter(
-                    pagamento_origem_id=locked_payment.pk,
+                    **_payment_source(locked_payment),
                 ).first()
                 if source_existing:
                     raise FinanceOperationError('Esse pagamento Pix já foi creditado.')
@@ -504,7 +525,7 @@ def confirmar_pix(
                     responsavel=actor,
                 )
                 receipt = RecebimentoPixFinanceiro.objects.create(
-                    pagamento_origem=locked_payment,
+                    **_payment_source(locked_payment),
                     conta=locked_account,
                     lancamento=ledger,
                     valor=value,
@@ -526,6 +547,9 @@ def confirmar_pix(
                         'lancamento_id': ledger.pk,
                     },
                 )
+                if isinstance(locked_payment, PagamentoVenda):
+                    for refund in PagamentoRestituicaoTroca.objects.filter(pagamento_original=locked_payment):
+                        registrar_estorno_pix_troca(actor=actor, pagamento_restituicao=refund)
                 return PixResult(receipt, created=True)
         except IntegrityError as error:
             existing = RecebimentoPixFinanceiro.objects.filter(
@@ -536,7 +560,7 @@ def confirmar_pix(
                     raise _conflicting_key() from error
                 return PixResult(existing, created=False)
             if RecebimentoPixFinanceiro.objects.filter(
-                pagamento_origem_id=source.pk,
+                **_payment_source(source),
             ).exists():
                 raise FinanceOperationError(
                     'Esse pagamento Pix já foi creditado.',
@@ -633,8 +657,10 @@ def liquidar_cartao(
                     raise FinanceOperationError('Essa parcela de cartão já foi liquidada.')
                 if any(item.cancelado for item in locked_receivables):
                     raise FinanceOperationError('Esse recebível de cartão foi cancelado.')
+                if any(fee > by_id[pk].valor_pendente for pk, fee in normalized):
+                    raise FinanceOperationError('A taxa não pode superar o saldo da parcela.')
                 gross = sum(
-                    (by_id[receivable_id].valor_bruto for receivable_id, _fee in normalized),
+                    (by_id[receivable_id].valor_pendente for receivable_id, _fee in normalized),
                     Decimal('0.00'),
                 ).quantize(Decimal('0.01'))
                 fees = sum((fee for _receivable_id, fee in normalized), Decimal('0.00'))
@@ -671,9 +697,9 @@ def liquidar_cartao(
                     LiquidacaoCartao.objects.create(
                         deposito=deposit,
                         recebivel=item,
-                        valor_bruto=item.valor_bruto,
+                        valor_bruto=item.valor_pendente,
                         taxas=fee,
-                        valor_liquido=(item.valor_bruto - fee).quantize(Decimal('0.01')),
+                        valor_liquido=(item.valor_pendente - fee).quantize(Decimal('0.01')),
                     )
                 _audit(
                     action='LIQUIDAR_CARTAO',
@@ -761,7 +787,7 @@ def cancelar_recebiveis_cartao_por_reversao(
 
 
 def registrar_estorno_cartao(
-    *, actor: Any, pagamento_restituicao: PagamentoRestituicao | int,
+    *, actor: Any, pagamento_restituicao: PagamentoRestituicao | PagamentoRestituicaoTroca | int,
     movement_date: object | None = None, reason: object | None = None,
 ) -> EstornoRecebimentoCartaoResult | None:
     """Vincular uma restituição de cartão ao cancelamento ou débito financeiro."""
@@ -769,7 +795,7 @@ def registrar_estorno_cartao(
     try:
         refund = (
             pagamento_restituicao
-            if isinstance(pagamento_restituicao, PagamentoRestituicao)
+            if isinstance(pagamento_restituicao, (PagamentoRestituicao, PagamentoRestituicaoTroca))
             else PagamentoRestituicao.objects.select_related(
                 'restituicao', 'pagamento_original',
             ).get(pk=int(pagamento_restituicao))
@@ -790,7 +816,7 @@ def registrar_estorno_cartao(
         reason if reason is not None else refund.restituicao.motivo,
         'um motivo', 500,
     )
-    key = f'estorno-cartao-{refund.pk}'
+    key = f'estorno-cartao-{"troca-" if isinstance(refund, PagamentoRestituicaoTroca) else ""}{refund.pk}'
     signature = _signature([
         'ESTORNAR_RECEBIMENTO_CARTAO', actor.pk, refund.pk, receivable.pk,
         str(refund.valor), movement.isoformat(), normalized_reason,
@@ -814,7 +840,7 @@ def registrar_estorno_cartao(
             ).filter(recebivel_id=locked_receivable.pk).first()
             ledger = None
             if liquidation is None:
-                if not locked_receivable.cancelado:
+                if refund.valor >= locked_receivable.valor_pendente and not locked_receivable.cancelado:
                     locked_receivable.cancelado = True
                     locked_receivable.cancelado_em = movement
                     locked_receivable.save(update_fields=('cancelado', 'cancelado_em'))
@@ -831,7 +857,7 @@ def registrar_estorno_cartao(
                     responsavel=actor,
                 )
             reversal = EstornoRecebimentoCartao.objects.create(
-                pagamento_restituicao=refund,
+                **({'pagamento_restituicao_troca': refund} if isinstance(refund, PagamentoRestituicaoTroca) else {'pagamento_restituicao': refund}),
                 recebivel=locked_receivable,
                 lancamento=ledger,
                 valor=_money(refund.valor, 'o valor da restituição', positive=True),
@@ -864,7 +890,7 @@ def registrar_estorno_cartao(
                 raise _conflicting_key() from error
             return EstornoRecebimentoCartaoResult(existing, created=False)
         source_existing = EstornoRecebimentoCartao.objects.filter(
-            pagamento_restituicao_id=refund.pk,
+            **({'pagamento_restituicao_troca': refund} if isinstance(refund, PagamentoRestituicaoTroca) else {'pagamento_restituicao': refund}),
         ).first()
         if source_existing:
             raise FinanceOperationError(
@@ -1068,6 +1094,10 @@ def previsualizar_fechamento(
         ).values_list('lancamento_id', flat=True),
     )
 
+    refund_ledger_ids.update(EstornoPixTroca.objects.filter(
+        lancamento_id__in=ledger_ids,
+    ).values_list('lancamento_id', flat=True))
+
     account_previews: list[FechamentoContaPreview] = []
     for account in accounts:
         opening = account.saldo_inicial
@@ -1183,10 +1213,14 @@ def previsualizar_fechamento(
             or (deposit_date is not None and deposit_date <= end_date)
         ):
             continue
-        card_a_receber += receivable.valor_bruto
+        prior_refunds = receivable.estornos_recebimento.filter(
+            lancamento__isnull=True, data_movimento__lte=end_date,
+        ).aggregate(total=Sum('valor'))['total'] or Decimal('0.00')
+        pending_value = (receivable.valor_bruto - prior_refunds).quantize(Decimal('0.01'))
+        card_a_receber += pending_value
         card_signature_rows.append([
             receivable.pk,
-            str(receivable.valor_bruto),
+            str(pending_value),
             receivable.data_aprovacao.isoformat(),
             cancellation_date.isoformat() if cancellation_date else None,
             deposit_date.isoformat() if deposit_date else None,
@@ -2227,3 +2261,39 @@ def estornar_pagamento_conta_pagar(
                 raise
             sleep(0.01 * (attempt + 1))
     raise AssertionError('A rotina de estorno de pagamento terminou sem resultado.')
+
+
+def registrar_estorno_pix_troca(*, actor: Any, pagamento_restituicao: PagamentoRestituicaoTroca):
+    """Debitar a conta do Pix de origem uma única vez após restituição de troca."""
+    _require_manager(actor)
+    refund = pagamento_restituicao
+    if refund.pagamento_original.forma != 'PIX':
+        return None
+    with transaction.atomic():
+        receipt = RecebimentoPixFinanceiro.objects.select_for_update().filter(
+            pagamento_origem_id=refund.pagamento_original_id,
+        ).first()
+        if receipt is None:
+            return None
+        key = f'estorno-pix-troca-{refund.pk}'
+        existing = EstornoPixTroca.objects.filter(pagamento_restituicao=refund).first()
+        if existing:
+            return existing
+        movement = max(timezone.localdate(refund.restituicao.criada_em), receipt.data_confirmacao)
+        _assert_month_open_for_correction(movement)
+        _validate_movement_date(receipt.conta, movement)
+        signature = _signature(['ESTORNAR_PIX_TROCA', refund.pk, receipt.pk, str(refund.valor)])
+        _assert_key_available(key, EstornoPixTroca)
+        ledger = LancamentoFinanceiro.objects.create(
+            conta=receipt.conta, direcao=LancamentoFinanceiro.Direcao.DEBITO,
+            valor=refund.valor, data_movimento=movement,
+            descricao='Restituição Pix de troca', motivo=refund.restituicao.motivo, responsavel=actor,
+        )
+        reversal = EstornoPixTroca.objects.create(
+            pagamento_restituicao=refund, recebimento_pix=receipt, lancamento=ledger,
+            valor=refund.valor, data_movimento=movement, responsavel=actor,
+            motivo=refund.restituicao.motivo, chave_idempotencia=key, assinatura=signature,
+        )
+        _audit(action='ESTORNAR_PIX_TROCA', actor=actor, reason=refund.restituicao.motivo,
+               key=key, signature=signature, data={'pagamento_restituicao_troca_id': refund.pk, 'lancamento_id': ledger.pk})
+        return reversal

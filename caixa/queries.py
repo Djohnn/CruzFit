@@ -10,6 +10,8 @@ from django.db.models import (
     BigIntegerField,
     Case,
     CharField,
+    DecimalField,
+    ExpressionWrapper,
     F,
     QuerySet,
     Sum,
@@ -21,15 +23,19 @@ from django.db.models.functions import Cast, Concat
 from .models import (
     FechamentoCaixa,
     PagamentoRestituicao,
+    PagamentoRestituicaoTroca,
+    PagamentoTroca,
     PagamentoVenda,
+    RecebimentoTroca,
     RecebimentoVenda,
+    RestituicaoTroca,
     SangriaCaixa,
     SessaoCaixa,
     SuprimentoCaixa,
 )
 
 HISTORY_PER_PAGE = 20
-HISTORY_TYPES = {"", "RECEBIMENTO", "SUPRIMENTO", "SANGRIA"}
+HISTORY_TYPES = {"", "RECEBIMENTO", "TROCA", "RESTITUICAO", "SUPRIMENTO", "SANGRIA"}
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,17 @@ def extrato_fechamento(
         .annotate(total=Sum('valor'))
         .values_list('pagamento_original__forma', 'pagamento_original__modalidade_cartao', 'total')
     }
+    trocas = PagamentoTroca.objects.filter(recebimento__sessao=sessao)
+    restituidas_troca = PagamentoRestituicaoTroca.objects.filter(restituicao__sessao=sessao)
+    if fechamento:
+        trocas = trocas.filter(recebimento__criada_em__lte=fechamento.fechada_em)
+        restituidas_troca = restituidas_troca.filter(restituicao__criada_em__lte=fechamento.fechada_em)
+    for payment in trocas:
+        key = (payment.forma, payment.modalidade_cartao)
+        vendidos[key] = vendidos.get(key, Decimal('0.00')) + payment.valor_aplicado
+    for refund in restituidas_troca.select_related('pagamento_original'):
+        key = (refund.pagamento_original.forma, refund.pagamento_original.modalidade_cartao)
+        devolvidos[key] = devolvidos.get(key, Decimal('0.00')) + refund.valor
     totais_gravados = fechamento.totais_por_forma if fechamento else {}
     zero = Decimal('0.00')
     pagamentos = []
@@ -171,6 +188,7 @@ def _history_rows(
     value_field: str,
     reference_prefix: str,
     link_id_field: str | None = None,
+    amount_sign: int = 1,
 ) -> QuerySet:
     reference = Concat(
         Value(reference_prefix),
@@ -196,7 +214,10 @@ def _history_rows(
     )
     return queryset.order_by().annotate(
         tipo=Value(kind, output_field=CharField()),
-        quantia=F(value_field),
+        quantia=ExpressionWrapper(
+            F(value_field) * Value(amount_sign),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        ),
         responsavel_nome=display_name,
         referencia=reference,
         link_id=link_id,
@@ -234,6 +255,21 @@ def historico_sessao(
             reference_prefix="Venda #",
             link_id_field="venda_id",
         )
+        exchange_rows = _history_rows(
+            RecebimentoTroca.objects.filter(sessao=sessao),
+            kind="TROCA",
+            value_field="valor_total",
+            reference_prefix="Venda #",
+            link_id_field="troca__venda_id",
+        )
+        exchange_refund_rows = _history_rows(
+            RestituicaoTroca.objects.filter(sessao=sessao),
+            kind="RESTITUICAO",
+            value_field="valor_total",
+            reference_prefix="Venda #",
+            link_id_field="troca__venda_id",
+            amount_sign=-1,
+        )
         supply_rows = _history_rows(
             SuprimentoCaixa.objects.filter(sessao=sessao),
             kind="SUPRIMENTO",
@@ -248,6 +284,8 @@ def historico_sessao(
         )
         rows_by_type = {
             "RECEBIMENTO": _filter_history_rows(receipt_rows, filters),
+            "TROCA": _filter_history_rows(exchange_rows, filters),
+            "RESTITUICAO": _filter_history_rows(exchange_refund_rows, filters),
             "SUPRIMENTO": _filter_history_rows(supply_rows, filters),
             "SANGRIA": _filter_history_rows(withdrawal_rows, filters),
         }
@@ -257,6 +295,8 @@ def historico_sessao(
             rows = (
                 rows_by_type["RECEBIMENTO"]
                 .union(
+                    rows_by_type["TROCA"],
+                    rows_by_type["RESTITUICAO"],
                     rows_by_type["SUPRIMENTO"],
                     rows_by_type["SANGRIA"],
                     all=True,

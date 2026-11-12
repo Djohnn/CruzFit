@@ -6,6 +6,7 @@
 {% block 'head' %}
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
     <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
+    <link rel="stylesheet" href="{% static 'vendas/css/troca.css' %}">
 {% endblock %}
 
 {% block 'body' %}
@@ -17,6 +18,7 @@
         </div>
         <div class="sale-actions-inline">
             <a class="btn btn-primary" href="{% url 'vendas:venda_comprovante' venda.pk %}">Abrir comprovante</a>
+            {% if is_manager %}<a class="btn btn-success" href="{% url 'vendas:trocar_venda' venda.pk %}">Trocar produto</a>{% endif %}
             <a class="btn btn-outline-light" href="{% url 'vendas:devolver_venda' venda.pk %}">Devolver itens</a>
             <a class="btn btn-outline-danger" href="{% url 'vendas:cancelar_venda' venda.pk %}">Cancelar venda</a>
             <a class="btn btn-outline-light" href="{% url 'vendas:vendas' %}">Voltar às vendas</a>
@@ -56,6 +58,30 @@
         </section>
         {% endif %}
     </section>
+
+    {% if trocas %}
+    <section class="surface-section exchange-history" aria-labelledby="exchange-history-heading">
+        <div class="section-heading-row">
+            <div>
+                <h2 id="exchange-history-heading">Trocas registradas</h2>
+                <p class="section-help">Cada troca mantém os itens retornados, os substitutos e a diferença financeira.</p>
+            </div>
+        </div>
+        {% for troca in trocas %}
+        <article class="refund-history-row exchange-history-row">
+            <div>
+                <h3>Troca #{{ troca.pk }} · {{ troca.criada_em|date:"d/m/Y H:i" }}</h3>
+                <p>Crédito R$ {{ troca.credito_total|floatformat:2 }} · novos R$ {{ troca.valor_novos|floatformat:2 }}</p>
+                <p class="section-help">{{ troca.motivo }}</p>
+            </div>
+            <div class="exchange-history-result">
+                {% if troca.diferenca > 0 %}<strong>Recebido R$ {{ troca.diferenca|floatformat:2 }}</strong>{% elif troca.diferenca < 0 %}<strong>Restituído R$ {{ troca.diferenca|floatformat:2 }}</strong>{% else %}<strong>Troca direta</strong>{% endif %}
+                <small>Sessão #{{ troca.sessao_id }}</small>
+            </div>
+        </article>
+        {% endfor %}
+    </section>
+    {% endif %}
 
     {% if cancelamento_pendente or devolucoes_pendentes %}
     <section class="surface-section refund-history" aria-labelledby="refund-history-heading">

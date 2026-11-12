@@ -23,6 +23,7 @@ from .queries import (
     historico_conta,
     listar_contas,
     pix_pendentes,
+    pix_trocas_pendentes,
     recebiveis_cartao_pendentes,
     receita_operacional_consolidada,
     saldo_consolidado,
@@ -100,6 +101,7 @@ def _base_context(request: HttpRequest) -> dict[str, object]:
     return {
         'contas': ContaFinanceira.objects.filter(ativo=True).order_by('nome', 'pk'),
         'pix_pendentes': pix_pendentes(),
+        'pix_trocas_pendentes': pix_trocas_pendentes(),
         'recebiveis_cartao': recebiveis_cartao_pendentes(),
         'today': date.today().isoformat(),
         'chave_idempotencia': request.POST.get('chave_idempotencia') or uuid.uuid4().hex,
@@ -115,6 +117,7 @@ def painel(request: HttpRequest) -> HttpResponse:
         'saldo_consolidado': saldo_consolidado(),
         'receita_operacional': receita_operacional_consolidada(),
         'pix_pendentes': pix_pendentes(),
+        'pix_trocas_pendentes': pix_trocas_pendentes(),
         'recebiveis_cartao': recebiveis_cartao_pendentes(),
         'contas_pagar_abertas': payables['abertas'],
         'contas_pagar_vencidas': payables['vencidas'],

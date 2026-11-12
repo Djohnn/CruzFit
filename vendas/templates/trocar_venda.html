@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block 'title' %}Trocar produto · Venda #{{ venda.pk }} | Cruz Fit{% endblock %}
+{% block 'head' %}
+    <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
+    <link rel="stylesheet" href="{% static 'vendas/css/troca.css' %}">
+{% endblock %}
+
+{% block 'body' %}
+<main id="conteudo" tabindex="-1" class="container exchange-page">
+    <header class="page-heading exchange-page-heading">
+        <div>
+            <p class="eyebrow">Operação auditada</p>
+            <h1>Trocar produto · Venda #{{ venda.pk }}</h1>
+            <p>Selecione o que retornou e escolha os substitutos. O sistema calcula somente a diferença.</p>
+        </div>
+        <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' venda.pk %}">Voltar à venda</a>
+    </header>
+
+    {% if messages %}
+    <div class="feedback-stack" aria-live="polite">
+        {% for message in messages %}<div class="alert {{ message.tags }}" role="alert">{{ message }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if legacy_blocked %}
+    <section class="surface-section exchange-blocked" aria-labelledby="exchange-blocked-heading">
+        <h2 id="exchange-blocked-heading">Troca indisponível</h2>
+        <p role="alert">Esta venda antiga não possui recebimento registrado no Caixa. A troca pelo sistema não está disponível.</p>
+        <p class="section-help">O histórico foi preservado e nenhum recebimento retroativo será criado.</p>
+        <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' venda.pk %}">Voltar</a>
+    </section>
+    {% elif not sessao %}
+    <section class="surface-section exchange-blocked" aria-labelledby="exchange-closed-heading">
+        <h2 id="exchange-closed-heading">Caixa fechado</h2>
+        <p role="alert">Abra uma sessão de Caixa antes de registrar uma troca.</p>
+        <a class="btn btn-primary" href="{% url 'caixa:abrir' %}">Abrir Caixa</a>
+    </section>
+    {% else %}
+    <form method="post" class="exchange-form" id="exchange-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+        <input type="hidden" name="revisao_assinatura" value="{{ review_signature }}">
+
+        <section class="surface-section" aria-labelledby="exchange-origin-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="exchange-origin-heading">1. Produtos originais</h2>
+                    <p class="section-help">Marque os itens que retornaram e informe a quantidade.</p>
+                </div>
+            </div>
+            <div class="exchange-source-list">
+                {% for row in source_rows %}
+                <label class="exchange-source-row" data-source-row>
+                    <span class="exchange-source-check">
+                        <input type="checkbox" name="item_venda" value="{{ row.item.pk }}" {% if row.selected %}checked{% endif %}>
+                        <span>
+                            <strong>{{ row.item.produto.nome }}</strong>
+                            <small>Vendido: {{ row.item.quantidade|floatformat:2 }} · R$ {{ row.item.preco_unitario|floatformat:2 }}</small>
+                        </span>
+                    </span>
+                    <span class="exchange-field">
+                        <span class="exchange-field-label">Quantidade</span>
+                        <input class="form-control" type="number" name="quantidade_origem_{{ row.item.pk }}" min="0.01" max="{{ row.item.quantidade }}" step="0.01" value="{{ row.quantity }}" inputmode="decimal" {% if not row.selected %}disabled{% endif %}>
+                    </span>
+                </label>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="surface-section" aria-labelledby="exchange-destination-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="exchange-destination-heading">2. Produtos substitutos</h2>
+                    <p class="section-help">A busca mostra o catálogo atual; preço e estoque serão conferidos novamente no servidor.</p>
+                </div>
+            </div>
+            <div class="exchange-search-field">
+                <label for="exchange-product-query">Buscar por nome ou código</label>
+                <input id="exchange-product-query" class="form-control" type="search" autocomplete="off" aria-expanded="false" aria-controls="exchange-product-results" placeholder="Digite para buscar um produto">
+                <div id="exchange-product-results" class="exchange-search-results" role="listbox" hidden></div>
+                <p class="section-help" id="exchange-search-status" aria-live="polite">Escolha um produto para adicionar.</p>
+            </div>
+            <div id="exchange-destination-lines" class="exchange-destination-list">
+                {% for row in destination_rows %}
+                <div class="exchange-destination-row" data-destination-row {% if not row.product_id %}hidden{% endif %}>
+                    <input type="hidden" name="produto_substituto" value="{{ row.product_id }}">
+                    <div class="exchange-destination-product">
+                        <strong data-selected-product>Selecione um produto</strong>
+                        <small data-selected-stock></small>
+                    </div>
+                    <label class="exchange-field"><span class="exchange-field-label">Quantidade</span><input class="form-control" type="number" name="quantidade_substituto" min="0.01" step="0.01" value="{{ row.quantity }}" inputmode="decimal" required></label>
+                    <button class="btn btn-outline-danger exchange-remove-button" type="button" aria-label="Remover produto substituto">Remover</button>
+                </div>
+                {% endfor %}
+            </div>
+            <p class="exchange-empty-state" id="exchange-destination-empty">Nenhum substituto selecionado.</p>
+        </section>
+
+        <section class="surface-section" aria-labelledby="exchange-payment-heading">
+            <div class="section-heading-row">
+                <div>
+                    <h2 id="exchange-payment-heading">3. Diferença e Caixa</h2>
+                    <p class="section-help">Se houver diferença a pagar, informe somente o valor calculado. Restituições usam as formas originais.</p>
+                </div>
+            </div>
+            <div class="exchange-payment-list" id="exchange-payment-lines">
+                {% for row in payment_rows %}
+                <div class="exchange-payment-row" data-payment-row>
+                    <label class="exchange-field"><span class="exchange-field-label">Forma</span><select class="form-control" name="forma_parcela"><option value="">Selecione</option>{% for value, label in payment_forms %}<option value="{{ value }}" {% if row.forma == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+                    <label class="exchange-field"><span class="exchange-field-label">Valor aplicado</span><input class="form-control" type="number" name="valor_aplicado" min="0.01" step="0.01" value="{{ row.valor_aplicado }}" inputmode="decimal"></label>
+                    <label class="exchange-field"><span class="exchange-field-label">Entregue</span><input class="form-control" type="number" name="valor_entregue" min="0" step="0.01" value="{{ row.valor_entregue }}" inputmode="decimal"></label>
+                    <button class="btn btn-outline-danger exchange-remove-button" type="button">Remover</button>
+                </div>
+                {% endfor %}
+            </div>
+            <button class="btn btn-outline-light" id="exchange-add-payment" type="button">Adicionar forma</button>
+            <label class="exchange-confirmation-check"><input type="checkbox" name="confirmacao_manual" {% if confirmacao_manual %}checked{% endif %}> Confirmo manualmente restituições por Pix ou cartão.</label>
+        </section>
+
+        <section class="surface-section" aria-labelledby="exchange-reason-heading">
+            <h2 id="exchange-reason-heading">4. Motivo</h2>
+            <label for="exchange-reason">Motivo obrigatório</label>
+            <textarea id="exchange-reason" class="form-control" name="motivo" rows="3" maxlength="500" required>{{ motivo }}</textarea>
+            <div class="exchange-actions">
+                <a class="btn btn-outline-light" href="{% url 'vendas:venda_detalhe' venda.pk %}">Cancelar</a>
+                <button class="btn btn-primary" type="submit" name="acao" value="revisar">Revisar troca</button>
+            </div>
+        </section>
+
+        {% if preview %}
+        <dialog class="exchange-review-dialog" open aria-labelledby="exchange-review-heading">
+            <div class="exchange-review-content">
+                <header class="exchange-review-header">
+                    <p class="eyebrow">Revisão assinada pelo servidor</p>
+                    <h2 id="exchange-review-heading">Confira a troca</h2>
+                    {% if preview.difference > 0 and not preview.payment_lines %}
+                    <p>Informe o pagamento de R$ {{ preview_difference_display|floatformat:2 }}. Volte ao formulário e revise novamente após preencher.</p>
+                    {% else %}
+                    <p>Volte para ajustar os campos ou confirme para registrar a operação atômica.</p>
+                    {% endif %}
+                </header>
+                <dl class="exchange-review-summary">
+                    <div><dt>Crédito dos retornos</dt><dd>R$ {{ preview.credit_total|floatformat:2 }}</dd></div>
+                    <div><dt>Substitutos</dt><dd>R$ {{ preview.destination_total|floatformat:2 }}</dd></div>
+                    <div class="exchange-review-difference"><dt>{% if preview.difference > 0 %}Receber{% elif preview.difference < 0 %}Restituir{% else %}Diferença{% endif %}</dt><dd>R$ {{ preview_difference_display|floatformat:2 }}</dd></div>
+                </dl>
+                <div class="exchange-review-columns">
+                    <section><h3>Retornam</h3><ul>{% for line in preview.source_lines %}<li>{{ line.product_name }} · {{ line.quantity|floatformat:2 }} · crédito R$ {{ line.credit_total|floatformat:2 }}</li>{% endfor %}</ul></section>
+                    <section><h3>Saem</h3><ul>{% for line in preview.destination_lines %}<li>{{ line.product_name }} · {{ line.quantity|floatformat:2 }} · R$ {{ line.total|floatformat:2 }}</li>{% endfor %}</ul></section>
+                </div>
+                {% if preview.difference > 0 %}
+                {% if preview.payment_lines %}
+                <section class="exchange-review-finance"><h3>Recebimento da diferença</h3><ul>{% for line in preview.payment_lines %}<li>{{ line.forma_label }} · R$ {{ line.valor_aplicado|floatformat:2 }}{% if line.troco %} · troco R$ {{ line.troco|floatformat:2 }}{% endif %}</li>{% endfor %}</ul></section>
+                {% endif %}
+                {% elif preview.difference < 0 %}
+                <section class="exchange-review-finance"><h3>Restituição pelas formas originais</h3><ul>{% for line in preview.payment_lines %}<li>{{ line.forma_display }} · R$ {{ line.valor|floatformat:2 }}</li>{% endfor %}</ul></section>
+                {% else %}<p class="exchange-review-zero">Troca direta: não haverá recebimento nem restituição.</p>{% endif %}
+                <div class="exchange-review-actions">
+                    <button class="btn btn-outline-light" type="button" data-close-exchange-review>Voltar</button>
+                    {% if preview.difference <= 0 or preview.payment_lines %}
+                    <button class="btn btn-success" type="submit" name="acao" value="confirmar">Confirmar troca</button>
+                    {% endif %}
+                </div>
+            </div>
+        </dialog>
+        {% endif %}
+    </form>
+    {% endif %}
+</main>
+{{ catalog|json_script:"exchange-product-catalog" }}
+{% if not legacy_blocked and sessao %}<script src="{% static 'vendas/js/troca.js' %}"></script>{% endif %}
+{% endblock %}

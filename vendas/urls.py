@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import troca_views, views
 
 urlpatterns = [
     path('', views.vendas, name='vendas'),
@@ -10,4 +10,5 @@ urlpatterns = [
          name='venda_comprovante'),
     path('<int:pk>/cancelar/', views.cancelar_venda, name='cancelar_venda'),
     path('<int:pk>/devolver/', views.devolver_venda, name='devolver_venda'),
+    path('<int:pk>/trocar/', troca_views.trocar_venda, name='trocar_venda'),
 ]

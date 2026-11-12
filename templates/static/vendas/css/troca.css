@@ -1,0 +1,299 @@
+.exchange-page {
+    max-width: 1120px;
+}
+
+.exchange-history-row {
+    align-items: center;
+}
+
+.exchange-history-result {
+    display: grid;
+    gap: 0.2rem;
+    text-align: right;
+}
+
+.exchange-history-result strong {
+    color: var(--brand-gold-light);
+}
+
+.exchange-history-result small {
+    color: var(--brand-muted);
+}
+
+.exchange-page-heading {
+    align-items: flex-end;
+}
+
+.exchange-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.exchange-source-list,
+.exchange-destination-list,
+.exchange-payment-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.exchange-source-row,
+.exchange-destination-row,
+.exchange-payment-row {
+    align-items: end;
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem;
+    border: 1px solid var(--brand-border);
+    border-radius: 10px;
+    background: var(--brand-surface);
+}
+
+.exchange-source-row {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 210px);
+}
+
+.exchange-destination-row {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 190px) auto;
+}
+
+.exchange-payment-row {
+    grid-template-columns: minmax(150px, 1fr) minmax(130px, 180px) minmax(130px, 180px) auto;
+}
+
+.exchange-source-check {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.exchange-source-check input,
+.exchange-confirmation-check input {
+    accent-color: var(--brand-gold-light);
+    flex: 0 0 auto;
+    height: 1.15rem;
+    width: 1.15rem;
+}
+
+.exchange-source-check strong,
+.exchange-destination-product strong {
+    color: var(--brand-cream);
+    display: block;
+}
+
+.exchange-source-check small,
+.exchange-destination-product small {
+    color: var(--brand-muted);
+    display: block;
+    margin-top: 0.25rem;
+}
+
+.exchange-field {
+    display: grid;
+    gap: 0.3rem;
+}
+
+.exchange-field-label,
+.exchange-search-field > label {
+    color: var(--brand-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.exchange-search-field {
+    position: relative;
+}
+
+.exchange-search-results {
+    background: var(--brand-surface);
+    border: 1px solid var(--brand-gold-deep);
+    border-radius: 10px;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.36);
+    display: grid;
+    gap: 0.25rem;
+    left: 0;
+    max-height: 16rem;
+    overflow-y: auto;
+    padding: 0.35rem;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 1.6rem);
+    z-index: 20;
+}
+
+.exchange-search-option {
+    min-height: 44px;
+    padding: 0.65rem 0.75rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--brand-cream);
+    text-align: left;
+}
+
+.exchange-search-option:hover,
+.exchange-search-option:focus-visible {
+    background: rgba(232, 173, 54, 0.14);
+    color: var(--brand-cream);
+    outline: 2px solid var(--brand-gold-light);
+    outline-offset: -2px;
+}
+
+.exchange-empty-state {
+    color: var(--brand-muted);
+    margin: 0.75rem 0 0;
+}
+
+.exchange-confirmation-check {
+    align-items: center;
+    color: var(--brand-muted);
+    display: flex;
+    gap: 0.55rem;
+    margin: 1rem 0 0;
+}
+
+.exchange-actions,
+.exchange-review-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1.25rem;
+}
+
+.exchange-blocked {
+    max-width: 720px;
+}
+
+.exchange-blocked p[role="alert"] {
+    color: var(--brand-cream);
+    font-weight: 700;
+}
+
+.exchange-review-dialog {
+    width: min(760px, calc(100vw - 2rem));
+    max-width: 760px;
+    padding: 0;
+    border: 1px solid var(--brand-border);
+    border-radius: 16px;
+    background: var(--brand-surface);
+    color: var(--brand-cream);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.exchange-review-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.exchange-review-content {
+    padding: 1.5rem;
+}
+
+.exchange-review-header {
+    border-bottom: 1px solid var(--brand-border);
+    padding-bottom: 1rem;
+}
+
+.exchange-review-header p:last-child {
+    color: var(--brand-muted);
+    margin-bottom: 0;
+}
+
+.exchange-review-summary {
+    display: grid;
+    gap: 0.65rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 1.25rem 0;
+}
+
+.exchange-review-summary div {
+    padding: 0.85rem;
+    border-left: 2px solid var(--brand-gold);
+    background: rgba(232, 173, 54, 0.08);
+}
+
+.exchange-review-summary dt,
+.exchange-review-summary dd {
+    margin: 0;
+}
+
+.exchange-review-summary dt {
+    color: var(--brand-muted);
+    font-size: 0.82rem;
+}
+
+.exchange-review-summary dd {
+    color: var(--brand-cream);
+    font-weight: 800;
+    margin-top: 0.2rem;
+}
+
+.exchange-review-summary .exchange-review-difference dd {
+    color: var(--brand-gold-light);
+    font-size: 1.15rem;
+}
+
+.exchange-review-columns {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.exchange-review-columns section,
+.exchange-review-finance {
+    border-top: 1px solid var(--brand-border);
+    padding-top: 0.85rem;
+}
+
+.exchange-review-columns h3,
+.exchange-review-finance h3 {
+    font-size: 1rem;
+}
+
+.exchange-review-columns ul,
+.exchange-review-finance ul {
+    color: var(--brand-muted);
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.exchange-review-zero {
+    border-top: 1px solid var(--brand-border);
+    color: var(--brand-success);
+    margin: 0;
+    padding-top: 0.85rem;
+}
+
+@media (max-width: 767.98px) {
+    .exchange-page-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .exchange-source-row,
+    .exchange-destination-row,
+    .exchange-payment-row,
+    .exchange-history-row,
+    .exchange-review-summary,
+    .exchange-review-columns {
+        grid-template-columns: 1fr;
+    }
+
+    .exchange-destination-row .exchange-remove-button,
+    .exchange-payment-row .exchange-remove-button {
+        width: 100%;
+    }
+
+    .exchange-actions,
+    .exchange-review-actions {
+        justify-content: flex-start;
+    }
+
+    .exchange-review-content {
+        padding: 1rem;
+    }
+
+    .exchange-history-result {
+        text-align: left;
+    }
+}

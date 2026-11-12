@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
-from caixa.models import PagamentoVenda
+from caixa.models import PagamentoTroca, PagamentoVenda
 
 from .models import ContaFinanceira, LancamentoFinanceiro, RecebivelCartao
 from .services import calcular_saldo
@@ -28,12 +28,19 @@ def pix_pendentes():
     ).select_related('recebimento__venda').order_by('recebimento__criada_em', 'pk')
 
 
+def pix_trocas_pendentes():
+    return PagamentoTroca.objects.filter(
+        forma='PIX', recebimento_pix_financeiro__isnull=True,
+    ).select_related('recebimento__troca__venda').order_by('recebimento__criada_em', 'pk')
+
+
 def recebiveis_cartao_pendentes():
     return RecebivelCartao.objects.filter(
         cancelado=False,
         liquidacao__isnull=True,
     ).select_related(
         'pagamento_origem__recebimento__venda',
+        'pagamento_troca__recebimento__troca__venda',
     ).order_by('data_aprovacao', 'pk')
 
 
