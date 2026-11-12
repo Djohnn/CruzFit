@@ -55,6 +55,17 @@ class InstallationSecretTests(TestCase):
             self.assertEqual(len(set(keys)), 1)
             self.assertEqual(key_path.read_text(encoding="ascii"), keys[0])
 
+    def test_windows_transient_key_read_denial_preserves_existing_key(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Windows key file contention")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            key_path = Path(temp_dir) / "installation.key"
+            key = "k" * 64
+            key_path.write_text(key, encoding="ascii")
+            with patch.object(Path, "read_text", side_effect=[PermissionError("busy"), key]):
+                self.assertEqual(load_or_create_secret_key(key_path), key)
+            self.assertEqual(key_path.read_text(encoding="ascii"), key)
+
     def test_storage_failure_does_not_return_or_persist_a_fallback_key(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             key_path = Path(temp_dir) / "installation.key"

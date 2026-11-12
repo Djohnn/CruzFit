@@ -7,6 +7,7 @@ import os
 import secrets
 import tempfile
 from pathlib import Path
+from time import sleep
 
 
 class SecretKeyStorageError(RuntimeError):
@@ -71,12 +72,22 @@ def load_or_create_secret_key(key_path: Path) -> str:
 
 
 def _read_key(key_path: Path) -> str:
-    try:
-        key = key_path.read_text(encoding="ascii").strip()
-    except FileNotFoundError:
-        raise
-    except (OSError, UnicodeError) as exc:
-        raise SecretKeyStorageError("Unable to read the installation key") from exc
+    for attempt in range(5):
+        try:
+            key = key_path.read_text(encoding="ascii").strip()
+        except FileNotFoundError:
+            raise
+        except PermissionError as exc:
+            if os.name != "nt" or attempt == 4:
+                raise SecretKeyStorageError("Unable to read the installation key") from exc
+            # A concurrent Windows rename can briefly deny access to the published file.
+            sleep(0.02 * (attempt + 1))
+        except (OSError, UnicodeError) as exc:
+            raise SecretKeyStorageError("Unable to read the installation key") from exc
+        else:
+            break
+    else:
+        raise AssertionError("Installation key read ended without a result")
     if len(key) < 50:
         raise SecretKeyStorageError("The installation key is invalid; restore it securely")
     return key
