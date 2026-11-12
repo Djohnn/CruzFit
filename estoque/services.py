@@ -232,7 +232,7 @@ def _normalize_variation_data(data: Mapping[str, object], line_number: int) -> d
 
 def _normalize_variation_lines(lines: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
     normalized_lines = []
-    seen = set()
+    seen: dict[tuple[object, object], int] = {}
     for line_number, raw_line in enumerate(lines, start=1):
         try:
             normalized = _normalize_variation_data(raw_line, line_number)
@@ -247,8 +247,15 @@ def _normalize_variation_lines(lines: Iterable[Mapping[str, object]]) -> list[di
         if identity in seen:
             raise ProductOperationError(
                 f'Linha {line_number}: combinação de cor e tamanho duplicada.',
+                code='duplicate_variation',
+                params={
+                    'line_number': line_number,
+                    'first_line_number': seen[identity],
+                    'cor': normalized['cor'],
+                    'tamanho': normalized['tamanho'],
+                },
             )
-        seen.add(identity)
+        seen[identity] = line_number
         normalized_lines.append(normalized)
     if not normalized_lines:
         raise ProductOperationError('Adicione pelo menos uma variação.')

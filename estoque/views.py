@@ -195,6 +195,7 @@ def add_produto(request):
         )
 
     if request.POST.get('tipo_cadastro') == 'variacoes':
+        variation_conflict = None
         ficha_form = FichaProdutoForm(request.POST, prefix='ficha')
         variation_formset = VariacaoProdutoFormSet(
             request.POST,
@@ -227,7 +228,10 @@ def add_produto(request):
                     idempotency_key=request.POST.get('chave_idempotencia'),
                 )
             except ProductOperationError as error:
-                ficha_form.add_error(None, str(error))
+                ficha_form.add_error(None, error)
+                for detail in error.error_list:
+                    if detail.code == 'duplicate_variation':
+                        variation_conflict = detail.params
             else:
                 first_product = result.ficha.variacoes.order_by('pk').first()
                 messages.success(
@@ -248,6 +252,7 @@ def add_produto(request):
                 'ficha_form': ficha_form,
                 'variacao_formset': variation_formset,
                 'variation_mode': True,
+                'variation_conflict': variation_conflict,
             },
         )
 

@@ -131,7 +131,17 @@
                     <p class="section-help">Cadastre o nome e os dados comuns uma vez. Cada linha terá seu próprio saldo, preço e código.</p>
                 </div>
             </div>
-            {% if ficha_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ ficha_form.non_field_errors }}</div>{% endif %}
+            {% if ficha_form.non_field_errors %}
+                <div class="alert alert-danger" role="alert">
+                    {% if variation_conflict %}
+                        <p>
+                            <a href="#id_variacoes-{{ variation_conflict.line_number|add:'-1' }}-cor" data-variation-conflict-link>Ir para a linha {{ variation_conflict.line_number }} — {{ variation_conflict.cor }}, tamanho {{ variation_conflict.tamanho }}</a>
+                            · <a href="#id_variacoes-{{ variation_conflict.first_line_number|add:'-1' }}-cor" data-variation-conflict-link>Ver primeira ocorrência na linha {{ variation_conflict.first_line_number }}</a>
+                        </p>
+                    {% endif %}
+                    {{ ficha_form.non_field_errors }}
+                </div>
+            {% endif %}
             <form action="{% url 'add_produto' %}" method="POST" class="operational-form" id="variation-registration-form">
                 {% csrf_token %}
                 <input type="hidden" name="tipo_cadastro" value="variacoes">
@@ -222,6 +232,15 @@
                 const addVariation = document.getElementById('add-variation-row');
                 const emptyVariation = document.getElementById('variation-empty-row');
                 const totalVariations = document.getElementById('id_variacoes-TOTAL_FORMS');
+                document.querySelectorAll('[data-variation-conflict-link]').forEach(function (link) {
+                    link.addEventListener('click', function (event) {
+                        const field = document.getElementById(link.hash.slice(1));
+                        if (!field) return;
+                        event.preventDefault();
+                        field.focus();
+                        field.scrollIntoView({block: 'center'});
+                    });
+                });
                 if (variationRows && addVariation && emptyVariation && totalVariations) {
                     const syncVariationRows = function () {
                         const rows = variationRows.querySelectorAll('[data-variation-row]');

@@ -6,6 +6,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from compras.services import confirmar_pedido, criar_rascunho, receber_pedido
 from vendas.services import registrar_venda
@@ -34,6 +35,41 @@ from .services import (
 
 
 class VariacoesProdutoTests(TestCase):
+    def test_cadastro_duplicado_identifica_links_para_as_duas_linhas_sem_gravar(self):
+        """Given linhas repetidas; When cadastrar; Then ligar ao conflito sem gravar."""
+        self.client.force_login(self.manager)
+        for colors in (['Preta', ' preta '], ['Preta', 'Azul', ' preta ']):
+            with self.subTest(colors=colors):
+                data = {
+                    'tipo_cadastro': 'variacoes',
+                    'chave_idempotencia': 'duplicata-com-links',
+                    'motivo': 'Conferir duplicidade',
+                    'ficha-nome': 'Camiseta QA',
+                    'ficha-preco_compra': '20.00',
+                    'ficha-preco_venda': '40.00',
+                    'variacoes-TOTAL_FORMS': str(len(colors)),
+                    'variacoes-INITIAL_FORMS': '0',
+                }
+                for index, color in enumerate(colors):
+                    data.update({
+                        f'variacoes-{index}-cor': color,
+                        f'variacoes-{index}-tamanho': 'M',
+                        f'variacoes-{index}-quantidade': '1',
+                    })
+                response = self.client.post(reverse('add_produto'), data)
+                self.assertEqual(response.status_code, 200)
+                duplicate_index = len(colors) - 1
+                self.assertContains(response, 'href="#id_variacoes-0-cor"')
+                self.assertContains(response, f'href="#id_variacoes-{duplicate_index}-cor"')
+                self.assertContains(response, f'Ir para a linha {len(colors)}')
+                html = response.content.decode()
+                self.assertLess(
+                    html.index(f'href="#id_variacoes-{duplicate_index}-cor"'),
+                    html.index('combinação de cor e tamanho duplicada'),
+                )
+                self.assertEqual(FichaProduto.objects.count(), 0)
+                self.assertEqual(Produto.objects.count(), 0)
+
     def setUp(self):
         self.manager = get_user_model().objects.create_user(
             username='gerente-variacoes', password='senha', cargo='G',
