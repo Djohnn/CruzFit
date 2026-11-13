@@ -1,7 +1,7 @@
 """Read-only Caixa queries and filtered, paginated session history."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from urllib.parse import urlencode
 
@@ -13,6 +13,7 @@ from django.db.models import (
     DecimalField,
     ExpressionWrapper,
     F,
+    Q,
     QuerySet,
     Sum,
     Value,
@@ -129,6 +130,73 @@ def extrato_fechamento(
         reforcos=sum((item.valor for tipo, item in movimentos if tipo == 'Reforço'), zero),
         sangrias=sum((item.valor for tipo, item in movimentos if tipo == 'Sangria'), zero),
         movimentos=tuple(movimentos),
+    )
+
+
+@dataclass(frozen=True)
+class FechamentoCaixaNoMes:
+    id: int
+    fechada_em: datetime
+    fundo_inicial: Decimal
+    vendas_dinheiro: Decimal
+    restituicoes: Decimal
+    reforcos: Decimal
+    sangrias: Decimal
+    esperado: Decimal
+    contado: Decimal
+    diferenca: Decimal
+    justificativa: str
+
+
+@dataclass(frozen=True)
+class ResumoCaixaMensal:
+    fechamentos: tuple[FechamentoCaixaNoMes, ...]
+    sessoes_pendentes: tuple[int, ...]
+    vendas_dinheiro: Decimal
+    restituicoes: Decimal
+    reforcos: Decimal
+    sangrias: Decimal
+    esperado: Decimal
+    contado: Decimal
+    diferenca: Decimal
+
+
+def resumo_caixa_mensal(inicio: date, fim: date) -> ResumoCaixaMensal:
+    registros = FechamentoCaixa.objects.filter(
+        fechada_em__date__range=(inicio, fim),
+    ).select_related('sessao').order_by('fechada_em', 'pk')
+    fechamentos = []
+    for registro in registros:
+        extrato = extrato_fechamento(registro.sessao, registro)
+        fechamentos.append(FechamentoCaixaNoMes(
+            id=registro.pk,
+            fechada_em=registro.fechada_em,
+            fundo_inicial=registro.sessao.fundo_inicial,
+            vendas_dinheiro=extrato.vendas_dinheiro,
+            restituicoes=extrato.devolucoes_dinheiro,
+            reforcos=extrato.reforcos,
+            sangrias=extrato.sangrias,
+            esperado=registro.dinheiro_esperado,
+            contado=registro.dinheiro_contado,
+            diferenca=registro.diferenca,
+            justificativa=registro.justificativa,
+        ))
+
+    pendentes = SessaoCaixa.objects.filter(aberta_em__date__lte=fim).filter(
+        Q(fechamento__fechada_em__date__gt=fim)
+        | Q(fechamento__isnull=True, aberta=True),
+    ).order_by('pk').values_list('pk', flat=True)
+    zero = Decimal('0.00')
+    return ResumoCaixaMensal(
+        fechamentos=tuple(fechamentos),
+        sessoes_pendentes=tuple(pendentes),
+        vendas_dinheiro=sum((item.vendas_dinheiro for item in fechamentos), zero),
+        restituicoes=sum((item.restituicoes for item in fechamentos), zero),
+        reforcos=sum((item.reforcos for item in fechamentos), zero),
+        sangrias=sum((item.sangrias for item in fechamentos), zero),
+        esperado=sum((item.esperado for item in fechamentos), zero),
+        contado=sum((item.contado for item in fechamentos), zero),
+        diferenca=sum((item.diferenca for item in fechamentos), zero),
     )
 
 

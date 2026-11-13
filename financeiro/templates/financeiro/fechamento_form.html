@@ -40,8 +40,50 @@
     </section>
     <section class="finance-section" aria-labelledby="accounts-closing-title">
       <div class="finance-section-heading"><div><p class="finance-kicker">Contas</p><h2 id="accounts-closing-title">Saldo inicial e final por conta</h2></div></div>
-      <div class="finance-account-grid">{% for account in preview.contas %}<article class="finance-account-card"><div class="finance-account-topline"><span class="finance-account-mark" aria-hidden="true"></span><span class="finance-status">Ativa</span></div><h3>{{ account.nome }}</h3><dl class="finance-account-facts"><div><dt>Saldo inicial</dt><dd>R$ {{ account.saldo_inicial|floatformat:"2g" }}</dd></div><div><dt>Saldo final</dt><dd>R$ {{ account.saldo_final|floatformat:"2g" }}</dd></div></dl></article>{% empty %}<div class="finance-empty"><p>Nenhuma conta financeira ativa.</p></div>{% endfor %}</div>
+      <p>Saldo inicial + entradas − saídas = saldo final. Transferências aparecem nas duas contas envolvidas.</p>
+      {% for account in preview.contas %}
+        <article class="finance-account-card mb-3" aria-labelledby="extrato-conta-{{ account.conta_id }}">
+          <h3 id="extrato-conta-{{ account.conta_id }}">{{ account.nome }}</h3>
+          <dl class="finance-account-facts">
+            <div><dt>Saldo inicial</dt><dd>R$ {{ account.saldo_inicial|floatformat:"2g" }}</dd></div>
+            <div><dt>Entradas no mês</dt><dd>R$ {{ account.entradas|floatformat:"2g" }}</dd></div>
+            <div><dt>Saídas no mês</dt><dd>R$ {{ account.saidas|floatformat:"2g" }}</dd></div>
+            <div><dt>Saldo final</dt><dd><strong>R$ {{ account.saldo_final|floatformat:"2g" }}</strong></dd></div>
+          </dl>
+          {% if account.movimentos %}
+            <details>
+              <summary>Ver lançamentos do mês ({{ account.movimentos|length }})</summary>
+              <div class="finance-table-wrap mt-2" tabindex="0" role="region" aria-label="Lançamentos de {{ account.nome }}">
+                <table class="finance-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Data efetiva</th><th scope="col">Tipo de lançamento</th>
+                      <th scope="col">Motivo</th><th scope="col">Entrada</th><th scope="col">Saída</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for movimento in account.movimentos %}
+                      <tr>
+                        <td>{{ movimento.data|date:"d/m/Y" }}</td>
+                        <td>{{ movimento.descricao }}</td>
+                        <td>{{ movimento.motivo }}</td>
+                        <td class="finance-money">{% if movimento.direcao == 'CREDITO' %}R$ {{ movimento.valor|floatformat:"2g" }}{% else %}—{% endif %}</td>
+                        <td class="finance-money">{% if movimento.direcao == 'DEBITO' %}R$ {{ movimento.valor|floatformat:"2g" }}{% else %}—{% endif %}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          {% else %}
+            <p>Nenhum lançamento nesta conta no período.</p>
+          {% endif %}
+        </article>
+      {% empty %}
+        <div class="finance-empty"><p>Nenhuma conta financeira ativa.</p></div>
+      {% endfor %}
     </section>
+    {% include "financeiro/_caixa_mensal.html" with caixa=preview.caixa only %}
     <section class="finance-section" aria-labelledby="obligations-closing-title">
       <div class="finance-section-heading"><div><p class="finance-kicker">Contas a pagar</p><h2 id="obligations-closing-title">Situação na data de referência</h2></div></div>
       <div class="finance-table-wrap" tabindex="0" role="region" aria-label="Obrigações do fechamento"><table class="finance-table"><thead><tr><th scope="col">Obrigação</th><th scope="col">Vencimento</th><th scope="col">Valor</th><th scope="col">Estado no fim do mês</th></tr></thead><tbody>{% for item in preview.obrigacoes %}<tr><td>{{ item.descricao }}</td><td>{{ item.data_vencimento|date:"d/m/Y" }}</td><td class="finance-money">R$ {{ item.valor|floatformat:"2g" }}</td><td>{{ item.situacao }}</td></tr>{% empty %}<tr><td colspan="4">Nenhuma obrigação vencida ou com vencimento neste período.</td></tr>{% endfor %}</tbody></table></div>

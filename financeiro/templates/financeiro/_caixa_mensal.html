@@ -1,0 +1,50 @@
+<section class="finance-section" aria-labelledby="caixa-mensal-title">
+  <h2 id="caixa-mensal-title">Dinheiro físico do Caixa</h2>
+  <p>Movimentos das sessões fechadas neste mês. Os valores deste quadro ficam separados do saldo das contas financeiras.</p>
+  {% if caixa.sessoes_pendentes %}
+    <p class="alert alert-warning">Sessões ainda abertas no fim do período e fora dos totais:
+      {% for sessao in caixa.sessoes_pendentes %}#{{ sessao }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+      <a class="alert-link" href="{% url 'caixa:painel' %}">Ver Caixa</a>
+    </p>
+  {% endif %}
+  {% if caixa.fechamentos %}
+    <dl class="finance-account-facts">
+      <div><dt>Vendas e diferenças de trocas recebidas em dinheiro</dt><dd>R$ {{ caixa.vendas_dinheiro|floatformat:"2g" }}</dd></div>
+      <div><dt>Restituições em dinheiro</dt><dd>R$ {{ caixa.restituicoes|floatformat:"2g" }}</dd></div>
+      <div><dt>Reforços</dt><dd>R$ {{ caixa.reforcos|floatformat:"2g" }}</dd></div>
+      <div><dt>Sangrias</dt><dd>R$ {{ caixa.sangrias|floatformat:"2g" }}</dd></div>
+      <div><dt>Soma do dinheiro esperado nas conferências</dt><dd>R$ {{ caixa.esperado|floatformat:"2g" }}</dd></div>
+      <div><dt>Soma do dinheiro contado nas conferências</dt><dd>R$ {{ caixa.contado|floatformat:"2g" }}</dd></div>
+      <div><dt>Diferença acumulada (contado − esperado)</dt><dd><strong>R$ {{ caixa.diferenca|floatformat:"2g" }}</strong></dd></div>
+    </dl>
+    <p>As somas das conferências incluem o fundo de cada sessão e servem para comparar a contagem com o valor esperado.</p>
+    <div class="finance-table-wrap" tabindex="0" role="region" aria-label="Conferências de dinheiro por sessão">
+      <table class="finance-table">
+        <thead><tr>
+          <th scope="col">Fechamento</th><th scope="col">Fundo</th><th scope="col">Recebido</th>
+          <th scope="col">Restituído</th><th scope="col">Reforços</th><th scope="col">Sangrias</th>
+          <th scope="col">Esperado</th><th scope="col">Contado</th><th scope="col">Diferença</th>
+          <th scope="col">Justificativa</th>
+        </tr></thead>
+        <tbody>
+          {% for item in caixa.fechamentos %}
+            <tr>
+              <th scope="row"><a href="{% url 'caixa:fechamento_detalhe' item.id %}">{{ item.fechada_em|date:"d/m/Y H:i" }} · #{{ item.id }}</a></th>
+              <td class="finance-money">R$ {{ item.fundo_inicial|floatformat:"2g" }}</td>
+              <td class="finance-money">R$ {{ item.vendas_dinheiro|floatformat:"2g" }}</td>
+              <td class="finance-money">R$ {{ item.restituicoes|floatformat:"2g" }}</td>
+              <td class="finance-money">R$ {{ item.reforcos|floatformat:"2g" }}</td>
+              <td class="finance-money">R$ {{ item.sangrias|floatformat:"2g" }}</td>
+              <td class="finance-money">R$ {{ item.esperado|floatformat:"2g" }}</td>
+              <td class="finance-money">R$ {{ item.contado|floatformat:"2g" }}</td>
+              <td class="finance-money">R$ {{ item.diferenca|floatformat:"2g" }}</td>
+              <td>{{ item.justificativa|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>Nenhuma sessão de Caixa foi fechada neste período.</p>
+  {% endif %}
+</section>

@@ -1,13 +1,21 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from threading import Barrier, Thread
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db import close_old_connections, connections
 from django.test import TestCase, TransactionTestCase
 from django.urls import NoReverseMatch, reverse
 
-from caixa.services import abrir_sessao, registrar_recebimento
+from caixa.services import (
+    abrir_sessao,
+    fechar_sessao,
+    finalizar_venda,
+    registrar_recebimento,
+    registrar_sangria,
+    registrar_suprimento,
+)
 from estoque.models import Categoria, Produto
 from financeiro import models as financeiro_models
 from financeiro import services
@@ -538,6 +546,101 @@ class FechamentoMensalViewTests(TestCase):
         self.assertContains(response, 'Cobertura')
         self.assertContains(response, 'Situação das obrigações')
         self.assertContains(response, 'Saldo disponível')
+
+    def test_monthly_statement_reconciles_each_account_and_shows_only_month_movements(self):
+        october = date(2026, 10, 1)
+        origin = services.criar_conta_financeira(
+            actor=self.manager, name='Banco do extrato', initial_balance='3000',
+            cutover_date=october, reason='Abertura', idempotency_key='conta-extrato',
+        ).conta
+        for key, day, amount, reason in (
+            ('out', date(2026, 10, 30), '100', 'Anterior ao periodo'),
+            ('nov', date(2026, 11, 1), '500', 'Aporte de novembro'),
+            ('dez', date(2026, 12, 1), '900', 'Posterior ao periodo'),
+        ):
+            services.registrar_aporte(
+                actor=self.manager, account=origin, amount=amount, movement_date=day,
+                reason=reason, idempotency_key=f'aporte-extrato-{key}',
+            )
+        services.transferir_entre_contas(
+            actor=self.manager, source=origin, target=self.account, amount='200',
+            movement_date=date(2026, 11, 30), reason='Repasse interno',
+            idempotency_key='transferencia-extrato',
+        )
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('financeiro:fechamento_mensal'), {'mes': '2026-11'})
+        statement = {row.conta_id: row for row in response.context['preview'].contas}
+        banco = statement[origin.pk]
+        destino = statement[self.account.pk]
+        self.assertEqual(
+            (banco.saldo_inicial, banco.entradas, banco.saidas, banco.saldo_final),
+            tuple(map(Decimal, ('3100', '500', '200', '3400'))),
+        )
+        self.assertEqual((destino.entradas, destino.saidas, destino.saldo_final),
+                         (Decimal('200'), Decimal('0'), Decimal('700')))
+        self.assertEqual([row.data for row in banco.movimentos],
+                         [date(2026, 11, 1), date(2026, 11, 30)])
+        self.assertContains(response, 'Aporte de novembro')
+        self.assertContains(response, 'Repasse interno', count=2)
+        self.assertContains(response, '3.400,00')
+        self.assertNotContains(response, 'Anterior ao periodo')
+        self.assertNotContains(response, 'Posterior ao periodo')
+        self.assertEqual(response.context['preview'].entradas_operacionais_liquidas, Decimal('0'))
+
+    def test_monthly_cash_counts_closed_sessions_without_inflating_bank_balance(self):
+        self.client.force_login(self.manager)
+        url = reverse('financeiro:fechamento_mensal')
+        with patch('django.utils.timezone.now', return_value=datetime(2026, 11, 30, 20, tzinfo=UTC)):
+            sessao = abrir_sessao(
+                actor=self.manager, fundo_inicial='100', motivo='Fundo', idempotency_key='caixa-mensal',
+            ).sessao
+            produto = Produto.objects.create(
+                nome='Produto mensal', categoria=Categoria.objects.create(titulo='Mensal'),
+                quantidade='10', preco_compra='10', preco_venda='70',
+            )
+            finalizar_venda(
+                actor=self.manager, sessao=sessao, product_ids=[str(produto.pk)],
+                quantities=['1'], discount='0',
+                pagamentos=[{'forma': 'DINHEIRO', 'valor_aplicado': '40', 'valor_entregue': '50'},
+                            {'forma': 'PIX', 'valor_aplicado': '30'}],
+                motivo='Venda mensal', idempotency_key='venda-caixa-mensal',
+            )
+            registrar_suprimento(
+                actor=self.manager, sessao=sessao, valor='20', motivo='Troco',
+                idempotency_key='reforco-caixa-mensal',
+            )
+            registrar_sangria(
+                actor=self.manager, sessao=sessao, valor='10', motivo='Retirada',
+                idempotency_key='sangria-caixa-mensal',
+            )
+            antes = services.previsualizar_fechamento(month=MONTH, margin='0')
+            sessao.refresh_from_db()
+            fechamento = fechar_sessao(
+                actor=self.manager, sessao=sessao, dinheiro_contado='145',
+                justificativa='Faltaram cinco reais', idempotency_key='fechar-caixa-mensal',
+            ).fechamento
+        with patch('django.utils.timezone.now', return_value=datetime(2026, 12, 1, 10, tzinfo=UTC)):
+            outra = abrir_sessao(
+                actor=self.manager, fundo_inicial='200', motivo='Dezembro', idempotency_key='caixa-dez',
+            ).sessao
+            fechar_sessao(
+                actor=self.manager, sessao=outra, dinheiro_contado='200', idempotency_key='fechar-caixa-dez',
+            )
+        resposta = self.client.get(url, {'mes': '2026-11'})
+        self.assertContains(resposta, 'Dinheiro físico do Caixa')
+        self.assertContains(resposta, 'Faltaram cinco reais')
+        self.assertContains(resposta, reverse('caixa:fechamento_detalhe', args=[fechamento.pk]))
+        previa = resposta.context['preview']
+        caixa = previa.caixa
+        self.assertEqual(len(caixa.fechamentos), 1)
+        self.assertEqual(
+            (caixa.vendas_dinheiro, caixa.reforcos, caixa.sangrias, caixa.esperado,
+             caixa.contado, caixa.diferenca),
+            tuple(map(Decimal, ('40', '20', '10', '150', '145', '-5'))),
+        )
+        self.assertEqual(previa.contas[0].saldo_final, Decimal('500'))
+        self.assertEqual(previa.entradas_operacionais_liquidas, Decimal('0'))
+        self.assertNotEqual(antes.assinatura, previa.assinatura)
 
     def test_manager_confirms_reopens_and_sees_history(self):
         self.client.force_login(self.manager)

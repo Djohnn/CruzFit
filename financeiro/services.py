@@ -5,7 +5,7 @@ import json
 import re
 import sqlite3
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from time import sleep
@@ -21,6 +21,7 @@ from caixa.models import (
     PagamentoTroca,
     PagamentoVenda,
 )
+from caixa.queries import ResumoCaixaMensal, resumo_caixa_mensal
 from compras.services import PurchaseOperationError, resumo_pedido_para_financeiro
 
 from .models import (
@@ -116,11 +117,23 @@ class EstornoPagamentoContaPagarResult:
 
 
 @dataclass(frozen=True)
+class FechamentoMovimentoPreview:
+    data: date
+    descricao: str
+    motivo: str
+    direcao: str
+    valor: Decimal
+
+
+@dataclass(frozen=True)
 class FechamentoContaPreview:
     conta_id: int
     nome: str
     saldo_inicial: Decimal
     saldo_final: Decimal
+    entradas: Decimal
+    saidas: Decimal
+    movimentos: tuple[FechamentoMovimentoPreview, ...]
 
 
 @dataclass(frozen=True)
@@ -147,6 +160,7 @@ class FechamentoMensalPreview:
     classificacao: str
     contas: tuple[FechamentoContaPreview, ...]
     obrigacoes: tuple[FechamentoObrigacaoPreview, ...]
+    caixa: ResumoCaixaMensal
     assinatura: str
 
 
@@ -1102,35 +1116,40 @@ def previsualizar_fechamento(
         lancamento_id__in=ledger_ids,
     ).values_list('lancamento_id', flat=True))
 
-    account_previews: list[FechamentoContaPreview] = []
-    for account in accounts:
-        opening = account.saldo_inicial
-        ending = account.saldo_inicial
-        for ledger in ledgers:
-            if ledger.conta_id != account.pk:
-                continue
-            if ledger.data_movimento < start_date:
-                opening += (
-                    ledger.valor
-                    if ledger.direcao == LancamentoFinanceiro.Direcao.CREDITO
-                    else -ledger.valor
-                )
-            if ledger.data_movimento <= end_date:
-                ending += (
-                    ledger.valor
-                    if ledger.direcao == LancamentoFinanceiro.Direcao.CREDITO
-                    else -ledger.valor
-                )
-        account_previews.append(FechamentoContaPreview(
-            conta_id=account.pk,
-            nome=account.nome,
-            saldo_inicial=_round_money(opening),
-            saldo_final=_round_money(ending),
+    openings = {account.pk: account.saldo_inicial for account in accounts}
+    credits = dict.fromkeys(account_ids, Decimal('0.00'))
+    debits = dict.fromkeys(account_ids, Decimal('0.00'))
+    statements: dict[int, list[FechamentoMovimentoPreview]] = {
+        account_id: [] for account_id in account_ids
+    }
+    month_ledgers = []
+    for ledger in sorted(ledgers, key=lambda item: (item.data_movimento, item.pk)):
+        is_credit = ledger.direcao == LancamentoFinanceiro.Direcao.CREDITO
+        if ledger.data_movimento < start_date:
+            openings[ledger.conta_id] += ledger.valor if is_credit else -ledger.valor
+            continue
+        month_ledgers.append(ledger)
+        totals = credits if is_credit else debits
+        totals[ledger.conta_id] += ledger.valor
+        statements[ledger.conta_id].append(FechamentoMovimentoPreview(
+            data=ledger.data_movimento,
+            descricao=ledger.descricao,
+            motivo=ledger.motivo,
+            direcao=ledger.direcao,
+            valor=ledger.valor,
         ))
 
-    month_ledgers = [
-        ledger for ledger in ledgers
-        if start_date <= ledger.data_movimento <= end_date
+    account_previews = [
+        FechamentoContaPreview(
+            conta_id=account.pk,
+            nome=account.nome,
+            saldo_inicial=_round_money(openings[account.pk]),
+            saldo_final=_round_money(openings[account.pk] + credits[account.pk] - debits[account.pk]),
+            entradas=_round_money(credits[account.pk]),
+            saidas=_round_money(debits[account.pk]),
+            movimentos=tuple(statements[account.pk]),
+        )
+        for account in accounts
     ]
     operational_credits = sum(
         (
@@ -1239,6 +1258,8 @@ def previsualizar_fechamento(
     coverage = _round_money(operational_net - obligations_due_month)
     classification = _fechamento_classificacao(coverage, normalized_margin)
 
+    caixa = resumo_caixa_mensal(start_date, end_date)
+
     ledger_signature_rows = [
         [
             ledger.pk,
@@ -1262,6 +1283,7 @@ def previsualizar_fechamento(
             for item in account_previews
         ],
         ledger_signature_rows,
+        astuple(caixa),
         payable_signature_rows,
         card_signature_rows,
         str(operational_net),
@@ -1288,6 +1310,7 @@ def previsualizar_fechamento(
         classificacao=classification,
         contas=tuple(account_previews),
         obrigacoes=tuple(obligation_previews),
+        caixa=caixa,
         assinatura=signature,
     )
 
