@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.formats import number_format
 from django.views.decorators.http import require_http_methods
 
 from .models import (
@@ -531,7 +532,7 @@ def conta_pagar_pagamento(request: HttpRequest, pk: int) -> HttpResponse:
         'acao': 'conta_pagar_pagamento',
         'conta_pagar': payable,
         'conta_id': request.POST.get('conta_id', ''),
-        'valor': request.POST.get('valor', str(payable.valor)),
+        'valor': request.POST.get('valor', number_format(payable.valor, 2, force_grouping=True)),
         'data_pagamento': request.POST.get(
             'data_pagamento', date.today().isoformat(),
         ),

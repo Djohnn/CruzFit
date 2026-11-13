@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -206,7 +207,10 @@ def _required_text(value: object, label: str, limit: int) -> str:
 
 def _money(value: object, label: str, *, positive: bool = False) -> Decimal:
     try:
-        parsed = Decimal(str(value).strip().replace(',', '.'))
+        raw = str(value).strip()
+        if re.fullmatch(r'[0-9]{1,3}(?:\.[0-9]{3})+,[0-9]{1,2}', raw):
+            raw = raw.replace('.', '')
+        parsed = Decimal(raw.replace(',', '.'))
         if not parsed.is_finite() or parsed < 0 or parsed > Decimal('999999999999.99'):
             raise ValueError
         rounded = parsed.quantize(Decimal('0.01'))

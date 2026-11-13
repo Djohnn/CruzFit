@@ -402,6 +402,34 @@ class ContaPagarViewTests(TestCase):
         self.assertEqual(payable.situacao, ContaPagar.Situacao.ABERTA)
         self.assertEqual(calcular_saldo(self.account), Decimal('500.00'))
 
+    def test_manager_can_pay_using_grouped_brazilian_currency(self):
+        self.client.force_login(self.manager)
+        for raw, value in (("3.000,00", Decimal("3000.00")), ("30.000,00", Decimal("30000.00"))):
+            with self.subTest(raw=raw):
+                payable = criar_conta_pagar(
+                    actor=self.manager,
+                    description='Despesa com milhares',
+                    category='Operacional',
+                    amount=value,
+                    due_date=date(2026, 11, 23),
+                    reason='Criar despesa',
+                    idempotency_key=f'despesa-moeda-{value}',
+                ).conta
+                url = reverse('financeiro:conta_pagar_pagamento', args=(payable.pk,))
+                form = self.client.get(url)
+                data = {
+                    'conta_id': self.account.pk,
+                    'valor': raw,
+                    'data_pagamento': '2026-11-12',
+                    'motivo': 'Pagamento antecipado',
+                    'chave_idempotencia': f'pagamento-moeda-{value}',
+                }
+                response = self.client.post(url, data)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(PagamentoContaPagar.objects.get(conta_pagar=payable).valor, value)
+                self.assertContains(form, f'value="{raw}"')
+                self.assertContains(form, f'R$ {raw}')
+
     def test_manager_can_pay_reopened_payable_and_see_two_payment_movements(self):
         """Given estorno; When paga novamente; Then tela mantém os dois históricos."""
         payable = criar_conta_pagar(
