@@ -1,0 +1,15 @@
+{% if aviso_mensal %}
+<section id="financeiro-aviso-fechamento" class="alert {% if aviso_mensal.pendente %}alert-danger{% else %}alert-warning{% endif %}" aria-label="Fechamento mensal">
+  {% if aviso_mensal.pendente %}
+    <strong>Fechamento mensal pendente de {{ aviso_mensal.mes|date:"m/Y" }}.</strong>
+    Confirme o fechamento para liberar os lançamentos no Financeiro.
+  {% elif aviso_mensal.dias == 0 %}
+    <strong>Fechamento mensal hoje.</strong>
+  {% elif aviso_mensal.dias == 1 %}
+    <strong>Falta 1 dia para o fechamento mensal.</strong>
+  {% else %}
+    <strong>Faltam {{ aviso_mensal.dias }} dias para o fechamento mensal.</strong>
+  {% endif %}
+  <a class="alert-link" href="{% url 'financeiro:fechamento_mensal' %}?mes={{ aviso_mensal.mes|date:'Y-m' }}">Conferir fechamento</a>
+</section>
+{% endif %}

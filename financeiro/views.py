@@ -10,9 +10,11 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.formats import number_format
 from django.views.decorators.http import require_http_methods
 
+from .fechamento import AvisoFechamento, aviso_fechamento, mes_pendente
 from .models import (
     ContaFinanceira,
     ContaPagar,
@@ -68,6 +70,20 @@ def gerente_required(view):
     return wrapped
 
 
+def requer_fechamento_em_dia(view):
+    @wraps(view)
+    def wrapped(request: HttpRequest, *args, **kwargs):
+        if request.method == 'POST':
+            pendente = mes_pendente(timezone.localdate())
+            if pendente:
+                return render(request, 'financeiro/fechamento_pendente.html', {
+                    'aviso_mensal': AvisoFechamento(pendente, pendente=True),
+                }, status=400)
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
 def _account_or_404(pk: int) -> ContaFinanceira:
     try:
         return ContaFinanceira.objects.get(pk=pk)
@@ -115,6 +131,7 @@ def painel(request: HttpRequest) -> HttpResponse:
     payables = listar_contas_pagar(as_of=date.today())
     return render(request, 'financeiro/painel.html', {
         'contas_resumo': listar_contas(),
+        'aviso_mensal': aviso_fechamento(),
         'saldo_consolidado': saldo_consolidado(),
         'receita_operacional': receita_operacional_consolidada(),
         'pix_pendentes': pix_pendentes(),
@@ -212,6 +229,7 @@ def fechamento_reabrir(request: HttpRequest, pk: int) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def conta_nova(request: HttpRequest) -> HttpResponse:
     context = {
         'nome': request.POST.get('nome', ''),
@@ -258,6 +276,7 @@ def conta_detalhe(request: HttpRequest, pk: int) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def aporte(request: HttpRequest) -> HttpResponse:
     context = {
         **_base_context(request),
@@ -291,6 +310,7 @@ def aporte(request: HttpRequest) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def transferencia(request: HttpRequest) -> HttpResponse:
     context = {
         **_base_context(request),
@@ -327,6 +347,7 @@ def transferencia(request: HttpRequest) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def estorno(request: HttpRequest, pk: int) -> HttpResponse:
     lancamento = _ledger_or_404(pk)
     context = {
@@ -359,6 +380,7 @@ def estorno(request: HttpRequest, pk: int) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def pix_confirmacao(request: HttpRequest) -> HttpResponse:
     context = {
         **_base_context(request),
@@ -413,6 +435,7 @@ def _parse_card_installments(raw_value: str) -> list[dict[str, str]]:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def cartao_liquidacao(request: HttpRequest) -> HttpResponse:
     context = {
         **_base_context(request),
@@ -449,6 +472,7 @@ def cartao_liquidacao(request: HttpRequest) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def conta_pagar_nova(request: HttpRequest) -> HttpResponse:
     context = {
         **_base_context(request),
@@ -487,6 +511,7 @@ def conta_pagar_nova(request: HttpRequest) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def conta_pagar_compra(request: HttpRequest) -> HttpResponse:
     context = {
         **_base_context(request),
@@ -524,6 +549,7 @@ def conta_pagar_compra(request: HttpRequest) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def conta_pagar_pagamento(request: HttpRequest, pk: int) -> HttpResponse:
     payable = _payable_or_404(pk)
     context = {
@@ -563,6 +589,7 @@ def conta_pagar_pagamento(request: HttpRequest, pk: int) -> HttpResponse:
 
 @gerente_required
 @require_http_methods(['GET', 'POST'])
+@requer_fechamento_em_dia
 def conta_pagar_estorno(request: HttpRequest, pk: int) -> HttpResponse:
     payment = _payable_payment_or_404(pk)
     context = {

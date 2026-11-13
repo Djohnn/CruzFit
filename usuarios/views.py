@@ -7,6 +7,8 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from financeiro.fechamento import aviso_fechamento
+
 from .dashboard import painel_do_dia
 from .models import Users
 from .services import (
@@ -116,7 +118,12 @@ def login(request):
 @login_required(login_url='login')
 @require_GET
 def home(request):
-    return render(request, 'home.html', {"painel": painel_do_dia()})
+    painel = painel_do_dia()
+    user = request.user
+    aviso = None
+    if user.is_active and (user.is_superuser or user.cargo == 'G'):
+        aviso = aviso_fechamento(painel['hoje'])
+    return render(request, 'home.html', {'painel': painel, 'aviso_mensal': aviso})
 
 
 @require_POST

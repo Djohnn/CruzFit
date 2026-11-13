@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load static %}
+{% block 'title' %}Fechamento pendente | Financeiro{% endblock %}
+{% block 'head' %}<link rel="stylesheet" href="{% static 'financeiro/css/financeiro.css' %}">{% endblock %}
+{% block 'body' %}
+<main id="conteudo" tabindex="-1" class="finance-page">
+  <div class="finance-shell finance-form-shell">
+    <h1>Lançamento bloqueado</h1>
+    {% include "financeiro/_aviso_fechamento.html" %}
+    <a href="{% url 'financeiro:painel' %}">Voltar ao Financeiro</a>
+  </div>
+</main>
+{% endblock %}
