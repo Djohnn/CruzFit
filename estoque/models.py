@@ -67,6 +67,7 @@ class Produto(models.Model):
     GENERO_CHOICES = (
         ('MASCULINO', 'Masculino'),
         ('FEMININO', 'Feminino'),
+        ('UNISSEX', 'Unissex'),
     )
 
     nome = models.CharField(max_length=40)
