@@ -155,12 +155,48 @@ document.addEventListener('DOMContentLoaded', function () {
         changed(true);
         search.focus();
     }
+    function normalizeSearch(value) {
+        return value.normalize('NFD')
+            .replace(/\p{M}/gu, '')
+            .toLocaleLowerCase('pt-BR')
+            .replace(/[^\p{L}\p{N}]+/gu, ' ')
+            .trim();
+    }
+    function barcodeQuery(value) {
+        const trimmed = value.trim();
+        return /^\d[\d\s.-]*$/.test(trimmed) ? trimmed.replace(/\D/g, '') : '';
+    }
+    function matchesNameAndColor(name, color, terms) {
+        let matched = 0;
+        for (let index = 0; index < name.length && matched < terms.length; index++) {
+            let prefix = name[index];
+            let end = index;
+            while (terms[matched].startsWith(prefix) && prefix.length < terms[matched].length && end + 1 < name.length) {
+                prefix += name[++end];
+            }
+            if (prefix.startsWith(terms[matched])) {
+                matched++;
+                index = end;
+            }
+        }
+        return matched === terms.length || (matched > 0 && color.startsWith(terms.slice(matched).join(' ')));
+    }
+    const searchableCatalog = catalog.map(product => ({
+        product,
+        name: normalizeSearch(product.nome.replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2')).split(' '),
+        color: normalizeSearch(product.cor || ''),
+        barcode: String(product.codigo_barras || ''),
+    }));
     search.addEventListener('input', function () {
-        const needle = search.value.trim().toLocaleLowerCase('pt-BR');
-        const matches = needle ? catalog.filter(product => product.nome.toLocaleLowerCase('pt-BR').includes(needle)
-            || String(product.codigo_barras || '').includes(needle)).slice(0, 8) : [];
+        const needle = normalizeSearch(search.value);
+        const terms = needle.split(' ');
+        const barcode = barcodeQuery(search.value);
+        const matches = needle ? searchableCatalog.filter(entry => barcode
+            ? entry.barcode.startsWith(barcode)
+            : matchesNameAndColor(entry.name, entry.color, terms)) : [];
         results.replaceChildren();
-        matches.forEach((product, index) => {
+        results.scrollTop = 0;
+        matches.forEach(({product}, index) => {
             const button = document.createElement('button');
             button.type = 'button';
             button.id = 'checkout-result-' + index;
@@ -177,12 +213,12 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('checkout-search-status').textContent = needle && !matches.length ? 'Nenhum produto encontrado.' : 'Clique no produto para adicionar.';
     });
     search.addEventListener('keydown', function (event) {
-        if (event.key === 'Enter') {
-            const rawBarcode = search.value.replace(/[^0-9]/g, '');
-            const exact = catalog.find(product => String(product.codigo_barras || '') === rawBarcode && rawBarcode.length === 13);
+        if (event.key === 'Enter' && search.value.trim()) {
+            event.preventDefault();
+            const barcode = barcodeQuery(search.value);
+            const exact = barcode.length === 13 && searchableCatalog.find(entry => entry.barcode === barcode);
             if (exact) {
-                event.preventDefault();
-                addProduct(exact);
+                addProduct(exact.product);
                 return;
             }
         }
@@ -191,10 +227,14 @@ document.addEventListener('DOMContentLoaded', function () {
         event.preventDefault();
         const options = Array.from(results.children);
         let index = options.findIndex(option => option.id === search.getAttribute('aria-activedescendant'));
-        if (event.key === 'Enter') { if (index >= 0) options[index].click(); return; }
+        if (event.key === 'Enter') {
+            if (index >= 0 || options.length === 1) options[Math.max(index, 0)].click();
+            return;
+        }
         index = event.key === 'ArrowDown' ? (index + 1) % options.length : (index <= 0 ? options.length - 1 : index - 1);
         options.forEach((option, i) => option.setAttribute('aria-selected', String(i === index)));
         search.setAttribute('aria-activedescendant', options[index].id);
+        options[index].scrollIntoView({block: 'nearest'});
     });
     document.addEventListener('click', event => { if (!search.parentElement.contains(event.target)) closeResults(); });
     function fillRemaining(row) {

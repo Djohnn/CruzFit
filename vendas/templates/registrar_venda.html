@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
     <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
     <link rel="stylesheet" href="{% static 'vendas/css/checkout.css' %}">
-    <script src="{% static 'vendas/js/checkout.js' %}?v=cartao-modalidade" defer></script>
+    <script src="{% static 'vendas/js/checkout.js' %}?v=busca-nome-cor" defer></script>
 {% endblock %}
 
 {% block 'body' %}
@@ -38,7 +38,7 @@
             <h2 id="sale-items-heading">Carrinho</h2>
             <div class="checkout-search">
                 <label for="checkout-search">Buscar produto</label>
-                <input id="checkout-search" class="form-control" type="search" placeholder="Nome ou código de barras" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="checkout-results">
+                <input id="checkout-search" class="form-control" type="search" placeholder="Nome, nome e cor ou código de barras" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="checkout-results">
                 <div id="checkout-results" class="sale-search-results" role="listbox" hidden></div>
                 <p id="checkout-search-status" class="section-help" role="status">Pesquise e clique no produto para adicionar.</p>
             </div>
