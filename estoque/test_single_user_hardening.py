@@ -146,6 +146,28 @@ class CruzFitSingleUserHardeningTests(TestCase):
         self.assertEqual(baixa.observacao, "Venda no balcão")
         self.assertEqual(ItemBaixaEstoque.objects.filter(baixa=baixa).count(), 1)
 
+    def test_nota_interna_can_be_registered_and_filtered_in_movements(self):
+        self.login_manager()
+        url = reverse("registrar_baixa")
+        self.assertContains(self.client.get(url), 'value="NOTA_INTERNA"')
+
+        response = self.client.post(url, {
+            "produto": [str(self.product.pk)],
+            "quantidade": ["3"],
+            "motivo": "NOTA_INTERNA",
+            "chave_idempotencia": "outflow-nota-interna",
+        })
+
+        self.assertRedirects(response, url)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantidade, 7)
+        baixa = BaixaEstoque.objects.get(motivo="NOTA_INTERNA")
+        self.assertEqual(baixa.responsavel, self.manager)
+        self.assertEqual(baixa.get_motivo_display(), "Nota interna")
+
+        history = self.client.get(reverse("movimentacoes"), {"motivo": "NOTA_INTERNA"})
+        self.assertContains(history, "<td>Nota interna</td>", html=True)
+
     def test_withdrawal_replay_returns_existing_operation_and_debits_once(self):
         """Given baixa concluída; When repetir; Then debitar uma única vez."""
         self.login_manager()

@@ -371,6 +371,7 @@ class BaixaEstoque(models.Model):
         ('PERDA', 'Perda'),
         ('DEVOLUCAO', 'Devolução'),
         ('TROCA', 'Troca'),
+        ('NOTA_INTERNA', 'Nota interna'),
     )
 
     criada_em = models.DateTimeField(auto_now_add=True)
