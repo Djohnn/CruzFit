@@ -413,34 +413,14 @@ def pix_confirmacao(request: HttpRequest) -> HttpResponse:
     return render(request, 'financeiro/pix_form.html', context)
 
 
-def _parse_card_installments(raw_value: str) -> list[dict[str, str]]:
-    installments: list[dict[str, str]] = []
-    for line in raw_value.replace(',', '\n').splitlines():
-        value = line.strip()
-        if not value:
-            continue
-        parts = value.replace(';', ':').split(':', 1)
-        if len(parts) != 2:
-            raise FinanceOperationError(
-                'Informe cada parcela no formato ID:taxa.',
-            )
-        installments.append({
-            'recebivel_id': parts[0].strip(),
-            'taxas': parts[1].strip(),
-        })
-    if not installments:
-        raise FinanceOperationError('Selecione pelo menos uma parcela de cartão.')
-    return installments
-
-
 @gerente_required
 @require_http_methods(['GET', 'POST'])
 @requer_fechamento_em_dia
 def cartao_liquidacao(request: HttpRequest) -> HttpResponse:
+    selected = request.POST.getlist('recebiveis')
     context = {
         **_base_context(request),
         'titulo': 'Liquidar cartão',
-        'parcelas': request.POST.get('parcelas', ''),
         'conta_id': request.POST.get('conta_id', request.GET.get('conta_id', '')),
         'data_deposito': request.POST.get('data_deposito', date.today().isoformat()),
         'referencia_operadora': request.POST.get('referencia_operadora', ''),
@@ -448,26 +428,47 @@ def cartao_liquidacao(request: HttpRequest) -> HttpResponse:
     }
     if request.method == 'POST':
         try:
-            installments = _parse_card_installments(context['parcelas'])
             result = liquidar_cartao(
                 actor=request.user,
                 account=context['conta_id'],
                 deposit_date=context['data_deposito'],
                 operator_reference=context['referencia_operadora'],
-                installments=installments,
+                installments=[
+                    {'recebivel_id': pk, 'taxas': request.POST.get(f'taxa_{pk}', '')}
+                    for pk in selected
+                ],
                 reason=context['motivo'],
                 idempotency_key=context['chave_idempotencia'],
             )
         except FinanceOperationError as error:
             messages.error(request, str(error))
-            return render(request, 'financeiro/cartao_form.html', context, status=400)
-        messages.success(
-            request,
-            'Liquidação registrada.' if result.created
-            else 'Essa liquidação já estava registrada.',
-        )
-        return redirect('financeiro:conta_detalhe', pk=result.deposito.conta_id)
-    return render(request, 'financeiro/cartao_form.html', context)
+            status = 400
+        else:
+            messages.success(
+                request,
+                'Liquidação registrada.' if result.created
+                else 'Essa liquidação já estava registrada.',
+            )
+            return redirect('financeiro:conta_detalhe', pk=result.deposito.conta_id)
+    else:
+        status = 200
+    context['parcelas_cartao'] = [
+        {
+            'id': item.pk,
+            'venda_id': (
+                item.pagamento_troca.recebimento.troca.venda_id
+                if item.pagamento_troca_id else item.pagamento_origem.recebimento.venda_id
+            ),
+            'troca': bool(item.pagamento_troca_id),
+            'modalidade': item.pagamento_efetivo.get_modalidade_cartao_display(),
+            'data': item.data_aprovacao,
+            'bruto': item.valor_pendente,
+            'taxa': request.POST.get(f'taxa_{item.pk}', '0,00'),
+            'selecionada': str(item.pk) in selected,
+        }
+        for item in recebiveis_cartao_pendentes()
+    ]
+    return render(request, 'financeiro/cartao_form.html', context, status=status)
 
 
 @gerente_required

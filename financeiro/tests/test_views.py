@@ -154,7 +154,8 @@ class FinanceViewTests(TestCase):
                 reverse('financeiro:cartao_liquidacao'),
                 {
                     **common,
-                    'parcelas': '1:0.00',
+                    'recebiveis': ['1'],
+                    'taxa_1': '0,00',
                     'conta_id': self.account.pk,
                     'referencia_operadora': 'VENDEDOR',
                 },
@@ -230,23 +231,41 @@ class FinanceViewTests(TestCase):
         )
         card = self.create_payment('CARTAO', amount='100.00', key='venda-view-card')
         receivable = RecebivelCartao.objects.get(pagamento_origem=card)
-        card_response = self.client.post(
-            reverse('financeiro:cartao_liquidacao'),
-            {
-                'parcelas': f'{receivable.pk}:3.00',
-                'conta_id': self.account.pk,
-                'data_deposito': '2026-11-06',
-                'referencia_operadora': 'ADQ-VIEW',
-                'motivo': 'Cartão liquidado pela interface',
-                'chave_idempotencia': 'cartao-view-interface',
-            },
-        )
+        other_card = self.create_payment('CARTAO', amount='30.00', key='venda-view-card-other')
+        other = RecebivelCartao.objects.get(pagamento_origem=other_card)
+        card_page = self.client.get(reverse('financeiro:cartao_liquidacao'))
+        self.assertContains(card_page, f'name="taxa_{receivable.pk}"')
+        self.assertContains(card_page, 'Taxa (R$)')
+        self.assertContains(card_page, 'Total líquido')
+        url = reverse('financeiro:cartao_liquidacao')
+        form = {
+            'recebiveis': [receivable.pk],
+            f'taxa_{receivable.pk}': '3,00',
+            f'taxa_{other.pk}': '999,00',
+            'conta_id': self.account.pk,
+            'data_deposito': '2026-11-06',
+            'referencia_operadora': 'ADQ-VIEW',
+            'motivo': 'Cartão liquidado pela interface',
+            'chave_idempotencia': 'cartao-view-interface',
+        }
+        invalid = self.client.post(url, {**form, f'taxa_{receivable.pk}': '101,00'})
+        self.assertContains(invalid, 'A taxa não pode superar o saldo da parcela.', status_code=400)
+        self.assertContains(invalid, 'value="101,00"', status_code=400)
+        self.assertTrue(invalid.context['parcelas_cartao'][0]['selecionada'])
+        self.assertFalse(DepositoCartao.objects.exists())
+        card_response = self.client.post(url, form)
+        self.assertEqual(self.client.post(url, form).status_code, 302)
 
         self.assertEqual(pix_response.status_code, 302)
         self.assertEqual(card_response.status_code, 302)
         self.assertEqual(RecebimentoPixFinanceiro.objects.count(), 1)
         self.assertEqual(DepositoCartao.objects.count(), 1)
         self.assertEqual(calcular_saldo(self.account), Decimal('647.00'))
+        self.assertEqual(
+            DepositoCartao.objects.values_list('valor_bruto', 'taxas', 'valor_liquido').get(),
+            (Decimal('100.00'), Decimal('3.00'), Decimal('97.00')),
+        )
+        self.assertTrue(RecebivelCartao.objects.filter(pk=other.pk, liquidacao__isnull=True).exists())
 
 
 class ContaPagarViewTests(TestCase):

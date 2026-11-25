@@ -1,7 +1,101 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static l10n %}
 {% block 'title' %}{{ titulo }} | Financeiro{% endblock %}
-{% block 'head' %}<link rel="stylesheet" href="{% static 'financeiro/css/financeiro.css' %}">{% endblock %}
+{% block 'head' %}
+<link rel="stylesheet" href="{% static 'financeiro/css/financeiro.css' %}?v=liquidacao-cartao">
+<script src="{% static 'financeiro/js/cartao_liquidacao.js' %}" defer></script>
+{% endblock %}
 {% block 'body' %}
-<main id="conteudo" tabindex="-1" class="finance-page"><div class="finance-shell finance-form-shell"><a class="finance-back-link" href="{% url 'financeiro:painel' %}">← Voltar ao Financeiro</a><header class="finance-heading finance-heading-compact"><div><p class="finance-kicker">Liquidação auditada</p><h1>{{ titulo }}</h1><p>Informe uma parcela por linha no formato <code>ID:taxa</code>. O saldo recebe somente o líquido.</p></div></header>{% if messages %}<div class="finance-messages" aria-live="polite">{% for message in messages %}<div class="alert alert {{ message.tags|default:'alert-info' }}">{{ message }}</div>{% endfor %}</div>{% endif %}<form class="finance-form" method="post" novalidate>{% csrf_token %}<input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}"><div class="form-group"><label for="id_parcelas">Parcelas a liquidar</label><textarea id="id_parcelas" class="form-control" name="parcelas" required placeholder="12:3.00&#10;13:0.00">{{ parcelas }}</textarea><small>{% if recebiveis_cartao %}{% for item in recebiveis_cartao %}#{{ item.pk }} · R$ {{ item.valor_pendente|floatformat:"2g" }} · Venda #{{ item.pagamento_efetivo.recebimento.venda_id }}{% if not forloop.last %} · {% endif %}{% endfor %}{% else %}Nenhuma parcela disponível.{% endif %}</small></div><div class="form-group"><label for="id_conta">Conta de destino</label><select id="id_conta" class="form-control" name="conta_id" required><option value="">Selecione</option>{% for conta in contas %}<option value="{{ conta.pk }}" {% if conta.pk|stringformat:'s' == conta_id|stringformat:'s' %}selected{% endif %}>{{ conta.nome }}</option>{% endfor %}</select></div><div class="finance-form-grid"><div class="form-group"><label for="id_data_deposito">Data do depósito</label><input id="id_data_deposito" class="form-control" type="date" name="data_deposito" value="{{ data_deposito }}" required></div><div class="form-group"><label for="id_referencia">Referência da operadora</label><input id="id_referencia" class="form-control" name="referencia_operadora" value="{{ referencia_operadora }}" maxlength="120" required></div><div class="form-group finance-form-wide"><label for="id_motivo">Motivo</label><textarea id="id_motivo" class="form-control" name="motivo" maxlength="500" required>{{ motivo }}</textarea></div></div><div class="finance-form-actions"><a class="btn btn-outline-light" href="{% url 'financeiro:painel' %}">Cancelar</a><button class="btn btn-primary" type="submit">Registrar liquidação</button></div></form></div></main>
+<main id="conteudo" tabindex="-1" class="finance-page">
+    <div class="finance-shell finance-form-shell">
+        <a class="finance-back-link" href="{% url 'financeiro:painel' %}">← Voltar ao Financeiro</a>
+        <header class="finance-heading finance-heading-compact">
+            <div>
+                <h1>{{ titulo }}</h1>
+                <p>Selecione as parcelas do depósito e informe quanto a operadora descontou de cada uma.</p>
+            </div>
+        </header>
+
+        {% if messages %}
+        <div class="finance-messages" aria-live="polite">
+            {% for message in messages %}
+            <div class="alert {{ message.tags|default:'alert-info' }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if parcelas_cartao %}
+        <form class="finance-form finance-card-settlement" method="post">
+            {% csrf_token %}
+            <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+
+            <fieldset class="finance-settlement-list">
+                <legend>Parcelas a liquidar</legend>
+                {% for parcela in parcelas_cartao %}
+                <div class="finance-settlement-row" data-parcela data-bruto="{{ parcela.bruto|unlocalize }}">
+                    <label class="finance-settlement-choice">
+                        <input type="checkbox" name="recebiveis" value="{{ parcela.id }}"{% if parcela.selecionada %} checked{% endif %}>
+                        <span>
+                            <strong>Venda #{{ parcela.venda_id }}</strong>{% if parcela.troca %} · Troca{% endif %}
+                            <small>Parcela #{{ parcela.id }}{% if parcela.modalidade %} · {{ parcela.modalidade }}{% endif %} · {{ parcela.data|date:"d/m/Y" }}</small>
+                        </span>
+                    </label>
+                    <div>
+                        <span class="finance-muted">Valor bruto</span>
+                        <span class="finance-money finance-settlement-value">R$ {{ parcela.bruto|floatformat:"2g" }}</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="taxa_{{ parcela.id }}">Taxa (R$)</label>
+                        <input id="taxa_{{ parcela.id }}" class="form-control" name="taxa_{{ parcela.id }}" type="text" inputmode="decimal" maxlength="20" value="{{ parcela.taxa }}" data-taxa>
+                    </div>
+                    <div>
+                        <span class="finance-muted">Valor líquido</span>
+                        <span class="finance-money finance-settlement-value" data-liquido>—</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </fieldset>
+
+            <div class="finance-form-grid">
+                <div class="form-group finance-form-wide">
+                    <label for="id_conta">Conta de destino</label>
+                    <select id="id_conta" class="form-control" name="conta_id" required>
+                        <option value="">Selecione</option>
+                        {% for conta in contas %}
+                        <option value="{{ conta.pk }}"{% if conta.pk|stringformat:'s' == conta_id|stringformat:'s' %} selected{% endif %}>{{ conta.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="id_data_deposito">Data do depósito</label>
+                    <input id="id_data_deposito" class="form-control" type="date" name="data_deposito" value="{{ data_deposito }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="id_referencia">Referência da operadora</label>
+                    <input id="id_referencia" class="form-control" name="referencia_operadora" value="{{ referencia_operadora }}" maxlength="120" required>
+                </div>
+                <div class="form-group finance-form-wide">
+                    <label for="id_motivo">Motivo</label>
+                    <textarea id="id_motivo" class="form-control" name="motivo" maxlength="500" required>{{ motivo }}</textarea>
+                </div>
+            </div>
+
+            <section class="finance-settlement-summary" aria-label="Conferência do depósito" aria-live="polite">
+                <dl>
+                    <div><dt>Total bruto</dt><dd data-total-bruto>R$ 0,00</dd></div>
+                    <div><dt>Total de taxas</dt><dd data-total-taxas>R$ 0,00</dd></div>
+                    <div><dt>Total líquido</dt><dd data-total-liquido>R$ 0,00</dd></div>
+                </dl>
+                <p data-resumo>Selecione as parcelas para conferir o depósito.</p>
+            </section>
+            <div class="finance-form-actions">
+                <a class="btn btn-outline-light" href="{% url 'financeiro:painel' %}">Cancelar</a>
+                <button class="btn btn-primary" type="submit" data-registrar>Registrar liquidação</button>
+            </div>
+        </form>
+        {% else %}
+        <p class="finance-empty">Nenhuma parcela de cartão disponível para liquidar.</p>
+        {% endif %}
+    </div>
+</main>
 {% endblock %}
