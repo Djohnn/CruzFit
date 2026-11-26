@@ -6,7 +6,7 @@
 {% block 'head' %}
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
     <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
-    <link rel="stylesheet" href="{% static 'vendas/css/checkout.css' %}?v=desconto-por-item">
+    <link rel="stylesheet" href="{% static 'vendas/css/checkout.css' %}?v=desconto-item-compacto">
     <script src="{% static 'vendas/js/busca_produto.js' %}" defer></script>
     <script src="{% static 'vendas/js/checkout.js' %}?v=desconto-por-item" defer></script>
 {% endblock %}
@@ -56,19 +56,19 @@
                     </div>
                     <div class="sale-quantity-field"><label for="sale-quantity-{{ forloop.counter }}">Quantidade</label><input id="sale-quantity-{{ forloop.counter }}" class="form-control" type="number" name="quantidade" min="0.01" step="0.01" value="{{ linha.quantidade|default:'1' }}" required></div>
                     <div class="sale-price-field"><span class="sale-field-label">Unitário</span><strong data-unit-price></strong></div>
-                    <div class="sale-price-field"><span class="sale-field-label">Total do item</span><strong data-line-total></strong></div>
-                    <button class="btn btn-outline-danger sale-remove-button" type="button" aria-label="Remover produto da venda">Remover</button>
-                    <div class="checkout-discount sale-item-discount">
-                        <div><label for="item-discount-mode-{{ forloop.counter }}">Desconto do item em</label>
+                    <div class="sale-item-discount">
+                        <div><label class="sr-only" for="item-discount-mode-{{ forloop.counter }}">Unidade do desconto do item</label>
                             <select id="item-discount-mode-{{ forloop.counter }}" class="form-control" data-item-discount-mode name="desconto_modo_{{ linha.produto }}">
                                 <option value="reais">R$</option>
                                 <option value="percentual"{% if linha.desconto_modo == 'percentual' %} selected{% endif %}>%</option>
                             </select>
                         </div>
-                        <div><label for="item-discount-{{ forloop.counter }}">Desconto do item</label>
+                        <div><label for="item-discount-{{ forloop.counter }}">Desconto</label>
                             <input id="item-discount-{{ forloop.counter }}" class="form-control" type="number" min="0" step="0.01" inputmode="decimal" data-item-discount name="desconto_item_{{ linha.produto }}" value="{{ linha.desconto_item|default:'0' }}">
                         </div>
                     </div>
+                    <div class="sale-price-field"><span class="sale-field-label">Total do item</span><strong data-line-total></strong></div>
+                    <button class="btn btn-outline-danger sale-remove-button" type="button" aria-label="Remover produto da venda">Remover</button>
                 </div>
                 {% endfor %}
             </div>
