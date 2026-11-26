@@ -293,6 +293,7 @@ class RelatoriosTests(TestCase):
         rows = list(csv.reader(StringIO(response.content.decode("utf-8-sig")), delimiter=";"))
         self.assertEqual(rows[0][0], "Referência")
         self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1][1], "07/01/2026 12:00")
         self.assertIn("'=SOMA(A1:A2)", rows[1])
         self.assertNotIn("Baixa", rows[1])
 

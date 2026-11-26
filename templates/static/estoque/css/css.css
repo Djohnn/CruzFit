@@ -589,6 +589,48 @@
     font-weight: 800;
 }
 
+/* The movement history has more columns than the summary reports. */
+.movement-page.report-page {
+    width: 100%;
+    max-width: 1600px;
+}
+
+.movement-page .movement-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+}
+
+.movement-table th,
+.movement-table td {
+    padding: .65rem .4rem;
+    overflow-wrap: anywhere;
+}
+
+.movement-table thead th {
+    white-space: normal;
+    letter-spacing: normal;
+}
+
+.movement-table th:nth-child(4) { width: 23%; }
+.movement-table th:nth-child(10) { width: 13%; }
+
+.movement-table .report-item-list,
+.movement-table .report-actions {
+    min-width: 0;
+}
+
+.movement-table .report-actions .btn {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 767.98px) {
+    .movement-table-wrap { overflow-x: auto; }
+    .movement-page .movement-table { min-width: 760px; }
+}
+
 .report-page {
     max-width: 1320px;
 }

@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 from django.core.paginator import Page, Paginator
 from django.db.models import F, Prefetch, QuerySet, Sum
+from django.utils import timezone
 
 from vendas.models import ItemVenda, ItemVendaDevolucao, VendaCancelamento
 
@@ -439,7 +440,7 @@ def movement_csv(filters: MovementFilters) -> str:
         rows.append(
             [
                 movement["referencia"],
-                movement["data"].strftime("%d/%m/%Y %H:%M"),
+                timezone.template_localtime(movement["data"]).strftime("%d/%m/%Y %H:%M"),
                 movement["tipo_label"],
                 items,
                 format_decimal(movement["quantidade_total"]),
