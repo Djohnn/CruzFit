@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import transaction
@@ -86,6 +86,11 @@ class SalePreviewLine:
     quantity: Decimal
     unit_price: Decimal
     total: Decimal
+    discount: Decimal = Decimal("0.00")
+
+    @property
+    def net(self) -> Decimal:
+        return self.total - self.discount
 
 
 @dataclass(frozen=True)
@@ -121,11 +126,13 @@ def previsualizar_venda(
     product_ids: Sequence[str] | Iterable[str],
     quantities: Sequence[str] | Iterable[str],
     discount: object = '0',
+    item_discounts: Mapping[str, tuple[str, str]] | None = None,
 ) -> SalePreviewResult:
     """Calcular a revisão da venda sem gravar venda ou movimentação de estoque."""
     _require_authenticated(actor)
     lines = _parse_lines(product_ids, quantities)
     parsed_discount = _parse_sale_money(discount, 'desconto')
+    item_terms = _item_discount_terms(lines, item_discounts)
     with transaction.atomic():
         products = _locked_products(lines)
         preview_lines = []
@@ -144,14 +151,49 @@ def previsualizar_venda(
     subtotal = sum(
         (line.total for line in preview_lines), Decimal('0.00'),
     ).quantize(TWO_PLACES)
-    if parsed_discount > subtotal:
-        raise SaleOperationError('O desconto não pode superar o subtotal da venda.')
+    discounts = _line_discounts(
+        [(line.product_id, line.total) for line in preview_lines], parsed_discount, item_terms,
+    )
+    total_discount = sum(discounts, Decimal('0.00'))
     return SalePreviewResult(
         subtotal=subtotal,
-        discount=parsed_discount,
-        total=(subtotal - parsed_discount).quantize(TWO_PLACES),
-        lines=tuple(preview_lines),
+        discount=total_discount,
+        total=subtotal - total_discount,
+        lines=tuple(replace(line, discount=amount) for line, amount in zip(preview_lines, discounts, strict=True)),
     )
+
+
+def _item_discount_terms(
+    lines: list[tuple[int, Decimal]], raw: Mapping[str, tuple[str, str]] | None,
+) -> dict[int, tuple[str, Decimal]]:
+    terms = {}
+    for product_id, _quantity in lines:
+        mode, value = (raw or {}).get(str(product_id), ('reais', '0'))
+        amount = _parse_sale_money(value, 'desconto do item')
+        if mode not in {'reais', 'percentual'} or (mode == 'percentual' and amount > 100):
+            raise SaleOperationError('Informe um desconto por item válido, de até 100%.')
+        if amount:
+            terms[product_id] = (mode, amount)
+    return terms
+
+
+def _line_discounts(
+    totals: list[tuple[int, Decimal]], global_discount: Decimal,
+    terms: dict[int, tuple[str, Decimal]],
+) -> list[Decimal]:
+    direct = []
+    remaining = []
+    for index, (product_id, gross) in enumerate(totals):
+        mode, amount = terms.get(product_id, ('reais', Decimal('0.00')))
+        discount = (gross * amount / 100).quantize(TWO_PLACES) if mode == 'percentual' else amount
+        if discount > gross:
+            raise SaleOperationError('O desconto do item não pode superar o total da linha.')
+        direct.append(discount)
+        remaining.append((index, gross - discount))
+    if global_discount > sum((amount for _, amount in remaining), Decimal('0.00')):
+        raise SaleOperationError('O desconto geral não pode superar o saldo após os descontos dos itens.')
+    shares = _allocate_discount_by_largest_remainder(remaining, global_discount)
+    return [amount + shares[index] for index, amount in enumerate(direct)]
 
 
 def _sale_signature(
@@ -159,6 +201,7 @@ def _sale_signature(
     payment_method: str,
     discount: Decimal,
     lines: list[tuple[int, Decimal]],
+    item_terms: dict[int, tuple[str, Decimal]],
 ) -> str:
     payload = [
         actor_id,
@@ -166,6 +209,8 @@ def _sale_signature(
         str(discount),
         [[product_id, str(quantity)] for product_id, quantity in sorted(lines)],
     ]
+    if item_terms:
+        payload.append([[pk, mode, str(value)] for pk, (mode, value) in sorted(item_terms.items())])
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
     ).hexdigest()
@@ -228,6 +273,7 @@ def registrar_venda(
     product_ids: Sequence[str] | Iterable[str],
     quantities: Sequence[str] | Iterable[str],
     discount: object = '0',
+    item_discounts: Mapping[str, tuple[str, str]] | None = None,
     payment_method: str,
     idempotency_key: str | None,
 ) -> SaleResult:
@@ -242,7 +288,8 @@ def registrar_venda(
     if payment not in dict(Venda.FORMA_PAGAMENTO_CHOICES):
         raise SaleOperationError('Selecione uma forma de pagamento válida.')
     parsed_discount = _parse_sale_money(discount, 'desconto')
-    signature = _sale_signature(actor.pk, payment, parsed_discount, lines)
+    item_terms = _item_discount_terms(lines, item_discounts)
+    signature = _sale_signature(actor.pk, payment, parsed_discount, lines, item_terms)
 
     with transaction.atomic():
         existing = Venda.objects.select_for_update().filter(
@@ -263,8 +310,10 @@ def registrar_venda(
             (item_total for _, _, item_total in item_totals),
             Decimal('0.00'),
         ).quantize(TWO_PLACES)
-        if parsed_discount > subtotal:
-            raise SaleOperationError('O desconto não pode superar o subtotal da venda.')
+        discounts = _line_discounts(
+            [(pk, total) for pk, _, total in item_totals], parsed_discount, item_terms,
+        )
+        total_discount = sum(discounts, Decimal('0.00'))
 
         try:
             movement = criar_baixa_venda(actor, lines, products)
@@ -275,14 +324,14 @@ def registrar_venda(
             baixa=movement,
             forma_pagamento=payment,
             subtotal=subtotal,
-            desconto=parsed_discount,
-            total=(subtotal - parsed_discount).quantize(TWO_PLACES),
+            desconto=total_discount,
+            total=subtotal - total_discount,
             chave_idempotencia=key,
             assinatura=signature,
         )
         vincular_referencia_venda(movement, sale.pk)
 
-        for product_id, quantity, item_total in item_totals:
+        for (product_id, quantity, item_total), item_discount in zip(item_totals, discounts, strict=True):
             product = products[product_id]
             ItemVenda.objects.create(
                 venda=sale,
@@ -290,16 +339,8 @@ def registrar_venda(
                 quantidade=quantity,
                 preco_unitario=product.preco_venda,
                 total=item_total,
-                total_liquido=Decimal('0.00'),
+                total_liquido=item_total - item_discount,
             )
-        sale_items = list(ItemVenda.objects.filter(venda=sale).order_by('pk'))
-        discount_shares = _allocate_discount_by_largest_remainder(
-            [(item.pk, item.total) for item in sale_items],
-            parsed_discount,
-        )
-        for item in sale_items:
-            item.total_liquido = (item.total - discount_shares[item.pk]).quantize(TWO_PLACES)
-            item.save(update_fields=('total_liquido',))
     return SaleResult(sale, created=True)
 
 

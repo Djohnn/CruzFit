@@ -112,3 +112,5 @@ body:has(.checkout-review-dialog[open]) { overflow: hidden; }
     .cash-checkout .cash-payment-row { grid-template-columns: minmax(0, 1fr); }
     .cash-checkout .cash-actions { flex-direction: column; align-items: stretch; }
 }
+
+.cash-checkout .sale-item-discount { grid-column: 1 / -1; margin-top: 0; }

@@ -43,21 +43,31 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     function cartTotals() {
         let subtotal = 0;
+        let itemDiscounts = 0;
         items.querySelectorAll('[data-sale-row]').forEach(row => {
             const product = productById(row.querySelector('[name="produto"]').value);
             if (!product) return;
             const price = units(product.preco);
             const line = roundedRatio(price * units(row.querySelector('[name="quantidade"]').value), 100);
+            const field = row.querySelector('[data-item-discount]');
+            const entered = units(field.value);
+            const percent = row.querySelector('[data-item-discount-mode]').value === 'percentual';
+            const itemDiscount = percent ? roundedRatio(line * entered, 10000) : entered;
+            field.setCustomValidity(percent && entered > 10000 ? 'O desconto do item não pode superar 100%.'
+                : itemDiscount > line ? 'O desconto não pode superar o total do item.' : '');
+            const net = Math.max(0, line - itemDiscount);
+            itemDiscounts += line - net;
             row.querySelector('[data-unit-price]').textContent = money(price);
-            row.querySelector('[data-line-total]').textContent = money(line);
+            row.querySelector('[data-line-total]').textContent = money(net);
             subtotal += line;
         });
+        const remaining = subtotal - itemDiscounts;
         const entered = units(discountInput.value);
-        const discount = discountMode.value === 'percentual' ? roundedRatio(subtotal * entered, 10000) : entered;
+        const discount = discountMode.value === 'percentual' ? roundedRatio(remaining * entered, 10000) : entered;
         discountInput.setCustomValidity(discountMode.value === 'percentual' && entered > 10000
-            ? 'O desconto não pode superar 100%.' : discount > subtotal ? 'O desconto não pode superar o subtotal.' : '');
+            ? 'O desconto não pode superar 100%.' : discount > remaining ? 'O desconto geral não pode superar o valor restante.' : '');
         setAmount(document.getElementById('sale-discount'), discount);
-        return {subtotal, discount, total: Math.max(0, subtotal - discount)};
+        return {subtotal, discount: itemDiscounts + discount, total: Math.max(0, remaining - discount)};
     }
     function paymentRows() { return Array.from(payments.children); }
     function applied(row) { return row.querySelector('select').value ? units(row.querySelector('[name="valor_aplicado"]').value) : 0; }
@@ -117,6 +127,14 @@ document.addEventListener('DOMContentLoaded', function () {
         row.hidden = !product;
         row.querySelector('[name="quantidade"]').disabled = !product;
         row.querySelector('[name="produto"]').disabled = !product;
+        const itemDiscount = row.querySelector('[data-item-discount]');
+        const itemDiscountMode = row.querySelector('[data-item-discount-mode]');
+        itemDiscount.name = 'desconto_item_' + (product?.id || '');
+        itemDiscountMode.name = 'desconto_modo_' + (product?.id || '');
+        itemDiscount.disabled = !product;
+        itemDiscountMode.disabled = !product;
+        itemDiscount.addEventListener('input', () => changed(true));
+        itemDiscountMode.addEventListener('change', () => changed(true));
         if (product) {
             row.querySelector('.sale-product-query').value = product.label || product.nome;
             row.querySelector('[data-selected-product]').textContent = product.codigo_barras ? 'Código: ' + product.codigo_barras : '';
@@ -146,6 +164,8 @@ document.addEventListener('DOMContentLoaded', function () {
             resetIds(row, ++itemIndex);
             row.querySelector('[name="produto"]').value = product.id;
             row.querySelector('[name="quantidade"]').value = '1';
+            row.querySelector('[data-item-discount]').value = '0';
+            row.querySelector('[data-item-discount-mode]').value = 'reais';
             items.appendChild(row);
             bindItem(row);
         }

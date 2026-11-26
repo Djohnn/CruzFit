@@ -1590,6 +1590,7 @@ def _resolve_finalization_session(
 def finalizar_venda(
     *, actor, product_ids: Sequence[str] | Iterable[str],
     quantities: Sequence[str] | Iterable[str], discount: object = '0',
+    item_discounts: Mapping[str, tuple[str, str]] | None = None,
     pagamentos: Iterable[Mapping[str, object]] | None = None,
     payment_method: str | None = None,
     motivo: str, idempotency_key: str | None,
@@ -1620,6 +1621,7 @@ def finalizar_venda(
                     product_ids=product_ids,
                     quantities=quantities,
                     discount=discount,
+                    item_discounts=item_discounts,
                     payment_method=summary,
                     idempotency_key=key,
                 )

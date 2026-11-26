@@ -40,6 +40,13 @@ from .services import devolver_venda as devolver_venda_service
 @login_required(login_url='login')
 @require_http_methods(['GET', 'POST'])
 def registrar_venda(request):
+    item_discounts = {
+        pk: (
+            request.POST.get(f'desconto_modo_{pk}', 'reais'),
+            request.POST.get(f'desconto_item_{pk}', '0'),
+        )
+        for pk in request.POST.getlist('produto')
+    }
     session = SessaoCaixa.objects.filter(aberta=True).first()
     preview = None
     payment_preview = None
@@ -104,6 +111,7 @@ def registrar_venda(request):
                     product_ids=request.POST.getlist('produto'),
                     quantities=request.POST.getlist('quantidade'),
                     discount=request.POST.get('desconto') or '0',
+                    item_discounts=item_discounts,
                 )
                 payments = payments if payments is not None else []
                 payment_preview = previsualizar_recebimento(
@@ -115,7 +123,7 @@ def registrar_venda(request):
                     'session': session.pk,
                     'session_version': session.versao,
                     'lines': [
-                        [line.product_id, str(line.quantity), str(line.unit_price), str(line.total)]
+                        [line.product_id, str(line.quantity), str(line.unit_price), str(line.net)]
                         for line in preview.lines
                     ],
                     'discount': str(preview.discount),
@@ -171,6 +179,7 @@ def registrar_venda(request):
                     product_ids=request.POST.getlist('produto'),
                     quantities=request.POST.getlist('quantidade'),
                     discount=request.POST.get('desconto') or '0',
+                    item_discounts=item_discounts,
                     payment_method=request.POST.get('forma_pagamento') or '',
                     pagamentos=payments,
                     sessao=request.POST.get('sessao_id') or None,
@@ -184,6 +193,7 @@ def registrar_venda(request):
                     product_ids=request.POST.getlist('produto'),
                     quantities=request.POST.getlist('quantidade'),
                     discount=request.POST.get('desconto') or '0',
+                    item_discounts=item_discounts,
                     pagamentos=payments,
                     sessao=session.pk,
                     versao_esperada=expected_version,
@@ -206,7 +216,11 @@ def registrar_venda(request):
 
     posted = request.POST if request.method == 'POST' else request.GET
     linhas = [
-        {'produto': produto, 'quantidade': quantidade}
+        {
+            'produto': produto, 'quantidade': quantidade,
+            'desconto_modo': item_discounts.get(produto, ('reais', '0'))[0],
+            'desconto_item': item_discounts.get(produto, ('reais', '0'))[1],
+        }
         for produto, quantidade in zip_longest(
             request.POST.getlist('produto'),
             request.POST.getlist('quantidade'),

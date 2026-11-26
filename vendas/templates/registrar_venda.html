@@ -6,9 +6,9 @@
 {% block 'head' %}
     <link rel="stylesheet" href="{% static 'estoque/css/css.css' %}">
     <link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">
-    <link rel="stylesheet" href="{% static 'vendas/css/checkout.css' %}">
+    <link rel="stylesheet" href="{% static 'vendas/css/checkout.css' %}?v=desconto-por-item">
     <script src="{% static 'vendas/js/busca_produto.js' %}" defer></script>
-    <script src="{% static 'vendas/js/checkout.js' %}?v=busca-compartilhada" defer></script>
+    <script src="{% static 'vendas/js/checkout.js' %}?v=desconto-por-item" defer></script>
 {% endblock %}
 
 {% block 'body' %}
@@ -56,17 +56,28 @@
                     </div>
                     <div class="sale-quantity-field"><label for="sale-quantity-{{ forloop.counter }}">Quantidade</label><input id="sale-quantity-{{ forloop.counter }}" class="form-control" type="number" name="quantidade" min="0.01" step="0.01" value="{{ linha.quantidade|default:'1' }}" required></div>
                     <div class="sale-price-field"><span class="sale-field-label">Unitário</span><strong data-unit-price></strong></div>
-                    <div class="sale-price-field"><span class="sale-field-label">Total</span><strong data-line-total></strong></div>
+                    <div class="sale-price-field"><span class="sale-field-label">Total do item</span><strong data-line-total></strong></div>
                     <button class="btn btn-outline-danger sale-remove-button" type="button" aria-label="Remover produto da venda">Remover</button>
+                    <div class="checkout-discount sale-item-discount">
+                        <div><label for="item-discount-mode-{{ forloop.counter }}">Desconto do item em</label>
+                            <select id="item-discount-mode-{{ forloop.counter }}" class="form-control" data-item-discount-mode name="desconto_modo_{{ linha.produto }}">
+                                <option value="reais">R$</option>
+                                <option value="percentual"{% if linha.desconto_modo == 'percentual' %} selected{% endif %}>%</option>
+                            </select>
+                        </div>
+                        <div><label for="item-discount-{{ forloop.counter }}">Desconto do item</label>
+                            <input id="item-discount-{{ forloop.counter }}" class="form-control" type="number" min="0" step="0.01" inputmode="decimal" data-item-discount name="desconto_item_{{ linha.produto }}" value="{{ linha.desconto_item|default:'0' }}">
+                        </div>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
             <div class="checkout-discount">
                 <div><label for="discount-mode">Desconto em</label><select id="discount-mode" name="discount_mode" class="form-control"><option value="reais">R$</option><option value="percentual" {% if request.POST.discount_mode == 'percentual' %}selected{% endif %}>%</option></select></div>
-                <div><label for="discount-input">Desconto</label><input id="discount-input" name="discount_input" class="form-control" type="number" min="0" step="0.01" value="{{ request.POST.discount_input|default:desconto|default:'0' }}" inputmode="decimal"></div>
+                <div><label for="discount-input">Desconto geral</label><input id="discount-input" name="discount_input" class="form-control" type="number" min="0" step="0.01" value="{{ request.POST.discount_input|default:desconto|default:'0' }}" inputmode="decimal"></div>
                 <input id="sale-discount" type="hidden" name="desconto" value="{{ desconto|default:'0' }}">
             </div>
-            <p class="section-help">O total e o valor a pagar são atualizados ao alterar o desconto.</p>
+            <p class="section-help">O desconto geral é aplicado sobre o valor restante após os descontos dos itens.</p>
         </section>
 
         <section class="surface-section cash-payment-section checkout-payment" aria-labelledby="cash-payments-heading">
@@ -104,7 +115,7 @@
             <h2 id="sale-review-heading">Confira a venda</h2>
             <p id="sale-review-description">Confira os produtos e o pagamento antes de fechar a venda.</p>
             <p>Cliente: Consumidor final</p>
-            <ul class="cash-review-items">{% for line in preview.lines %}<li><span>{{ line.product_name }} · {{ line.quantity }} × R$ {{ line.unit_price|floatformat:2 }}</span><strong>R$ {{ line.total|floatformat:2 }}</strong></li>{% endfor %}</ul>
+            <ul class="cash-review-items">{% for line in preview.lines %}<li><span>{{ line.product_name }} · {{ line.quantity }} × R$ {{ line.unit_price|floatformat:2 }}</span><strong>R$ {{ line.net|floatformat:2 }}</strong></li>{% endfor %}</ul>
             <dl class="cash-review-totals"><div><dt>Subtotal</dt><dd>R$ {{ preview.subtotal|floatformat:2 }}</dd></div><div><dt>Desconto</dt><dd>R$ {{ preview.discount|floatformat:2 }}</dd></div><div><dt>Total da venda</dt><dd>R$ {{ preview.total|floatformat:2 }}</dd></div></dl>
             <h3>Formas de pagamento</h3>
             <ul class="cash-review-items">{% for pagamento in payment_preview.pagamentos %}<li><span>{{ pagamento.forma_label }} · pagamento R$ {{ pagamento.valor_aplicado|floatformat:2 }}{% if pagamento.forma == 'DINHEIRO' %} · recebido R$ {{ pagamento.valor_entregue|floatformat:2 }}{% endif %}</span><strong>{% if pagamento.forma == 'DINHEIRO' %}Troco R$ {{ pagamento.troco|floatformat:2 }}{% else %}Recebido R$ {{ pagamento.valor_aplicado|floatformat:2 }}{% endif %}</strong></li>{% empty %}<li>Sem cobrança para este total.</li>{% endfor %}</ul>

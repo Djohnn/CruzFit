@@ -102,6 +102,29 @@ class SaleContractTests(TestCase):
         self.assertEqual(self.product.quantidade, Decimal("8.00"))
         self.assertEqual(self.other_product.quantidade, Decimal("9.00"))
 
+    def test_item_discount_applies_only_to_selected_product(self):
+        url = reverse("vendas:registrar_venda")
+        for mode, amount, net in (
+            ("reais", "10.00", Decimal("39.90")),
+            ("percentual", "10.00", Decimal("44.91")),
+        ):
+            with self.subTest(mode=mode):
+                data = {
+                    "produto": [self.product.pk, self.other_product.pk],
+                    "quantidade": ["1", "1"],
+                    "forma_pagamento": "PIX",
+                    "chave_idempotencia": f"desconto-item-{mode}",
+                    f"desconto_modo_{self.product.pk}": mode,
+                    f"desconto_item_{self.product.pk}": amount,
+                }
+                self.assertEqual(self.client.post(url, data).status_code, 302)
+                sale = Venda.objects.get(chave_idempotencia=data["chave_idempotencia"])
+                self.assertEqual(sale.total, net + Decimal("39.90"))
+                self.assertEqual(
+                    dict(sale.itens.values_list("produto_id", "total_liquido")),
+                    {self.product.pk: net, self.other_product.pk: Decimal("39.90")},
+                )
+
     def test_sale_replay_with_same_lines_in_different_order_is_idempotent(self):
         """Given venda concluída; When repetir linhas invertidas; Then não baixar novamente."""
         first = registrar_venda(
