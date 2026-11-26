@@ -77,8 +77,8 @@
                 </div>
             </div>
             <div class="exchange-search-field">
-                <label for="exchange-product-query">Buscar por nome ou código</label>
-                <input id="exchange-product-query" class="form-control" type="search" autocomplete="off" aria-expanded="false" aria-controls="exchange-product-results" placeholder="Digite para buscar um produto">
+                <label for="exchange-product-query">Buscar produto</label>
+                <input id="exchange-product-query" class="form-control" type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="exchange-product-results" placeholder="Nome, modelo, nome e cor ou código de barras">
                 <div id="exchange-product-results" class="exchange-search-results" role="listbox" hidden></div>
                 <p class="section-help" id="exchange-search-status" aria-live="polite">Escolha um produto para adicionar.</p>
             </div>
@@ -170,5 +170,6 @@
     {% endif %}
 </main>
 {{ catalog|json_script:"exchange-product-catalog" }}
-{% if not legacy_blocked and sessao %}<script src="{% static 'vendas/js/troca.js' %}"></script>{% endif %}
+{% if not legacy_blocked and sessao %}<script src="{% static 'vendas/js/busca_produto.js' %}"></script>
+    <script src="{% static 'vendas/js/troca.js' %}?v=busca-compartilhada"></script>{% endif %}
 {% endblock %}

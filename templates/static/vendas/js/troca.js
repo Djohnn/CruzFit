@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const product = productById(id);
         row.hidden = !product;
         row.querySelector('[data-selected-product]').textContent = product
-            ? product.nome + ' · ' + money(product.preco)
+            ? (product.label || product.nome) + ' · ' + money(product.preco)
             : 'Selecione um produto';
         row.querySelector('[data-selected-stock]').textContent = product
             ? 'Estoque disponível: ' + product.estoque
@@ -74,48 +74,14 @@ document.addEventListener('DOMContentLoaded', function () {
         syncDestination(row);
         query.value = '';
         closeResults();
-        document.getElementById('exchange-search-status').textContent = product.nome + ' adicionado aos substitutos.';
+        document.getElementById('exchange-search-status').textContent = (product.label || product.nome) + ' adicionado aos substitutos.';
         query.focus();
     }
 
-    query.addEventListener('input', function () {
-        const needle = query.value.trim().toLocaleLowerCase('pt-BR');
-        const matches = needle
-            ? catalog.filter(product => product.nome.toLocaleLowerCase('pt-BR').includes(needle)
-                || String(product.codigo).includes(needle)).slice(0, 8)
-            : [];
-        results.replaceChildren();
-        matches.forEach((product, index) => {
-            const option = document.createElement('button');
-            option.type = 'button';
-            option.className = 'exchange-search-option';
-            option.id = 'exchange-result-' + index;
-            option.setAttribute('role', 'option');
-            option.textContent = product.nome + ' · ' + money(product.preco) + ' · estoque ' + product.estoque;
-            option.addEventListener('click', () => addProduct(product));
-            results.appendChild(option);
-        });
-        results.hidden = matches.length === 0;
-        query.setAttribute('aria-expanded', matches.length ? 'true' : 'false');
-        document.getElementById('exchange-search-status').textContent = needle && !matches.length
-            ? 'Nenhum produto encontrado.' : 'Escolha um produto para adicionar.';
-    });
-    query.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') {
-            closeResults();
-            return;
-        }
-        if (results.hidden || !['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
-        event.preventDefault();
-        const options = Array.from(results.children);
-        let index = options.findIndex(option => option.id === query.getAttribute('aria-activedescendant'));
-        if (event.key === 'Enter') {
-            if (index >= 0) options[index].click();
-            return;
-        }
-        index = event.key === 'ArrowDown' ? (index + 1) % options.length : (index <= 0 ? options.length - 1 : index - 1);
-        options.forEach((option, optionIndex) => option.setAttribute('aria-selected', String(optionIndex === index)));
-        query.setAttribute('aria-activedescendant', options[index].id);
+    window.bindProductSearch({
+        search: query, results, catalog, addProduct, closeResults,
+        optionClass: 'exchange-search-option', formatPrice: money,
+        status: document.getElementById('exchange-search-status'),
     });
     document.addEventListener('click', event => {
         if (!query.parentElement.contains(event.target)) closeResults();

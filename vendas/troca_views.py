@@ -67,8 +67,11 @@ def _catalog_payload():
     return [
         {
             'id': product.pk,
-            'nome': product.variacao_label,
-            'codigo': product.codigo_barras or '',
+            'nome': product.nome,
+            'label': product.variacao_label,
+            'modelo': product.modelo,
+            'cor': product.cor,
+            'codigo_barras': product.codigo_barras or '',
             'preco': str(product.preco_venda),
             'estoque': str(product.quantidade),
         }
