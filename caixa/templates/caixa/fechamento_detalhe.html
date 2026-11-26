@@ -5,7 +5,7 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'caixa/css/caixa.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main id="conteudo" tabindex="-1" class="container cash-page">
+<main id="conteudo" tabindex="-1" class="container-fluid content-wide cash-page">
     <header class="page-heading cash-page-heading">
         <div><h1>Fechamento da sessão #{{ fechamento.sessao_id }}</h1><p>{{ fechamento.fechada_em|date:"d/m/Y H:i" }} · {{ fechamento.responsavel.get_full_name|default:fechamento.responsavel.username }}</p></div>
         <a class="btn btn-outline-light" href="{% url 'caixa:painel' %}">Voltar ao Caixa</a>

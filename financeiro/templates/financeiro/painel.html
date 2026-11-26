@@ -4,7 +4,7 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'financeiro/css/financeiro.css' %}">{% endblock %}
 {% block 'body' %}
 <main id="conteudo" tabindex="-1" class="finance-page" data-testid="finance-panel">
-  <div class="finance-shell">
+  <div class="finance-shell content-wide">
     <header class="finance-heading">
       <div><p class="finance-kicker">Controle financeiro</p><h1>Contas e movimentos</h1><p>Disponibilidade atual, separada da receita gerada pela operação.</p></div>
       <div class="finance-actions"><a class="btn btn-primary" href="{% url 'financeiro:conta_nova' %}">Nova conta</a><a class="btn btn-outline-light" href="{% url 'financeiro:fechamento_mensal' %}">Fechamento mensal</a><a class="btn btn-outline-light" href="{% url 'financeiro:conta_pagar_nova' %}">Nova despesa</a><a class="btn btn-outline-light" href="{% url 'financeiro:conta_pagar_compra' %}">Gerar compra recebida</a><a class="btn btn-outline-light" href="{% url 'financeiro:pix_confirmacao' %}">Confirmar Pix</a><a class="btn btn-outline-light" href="{% url 'financeiro:cartao_liquidacao' %}">Liquidar cartão</a><a class="btn btn-outline-light" href="{% url 'financeiro:transferencia' %}">Transferir</a></div>

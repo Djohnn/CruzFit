@@ -5,7 +5,7 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'compras/css/compras.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main id="conteudo" tabindex="-1" class="container compras-page" data-testid="purchase-detail">
+<main id="conteudo" tabindex="-1" class="container-fluid content-wide compras-page" data-testid="purchase-detail">
     <header class="page-heading compras-heading"><div><a href="{% url 'compras:lista' %}">Voltar aos pedidos</a><h1>Pedido de compra #{{ pedido.pk }}</h1><p>{{ pedido.fornecedor_nome }} · criado em {{ pedido.criado_em|date:'d/m/Y H:i' }}</p></div><span class="purchase-status purchase-status-{{ pedido.estado|lower }}">{{ pedido.get_estado_display }}</span></header>
     {% include '_mensagens.html' %}
     <section class="purchase-summary" aria-label="Resumo de quantidades"><div><span>Pedida</span><strong>{{ resumo.pedida|floatformat:2 }}</strong></div><div><span>Recebida</span><strong>{{ resumo.recebida|floatformat:2 }}</strong></div><div><span>Cancelada</span><strong>{{ resumo.cancelada|floatformat:2 }}</strong></div><div><span>Recebível</span><strong>{{ resumo.recebivel|floatformat:2 }}</strong></div><div><span>Pendente</span><strong>{{ resumo.pendente|floatformat:2 }}</strong></div></section>

@@ -103,6 +103,15 @@ a:focus,
     color: var(--brand-cream);
 }
 
+/* Give catalogues, reports and multi-section workflows room beside the sidebar. */
+main.content-wide,
+.finance-shell.content-wide {
+    width: 100%;
+    max-width: 1600px;
+    min-width: 0;
+    margin-inline: auto;
+}
+
 .container {
     padding-top: 2rem;
     padding-bottom: 2rem;

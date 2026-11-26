@@ -5,7 +5,7 @@
 {% block 'head' %}<link rel="stylesheet" href="{% static 'compras/css/compras.css' %}">{% endblock %}
 
 {% block 'body' %}
-<main id="conteudo" tabindex="-1" class="container compras-page" data-testid="purchase-form">
+<main id="conteudo" tabindex="-1" class="container-fluid content-wide compras-page" data-testid="purchase-form">
     <header class="page-heading compras-heading"><div><a href="{% if pedido %}{% url 'compras:detalhe' pedido.pk %}{% else %}{% url 'compras:lista' %}{% endif %}">Voltar</a><h1>{% if editing %}Editar pedido de compra{% else %}Novo pedido de compra{% endif %}</h1><p>Preencha o rascunho; estoque só muda quando um recebimento for confirmado.</p></div></header>
     <form method="post" class="operational-form" novalidate>
         {% csrf_token %}
