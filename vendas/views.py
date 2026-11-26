@@ -218,6 +218,7 @@ def registrar_venda(request):
         {
             'id': produto.pk,
             'nome': produto.nome,
+            'modelo': produto.modelo,
             'cor': produto.cor,
             'tamanho': produto.get_tamanho_display() if produto.tamanho else '',
             'label': produto.variacao_label,

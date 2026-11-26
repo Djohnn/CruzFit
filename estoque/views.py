@@ -80,6 +80,9 @@ from .services import (
     inativar_produto as inativar_produto_service,
 )
 from .services import (
+    reativar_produto as reativar_produto_service,
+)
+from .services import (
     registrar_baixa as registrar_baixa_service,
 )
 from .services import (
@@ -941,6 +944,26 @@ def inativar_produto(request, slug):
             'Produto inativado.' if result.created else 'Essa inativação já foi registrada.',
         )
     return redirect('produto', slug=produto.slug)
+
+
+@gerente_required
+@require_POST
+def reativar_produto(request, slug):
+    try:
+        produto = Produto.objects.get(slug=slug)
+    except Produto.DoesNotExist:
+        return HttpResponseNotFound('Produto não encontrado.')
+    try:
+        result = reativar_produto_service(
+            actor=request.user, product_id=produto.pk,
+            reason=request.POST.get('motivo', ''),
+            idempotency_key=request.POST.get('chave_idempotencia'),
+        )
+    except ProductOperationError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, 'Produto reativado.' if result.created else 'Reativação já registrada.')
+    return redirect('produto', slug=slug)
 
 
 @login_required(login_url='login')

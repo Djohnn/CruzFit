@@ -34,12 +34,16 @@
                     <div class="inflow-line-item" data-inflow-row>
                         <div class="inflow-item-field">
                             <label for="inflow-product-{{ forloop.counter }}">Produto</label>
+                            <input class="form-control mb-2" type="search" data-inflow-search autocomplete="off"
+                                   aria-label="Buscar produto por nome, cor, tamanho ou código de barras"
+                                   placeholder="Nome, cor, tamanho ou código de barras">
                             <select id="inflow-product-{{ forloop.counter }}" class="form-control" name="produto" required>
                                 <option value="">Selecione um produto</option>
                                 {% for produto in produtos %}
-                                    <option value="{{ produto.id }}" {% if produto.pk|stringformat:'s' == linha.produto %}selected{% endif %}>{{ produto.variacao_label }} (estoque: {{ produto.quantidade|floatformat:2 }})</option>
+                                    <option value="{{ produto.id }}" data-barcode="{{ produto.codigo_barras|default_if_none:'' }}" {% if produto.pk|stringformat:'s' == linha.produto %}selected{% endif %}>{{ produto.variacao_label }} (estoque: {{ produto.quantidade|floatformat:2 }})</option>
                                 {% endfor %}
                             </select>
+                            <small data-inflow-results role="status"></small>
                         </div>
                         <div class="inflow-item-field inflow-quantity-field">
                             <label for="inflow-quantity-{{ forloop.counter }}">Quantidade</label>
@@ -170,6 +174,35 @@
             let nextRowIndex = items.querySelectorAll('[data-inflow-row]').length;
             const supplier = document.getElementById('inflow-supplier');
             const reasonSelect = document.getElementById('inflow-reason');
+            const productOptions = Array.from(items.querySelector('select[name="produto"]').options);
+            const normalizeSearch = value => value.normalize('NFD').replace(/\p{M}/gu, '')
+                .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+            const catalog = productOptions.slice(1).map(option => ({
+                option,
+                words: normalizeSearch(option.textContent.split(' (estoque:')[0]).split(' '),
+            }));
+
+            function filterProducts(row) {
+                const search = row.querySelector('[data-inflow-search]');
+                const product = row.querySelector('select[name="produto"]');
+                const status = row.querySelector('[data-inflow-results]');
+                const query = normalizeSearch(search.value);
+                const barcode = /^[\d .-]+$/.test(search.value.trim())
+                    ? search.value.replace(/\D/g, '') : '';
+                const terms = query.split(' ');
+                const matches = catalog.filter(({option, words}) => !query || (barcode
+                    ? option.dataset.barcode.startsWith(barcode)
+                    : terms.every(term => words.some(word => word.startsWith(term)))));
+                product.replaceChildren(productOptions[0].cloneNode(true));
+                for (const {option} of matches) product.appendChild(option.cloneNode(true));
+                const exact = barcode.length === 13
+                    ? matches.find(({option}) => option.dataset.barcode === barcode) : null;
+                product.value = exact ? exact.option.value : '';
+                status.textContent = !query ? '' : exact ? 'Produto selecionado.'
+                    : matches.length ? matches.length + ' resultado(s). Selecione na lista abaixo do campo de busca.'
+                    : 'Nenhum produto encontrado.';
+                resetReview();
+            }
             function updateSupplierRequirement() {
                 supplier.required = reasonSelect.value === 'COMPRA';
                 resetReview();
@@ -237,6 +270,16 @@
             }
 
             function bindRow(row) {
+                const search = row.querySelector('[data-inflow-search]');
+                const product = row.querySelector('select[name="produto"]');
+                search.addEventListener('input', () => filterProducts(row));
+                search.addEventListener('keydown', function (event) {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    if (!product.value && product.options.length === 2) product.selectedIndex = 1;
+                    if (product.value) row.querySelector('input[name="quantidade"]').focus();
+                    else product.focus();
+                });
                 row.querySelector('input[name="quantidade"]').addEventListener('input', function () {
                     resetReview();
                     updateSummary();
@@ -245,7 +288,8 @@
                 row.querySelector('.inflow-remove-button').addEventListener('click', function () {
                     const rows = items.querySelectorAll('[data-inflow-row]');
                     if (rows.length === 1) {
-                        row.querySelector('select[name="produto"]').value = '';
+                        search.value = '';
+                        filterProducts(row);
                         row.querySelector('input[name="quantidade"]').value = 1;
                     } else {
                         row.remove();
@@ -263,6 +307,8 @@
                 row.querySelector('label[for^="inflow-quantity"]').htmlFor = 'inflow-quantity-' + index;
                 row.querySelector('input[name="quantidade"]').id = 'inflow-quantity-' + index;
                 row.querySelector('select[name="produto"]').value = '';
+                row.querySelector('[data-inflow-search]').value = '';
+                filterProducts(row);
                 row.querySelector('input[name="quantidade"]').value = 1;
                 items.appendChild(row);
                 bindRow(row);

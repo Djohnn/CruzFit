@@ -33,5 +33,6 @@ urlpatterns = [
     path('ficha/<int:ficha_id>/variacao/', views.adicionar_variacao,
          name='adicionar_variacao'),
     path('produto/<slug:slug>/inativar/', views.inativar_produto, name='inativar_produto'),
+    path('produto/<slug:slug>/reativar/', views.reativar_produto, name='reativar_produto'),
     path('produto/<slug:slug>', views.produto, name="produto"),
 ]

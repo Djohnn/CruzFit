@@ -42,6 +42,25 @@ class ProductManagementTests(TestCase):
             preco_venda=Decimal("40.00"),
         )
 
+    def test_manager_can_reactivate_zero_stock_product(self):
+        Produto.objects.filter(pk=self.product.pk).update(ativo=False, quantidade=0)
+        args = (self.product.slug,)
+        action = reverse("reativar_produto", args=args)
+        detail = reverse("produto", args=args)
+        payload = {"motivo": "Retorno para troca", "chave_idempotencia": "reativar-teste"}
+        self.client.force_login(self.seller)
+        self.assertEqual(self.client.post(action, payload).status_code, 403)
+        self.client.force_login(self.manager)
+        self.assertContains(self.client.get(detail), "Reativar produto")
+        for _ in range(2):
+            self.assertRedirects(self.client.post(action, payload), detail)
+        self.product.refresh_from_db()
+        self.assertTrue(self.product.ativo)
+        self.assertEqual(self.product.quantidade, 0)
+        audit = self.product.alteracoes.get()
+        self.assertEqual(audit.responsavel, self.manager)
+        self.assertEqual(audit.dados_novos, {"ativo": True})
+
     def product_service(self, name):
         service = getattr(import_module("estoque.services"), name, None)
         self.assertIsNotNone(service, f"Serviço ausente: {name}")

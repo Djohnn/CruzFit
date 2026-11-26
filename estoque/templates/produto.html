@@ -101,6 +101,14 @@
                             <input id="product-inactivation-reason" class="form-control" type="text" name="motivo" required maxlength="500" placeholder="Ex.: produto descontinuado">
                             <button type="submit" class="btn btn-outline-danger">Inativar produto</button>
                         </form>
+                    {% else %}
+                        <form action="{% url 'reativar_produto' produto.slug %}" method="POST" class="product-inactivation-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="chave_idempotencia" value="{{ inativacao_chave }}">
+                            <label for="product-reactivation-reason">Motivo da reativação</label>
+                            <input id="product-reactivation-reason" class="form-control" type="text" name="motivo" required maxlength="500">
+                            <button type="submit" class="btn btn-outline-light">Reativar produto</button>
+                        </form>
                     {% endif %}
                 {% endif %}
                 <p class="section-help">O saldo só muda por entrada ou baixa. A edição corrige o cadastro sem alterar o estoque.</p>

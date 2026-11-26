@@ -827,6 +827,34 @@ def inativar_produto(
     return ProductOperationResult(product, created=True)
 
 
+def reativar_produto(
+    *, actor, product_id: int, reason: str, idempotency_key: str | None,
+) -> ProductOperationResult:
+    _require_manager(actor)
+    key = _product_key(idempotency_key)
+    motivo = _product_reason(reason)
+    signature = _product_signature(actor, product_id, motivo, {'acao': 'reativar'})
+    with transaction.atomic():
+        existing = ProdutoAlteracao.objects.select_for_update().filter(chave_idempotencia=key).first()
+        if existing:
+            _check_product_replay(existing, signature)
+            return ProductOperationResult(existing.produto, created=False)
+        try:
+            product = Produto.objects.select_for_update().get(pk=product_id)
+        except Produto.DoesNotExist as error:
+            raise ProductOperationError('Produto não encontrado.') from error
+        if product.ativo:
+            raise ProductOperationError('Este produto já está ativo.')
+        product.ativo = True
+        product.save(update_fields=('ativo',))
+        ProdutoAlteracao.objects.create(
+            produto=product, responsavel=actor, motivo=motivo,
+            chave_idempotencia=key, assinatura=signature,
+            dados_anteriores={'ativo': False}, dados_novos={'ativo': True},
+        )
+    return ProductOperationResult(product, created=True)
+
+
 def _parse_idempotency_key(key: str | None) -> str:
     normalized = (key or '').strip()
     if not normalized:

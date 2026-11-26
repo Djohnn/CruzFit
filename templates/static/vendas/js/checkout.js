@@ -183,7 +183,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     const searchableCatalog = catalog.map(product => ({
         product,
-        name: normalizeSearch(product.nome.replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2')).split(' '),
+        name: normalizeSearch([product.nome, product.modelo].filter(Boolean).join(' ')
+            .replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2')).split(' '),
         color: normalizeSearch(product.cor || ''),
         barcode: String(product.codigo_barras || ''),
     }));
@@ -191,9 +192,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const needle = normalizeSearch(search.value);
         const terms = needle.split(' ');
         const barcode = barcodeQuery(search.value);
-        const matches = needle ? searchableCatalog.filter(entry => barcode
-            ? entry.barcode.startsWith(barcode)
-            : matchesNameAndColor(entry.name, entry.color, terms)) : [];
+        const matches = needle ? searchableCatalog.filter(entry =>
+            (barcode && entry.barcode.startsWith(barcode))
+            || matchesNameAndColor(entry.name, entry.color, terms)) : [];
         results.replaceChildren();
         results.scrollTop = 0;
         matches.forEach(({product}, index) => {
@@ -203,7 +204,8 @@ document.addEventListener('DOMContentLoaded', function () {
             button.className = 'sale-search-option';
             button.setAttribute('role', 'option');
             button.setAttribute('aria-selected', 'false');
-            button.textContent = (product.label || product.nome) + ' · ' + money(units(product.preco)) + ' · Estoque: ' + product.estoque;
+            const model = product.modelo ? ' · Modelo: ' + product.modelo : '';
+            button.textContent = (product.label || product.nome) + model + ' · ' + money(units(product.preco)) + ' · Estoque: ' + product.estoque;
             button.addEventListener('click', () => addProduct(product));
             results.appendChild(button);
         });
