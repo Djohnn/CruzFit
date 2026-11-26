@@ -10,6 +10,6 @@
   {% else %}
     <strong>Faltam {{ aviso_mensal.dias }} dias para o fechamento mensal.</strong>
   {% endif %}
-  <a class="alert-link" href="{% url 'financeiro:fechamento_mensal' %}?mes={{ aviso_mensal.mes|date:'Y-m' }}">Conferir fechamento</a>
+  <a class="btn btn-primary btn-sm ml-2 my-1" href="{% url 'financeiro:fechamento_mensal' %}?mes={{ aviso_mensal.mes|date:'Y-m' }}">Conferir fechamento</a>
 </section>
 {% endif %}
